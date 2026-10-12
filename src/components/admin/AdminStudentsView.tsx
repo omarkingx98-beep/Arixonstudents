@@ -366,7 +366,7 @@ export const AdminStudentsView: React.FC = () => {
 
       {/* Student Details Inspection Modal */}
       {selectedStudent && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 overflow-y-auto">
           <div className="bg-white dark:bg-[#0c101c] w-full max-w-2xl rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
             {/* Header */}
             <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
@@ -500,7 +500,7 @@ export const AdminStudentsView: React.FC = () => {
 
       {/* Adjust Points Dialog */}
       {isAdjustPointsOpen && selectedStudent && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/80">
           <div className="bg-white dark:bg-[#0c101c] w-full max-w-md rounded-3xl border border-slate-200 dark:border-slate-800 p-6 space-y-4 shadow-2xl">
             <h3 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
               <Trophy className="w-4 h-4 text-amber-500" />
@@ -557,7 +557,7 @@ export const AdminStudentsView: React.FC = () => {
 
       {/* Disable / Freeze Account Dialog */}
       {isDisableOpen && selectedStudent && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/80">
           <div className="bg-white dark:bg-[#0c101c] w-full max-w-md rounded-3xl border border-slate-200 dark:border-slate-800 p-6 space-y-4 shadow-2xl">
             <h3 className="text-sm font-black text-red-600 flex items-center gap-2">
               <ShieldAlert className="w-5 h-5" />

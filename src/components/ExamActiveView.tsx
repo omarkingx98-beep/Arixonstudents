@@ -160,7 +160,7 @@ export const ExamActiveView: React.FC<ExamActiveViewProps> = ({
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col justify-between pb-24 md:pb-8">
       {/* Sticky Top Header */}
-      <header className="sticky top-0 z-30 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 shadow-sm">
+      <header className="sticky top-0 z-30 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 shadow-sm">
         <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
           {/* Exam & Question Title */}
           <div className="flex items-center gap-3 min-w-0">
@@ -403,7 +403,7 @@ export const ExamActiveView: React.FC<ExamActiveViewProps> = ({
 
       {/* Question Palette Drawer Modal */}
       {showPaletteModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fadeIn">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 animate-fadeIn">
           <div className="w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
               <h3 className="font-bold text-slate-900 dark:text-white text-base">
@@ -469,7 +469,7 @@ export const ExamActiveView: React.FC<ExamActiveViewProps> = ({
 
       {/* Confirmation Submission Dialog */}
       {showSubmitModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm animate-fadeIn">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/80 animate-fadeIn">
           <div 
             id="confirm-submit-dialog"
             className="w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-6 sm:p-7 shadow-2xl space-y-5"
@@ -538,7 +538,7 @@ export const ExamActiveView: React.FC<ExamActiveViewProps> = ({
 
       {/* Submitting Overlay */}
       {isSubmitting && !showSubmitModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-md">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/85">
           <div className="p-8 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-center shadow-2xl space-y-4 max-w-sm mx-4">
             <Loader2 className="w-10 h-10 animate-spin text-blue-600 mx-auto" />
             <h3 className="font-bold text-lg text-slate-900 dark:text-white">

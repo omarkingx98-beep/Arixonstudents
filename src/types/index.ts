@@ -9,6 +9,8 @@ export interface UserProfile {
   photoURL?: string;
   age?: number;
   city?: string;
+  branch?: string;
+  phone?: string;
   gender?: 'male' | 'female' | 'other' | 'prefer_not_to_say';
   whatsappGroup?: string;
   totalPoints: number;
@@ -18,12 +20,28 @@ export interface UserProfile {
   correctAnswers: number;
   wrongAnswers: number;
   hasSeenTutorial?: boolean;
+  accountDisabled?: boolean;
+  disabledReason?: string | null;
+  disabledAt?: string | null;
   createdAt: string;
   updatedAt: string;
   lastActiveAt: string;
 }
 
 export type SubjectId = 'all' | 'math' | 'physics' | 'arabic' | 'chemistry' | 'biology' | 'english' | 'islamic' | 'other';
+
+export interface DailyGoal {
+  id: string;
+  userId: string;
+  text: string;
+  subject?: SubjectId;
+  priority?: 'normal' | 'important' | 'urgent';
+  estimatedMinutes?: number;
+  completed: boolean;
+  completedAt?: string | null;
+  date: string; // YYYY-MM-DD
+  createdAt: string;
+}
 
 export type ExamStatus = 'available' | 'coming_soon' | 'closed' | 'completed';
 
@@ -82,6 +100,7 @@ export interface ExamAttempt {
   submittedAt: string | null;
   status: AttemptStatus;
   score: number | null;
+  percentage?: number;
   pointsEarned: number;
   correctAnswers: number;
   wrongAnswers: number;
@@ -93,6 +112,7 @@ export interface ExamAttempt {
   examSubject?: string;
   lesson?: string;
   totalPoints?: number;
+  userDisplayName?: string;
 }
 
 export interface QuestionAnswer {
@@ -264,12 +284,17 @@ export interface AdminSettings {
   siteName: string;
   logoUrl?: string;
   defaultDurationMinutes: number;
+  defaultExamDurationMinutes?: number;
+  defaultPointsPerQuestion?: number;
   defaultTotalPoints: number;
+  allowRetakesDefault?: boolean;
   leaderboardVisible: boolean;
+  leaderboardRefreshMinutes?: number;
   maintenanceMode: boolean;
   registrationOpen: boolean;
   announcementsEnabled: boolean;
   challengesEnabled: boolean;
+  systemNotice?: string;
   updatedAt: string;
   updatedBy: string;
 }
@@ -411,6 +436,8 @@ export interface AiGenerationJob {
   adminId: string;
   sourceId?: string;
   generationMode: GenerationMode;
+  mode?: GenerationMode;
+  generatedQuestions?: any[];
   subject: string;
   lesson: string;
   topic?: string;

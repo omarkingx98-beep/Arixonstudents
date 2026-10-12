@@ -13,6 +13,7 @@ import {
   Clock,
   Play
 } from 'lucide-react';
+import { DailyGoals } from './DailyGoals';
 import type { NavigationTab } from '../types';
 
 interface HomeDashboardProps {
@@ -168,13 +169,16 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({ onNavigate, onOpen
         </div>
       </div>
 
+      {/* Daily Study Goals Component */}
+      <DailyGoals onNavigateToExams={() => onNavigate('exams')} />
+
       {/* Hero Action Card */}
       <div 
         id="home-hero-banner"
         className="relative overflow-hidden rounded-3xl border border-blue-200/70 dark:border-blue-900/50 bg-gradient-to-br from-blue-600 via-indigo-600 to-blue-700 text-white p-6 sm:p-8 shadow-lg shadow-blue-500/10"
       >
         <div className="relative z-10 max-w-xl">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-white/20 backdrop-blur-sm text-white mb-3">
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-white/25 text-white mb-3">
             <Flame className="w-3.5 h-3.5 text-amber-300" />
             <span>امتحان الفيزياء متاح الآن — الزخم الخطي والدفع</span>
           </div>

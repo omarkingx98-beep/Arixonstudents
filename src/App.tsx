@@ -36,8 +36,13 @@ function MainAppShell() {
   // Automatic tutorial launch for students who have not seen it yet
   useEffect(() => {
     if (status === 'authenticated' && profile) {
-      const storageKey = `arixon_has_seen_tutorial_${profile.uid}`;
-      const localSeen = localStorage.getItem(storageKey) === 'true';
+      let localSeen = false;
+      try {
+        const storageKey = `arixon_has_seen_tutorial_${profile.uid}`;
+        localSeen = localStorage.getItem(storageKey) === 'true';
+      } catch {
+        // Storage access restricted in private mode
+      }
       if (!profile.hasSeenTutorial && !localSeen) {
         setIsTutorialOpen(true);
       }
@@ -47,8 +52,12 @@ function MainAppShell() {
   const handleCloseTutorial = () => {
     setIsTutorialOpen(false);
     if (profile?.uid) {
-      const storageKey = `arixon_has_seen_tutorial_${profile.uid}`;
-      localStorage.setItem(storageKey, 'true');
+      try {
+        const storageKey = `arixon_has_seen_tutorial_${profile.uid}`;
+        localStorage.setItem(storageKey, 'true');
+      } catch {
+        // Storage access restricted
+      }
       markTutorialAsSeen(profile.uid).catch((err) => {
         console.warn('Tutorial sync notice:', err);
       });

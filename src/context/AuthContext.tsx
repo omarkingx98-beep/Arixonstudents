@@ -75,6 +75,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
    * Firebase browserLocalPersistence handles session restoration automatically.
    */
   useEffect(() => {
+    try {
+      localStorage.removeItem('arixon_demo_session');
+    } catch {
+      // ignore
+    }
+
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setError(null);
       if (currentUser) {
@@ -154,6 +160,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const handleSignOut = async () => {
     try {
+      localStorage.removeItem('arixon_demo_session');
       setError(null);
       await logOut();
       setUser(null);

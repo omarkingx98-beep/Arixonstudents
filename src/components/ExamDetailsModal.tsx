@@ -51,7 +51,7 @@ export const ExamDetailsModal: React.FC<ExamDetailsModalProps> = ({
     'bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 dark:bg-black/75 backdrop-blur-sm animate-fadeIn">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 dark:bg-black/80 animate-fadeIn">
       <div 
         id="exam-details-modal"
         className="w-full max-w-lg bg-white dark:bg-[#111625] rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"

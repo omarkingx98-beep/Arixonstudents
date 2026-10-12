@@ -10,10 +10,11 @@ import configJson from './firebase-applet-config.json' with { type: 'json' };
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const PORT = 3000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 const PRIMARY_ADMIN_EMAIL = 'omarkingx99@gmail.com';
 const PRIMARY_ADMIN_EMAILS = [
   (process.env.ADMIN_PRIMARY_EMAIL || '').toLowerCase().trim(),
+  'omar88x99@gmail.com',
   'omarkingx99@gmail.com',
   'omarkingx98@gmail.com',
 ].filter(Boolean);
@@ -46,7 +47,14 @@ function getGeminiClient(): GoogleGenAI {
     if (!apiKey) {
       throw new Error('GEMINI_API_KEY environment variable is missing.');
     }
-    geminiClient = new GoogleGenAI({ apiKey });
+    geminiClient = new GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        },
+      },
+    });
   }
   return geminiClient;
 }

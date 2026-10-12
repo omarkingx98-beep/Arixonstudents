@@ -186,7 +186,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
           {/* Backdrop */}
           <div
             onClick={() => setIsMobileMenuOpen(false)}
-            className="fixed inset-0 bg-black/60 backdrop-blur-xs transition-opacity"
+            className="fixed inset-0 bg-black/70 transition-opacity"
           />
 
           {/* Drawer Content */}

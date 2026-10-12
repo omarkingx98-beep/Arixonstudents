@@ -14,6 +14,12 @@ import type { AdminSettings } from '../../types';
 
 export const AdminSettingsView: React.FC = () => {
   const [settings, setSettings] = useState<AdminSettings>({
+    siteName: 'Arixon - أريكسون',
+    defaultDurationMinutes: 20,
+    defaultTotalPoints: 100,
+    leaderboardVisible: true,
+    announcementsEnabled: true,
+    challengesEnabled: true,
     maintenanceMode: false,
     registrationOpen: true,
     defaultExamDurationMinutes: 30,
@@ -21,6 +27,8 @@ export const AdminSettingsView: React.FC = () => {
     allowRetakesDefault: true,
     leaderboardRefreshMinutes: 5,
     systemNotice: '',
+    updatedAt: new Date().toISOString(),
+    updatedBy: 'system',
   });
 
   const [isLoading, setIsLoading] = useState(true);

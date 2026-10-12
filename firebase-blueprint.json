@@ -100,12 +100,34 @@
         "timestamp": { "type": "string", "format": "date-time" }
       },
       "required": ["adminUid", "action", "timestamp"]
+    },
+    "DailyGoal": {
+      "title": "Daily Goal",
+      "description": "Student daily study task or target to enhance productivity.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "text": { "type": "string" },
+        "subject": { "type": "string" },
+        "priority": { "type": "string", "enum": ["normal", "important", "urgent"] },
+        "estimatedMinutes": { "type": "number" },
+        "completed": { "type": "boolean" },
+        "completedAt": { "type": "string", "format": "date-time" },
+        "date": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "text", "completed", "createdAt"]
     }
   },
   "firestore": {
     "/users/{userId}": {
       "schema": { "$ref": "#/entities/UserProfile" },
       "description": "Public user profiles and student performance tallies."
+    },
+    "/users/{userId}/dailyGoals/{goalId}": {
+      "schema": { "$ref": "#/entities/DailyGoal" },
+      "description": "Daily study goals and productivity targets for a student."
     },
     "/exams/{examId}": {
       "schema": { "$ref": "#/entities/Exam" },

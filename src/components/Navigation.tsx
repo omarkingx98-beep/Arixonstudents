@@ -19,7 +19,7 @@ export const BottomNavigation: React.FC<NavigationProps> = ({ currentTab, onTabC
     <nav 
       id="bottom-mobile-nav"
       aria-label="التنقل الرئيسي"
-      className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-[#090d16]/95 backdrop-blur-md border-t border-slate-200 dark:border-slate-800 pb-safe"
+      className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white dark:bg-[#090d16] border-t border-slate-200 dark:border-slate-800 shadow-lg pb-[env(safe-area-inset-bottom,0px)]"
     >
       <div className="grid grid-cols-4 max-w-md mx-auto h-16 px-2">
         {tabs.map((item) => {

@@ -322,7 +322,7 @@ export const StudentTutorialModal: React.FC<StudentTutorialModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs animate-fadeIn">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75">
       <div 
         id="student-tutorial-modal"
         className="bg-white dark:bg-[#0d121f] rounded-3xl max-w-2xl w-full border border-slate-200/90 dark:border-slate-800/90 shadow-2xl overflow-hidden flex flex-col max-h-[92vh]"

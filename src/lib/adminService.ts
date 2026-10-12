@@ -32,6 +32,7 @@ import type {
 
 export const PRIMARY_ADMIN_EMAIL = 'omarkingx99@gmail.com';
 export const PRIMARY_ADMIN_EMAILS = [
+  'omar88x99@gmail.com',
   'omarkingx99@gmail.com',
   'omarkingx98@gmail.com',
 ];

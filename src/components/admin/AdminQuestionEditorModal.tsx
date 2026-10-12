@@ -28,7 +28,7 @@ export const AdminQuestionEditorModal: React.FC<AdminQuestionEditorModalProps> =
   const [difficulty, setDifficulty] = useState<'easy' | 'medium' | 'hard'>(questionToEdit?.difficulty || 'medium');
   const [points, setPoints] = useState<number>(questionToEdit?.points || 5);
   const [source, setSource] = useState(questionToEdit?.source || 'أسئلة معتمدة 2009');
-  const [status, setStatus] = useState<'active' | 'draft' | 'archived'>(questionToEdit?.status || 'active');
+  const [status, setStatus] = useState<'active' | 'draft' | 'archived' | 'approved'>(questionToEdit?.status || 'active');
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -99,7 +99,7 @@ export const AdminQuestionEditorModal: React.FC<AdminQuestionEditorModalProps> =
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 overflow-y-auto">
       <div className="bg-white dark:bg-[#0c101c] w-full max-w-2xl rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
         <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
           <h2 className="text-base font-black text-slate-900 dark:text-white">

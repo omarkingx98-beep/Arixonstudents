@@ -51,6 +51,7 @@ export const AdminCreateExamModal: React.FC<AdminCreateExamModalProps> = ({
   const [durationMinutes, setDurationMinutes] = useState(examToEdit?.durationMinutes || 20);
   const [totalPoints, setTotalPoints] = useState(examToEdit?.totalPoints || 100);
   const [difficulty, setDifficulty] = useState<'easy' | 'medium' | 'hard'>(examToEdit?.difficulty || 'medium');
+  const [branch, setBranch] = useState<'مشترك' | 'علمي' | 'أدبي'>((examToEdit as any)?.branch || 'مشترك');
   const [published, setPublished] = useState(examToEdit?.published || false);
   const [allowRetake, setAllowRetake] = useState(examToEdit?.allowRetake ?? false);
 
@@ -207,6 +208,7 @@ export const AdminCreateExamModal: React.FC<AdminCreateExamModalProps> = ({
           durationMinutes: Number(durationMinutes),
           totalPoints: Number(totalPoints),
           difficulty,
+          branch: branch || 'مشترك',
           status: publishIntent ? 'available' : 'coming_soon',
           published: publishIntent,
           allowRetake,
@@ -214,7 +216,7 @@ export const AdminCreateExamModal: React.FC<AdminCreateExamModalProps> = ({
           createdAt: examToEdit?.createdAt || new Date().toISOString(),
           updatedAt: new Date().toISOString(),
           createdBy: examToEdit?.createdBy || auth.currentUser?.email || 'admin',
-        },
+        } as any,
         questions.map((q, i) => ({
           ...q,
           order: i + 1,
@@ -374,6 +376,21 @@ export const AdminCreateExamModal: React.FC<AdminCreateExamModalProps> = ({
                     <option value="easy">سهل (تذكر ومفاهيم أساسية)</option>
                     <option value="medium">متوسط (تطبيق وتحليل)</option>
                     <option value="hard">صعب (قدرات تفكير عليا)</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1.5 sm:col-span-2">
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                    الفرع الأكاديمي المستهدف *
+                  </label>
+                  <select
+                    value={branch}
+                    onChange={(e) => setBranch(e.target.value as any)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#13192a] text-xs focus:outline-hidden focus:border-blue-500 font-bold"
+                  >
+                    <option value="مشترك">مشترك (يظهر للفرعين العلمي والأدبي معاً)</option>
+                    <option value="علمي">الفرع العلمي فقط</option>
+                    <option value="أدبي">الفرع الأدبي فقط</option>
                   </select>
                 </div>
               </div>

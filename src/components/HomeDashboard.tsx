@@ -13,7 +13,6 @@ import {
   Clock,
   Play
 } from 'lucide-react';
-import { DailyGoals } from './DailyGoals';
 import type { NavigationTab } from '../types';
 
 interface HomeDashboardProps {
@@ -168,9 +167,6 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({ onNavigate, onOpen
           </div>
         </div>
       </div>
-
-      {/* Daily Study Goals Component */}
-      <DailyGoals onNavigateToExams={() => onNavigate('exams')} />
 
       {/* Hero Action Card */}
       <div 

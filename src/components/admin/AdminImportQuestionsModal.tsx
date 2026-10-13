@@ -36,31 +36,6 @@ export const AdminImportQuestionsModal: React.FC<AdminImportQuestionsModalProps>
   const [isImporting, setIsImporting] = useState(false);
   const [importSuccessCount, setImportSuccessCount] = useState<number | null>(null);
 
-  const sampleJson = `[
-  {
-    "questionText": "ما هي وحدة قياس الزخم الخطي في النظام الدولي للوحدات؟",
-    "options": ["kg.m/s", "N.m", "J/s", "kg.m^2/s"],
-    "correctAnswer": 0,
-    "explanation": "الزخم الخطي p = m * v، وحدة الكتلة kg ووحدة السرعة m/s فتكون kg.m/s.",
-    "difficulty": "easy",
-    "points": 5,
-    "subject": "physics",
-    "lesson": "الزخم الخطي",
-    "source": "توجيهي 2009"
-  }
-]`;
-
-  const sampleCsv = `نص السؤال,الخيار أ,الخيار ب,الخيار ج,الخيار د,الإجابة الصحيحة,الشرح,الصعوبة,النقاط,المبحث,الدرس,المصدر
-ما وحدة قياس الطاقة الحركية؟,الجول,النيوتن,الواط,الباسكال,أ,الطاقة تقاس بالجول في النظام الدولي,easy,5,physics,الشغل والطاقة,منهاج فلسطين`;
-
-  const handleLoadSample = () => {
-    if (format === 'json') {
-      setInputText(sampleJson);
-    } else {
-      setInputText(sampleCsv);
-    }
-  };
-
   const handleValidate = () => {
     setParseError(null);
     setValidationResult(null);
@@ -196,14 +171,6 @@ export const AdminImportQuestionsModal: React.FC<AdminImportQuestionsModalProps>
                     تنسيق CSV
                   </button>
                 </div>
-
-                <button
-                  type="button"
-                  onClick={handleLoadSample}
-                  className="text-xs text-indigo-600 dark:text-indigo-400 font-bold hover:underline"
-                >
-                  تحميل نموذج تجريبي جاهز
-                </button>
               </div>
 
               {/* Input Area */}
@@ -213,7 +180,7 @@ export const AdminImportQuestionsModal: React.FC<AdminImportQuestionsModalProps>
                   dir="ltr"
                   value={inputText}
                   onChange={(e) => setInputText(e.target.value)}
-                  placeholder={format === 'json' ? sampleJson : sampleCsv}
+                  placeholder={format === 'json' ? '[ { "questionText": "...", "options": [...] } ]' : 'نص السؤال,الخيار أ,الخيار ب,الخيار ج,الخيار د,الإجابة الصحيحة,...'}
                   className="w-full p-3 font-mono text-xs rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#111625] text-slate-800 dark:text-slate-200 focus:outline-hidden focus:border-indigo-500"
                 />
               </div>

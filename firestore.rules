@@ -12,33 +12,50 @@ service cloud.firestore {
 
     function isAdmin() {
       return isAuthenticated() && (
-        request.auth.token.admin == true ||
-        request.auth.token.role == 'super_admin' ||
+        request.auth.token.get('admin', false) == true ||
+        request.auth.token.get('role', '') == 'super_admin' ||
+        request.auth.token.get('role', '') == 'admin' ||
         (request.auth.token.email != null && (
-          request.auth.token.email == 'omar88x99@gmail.com' ||
-          request.auth.token.email == 'omarkingx99@gmail.com' ||
-          request.auth.token.email == 'omarkingx98@gmail.com' ||
-          request.auth.token.email.lower() == 'omar88x99@gmail.com' ||
-          request.auth.token.email.lower() == 'omarkingx99@gmail.com' ||
-          request.auth.token.email.lower() == 'omarkingx98@gmail.com'
+          request.auth.token.email in [
+            'omar88x99@gmail.com',
+            'omarkingx99@gmail.com',
+            'omarkingx98@gmail.com'
+          ] ||
+          request.auth.token.email.lower() in [
+            'omar88x99@gmail.com',
+            'omarkingx99@gmail.com',
+            'omarkingx98@gmail.com'
+          ]
         )) ||
         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super_admin' ||
-          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')) ||
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') in ['super_admin', 'admin']) ||
         exists(/databases/$(database)/documents/adminProfiles/$(request.auth.uid))
       );
     }
 
-    // User profiles
+    // User profiles & student records
     match /users/{userId} {
-      // Anyone authenticated can read user profiles (for display and leaderboard)
+      // Anyone authenticated can read user profiles (for leaderboard and rankings)
       allow read: if isAuthenticated();
-      // Users can only create their own profile with matching uid, or admin
-      allow create: if isOwner(userId) || isAdmin();
-      // Users can update their own profile and statistics, or admin
-      allow update: if isOwner(userId) || isAdmin();
-      // No client-side deletion
-      allow delete: if false;
+
+      // Only admins or the owner with student role can create a profile
+      allow create: if isAdmin() || (
+        isOwner(userId) &&
+        request.resource.data.get('role', 'student') == 'student' &&
+        request.resource.data.get('accountDisabled', false) == false
+      );
+
+      // Admins have full update rights (points, freeze, roles).
+      // Students can only update their profile info and cannot elevate their role or alter account freeze
+      allow update: if isAdmin() || (
+        isOwner(userId) &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          'role', 'accountDisabled', 'disabledReason', 'disabledAt'
+        ])
+      );
+
+      // Only admins can delete profiles
+      allow delete: if isAdmin();
 
       // Student daily goals subcollection
       match /dailyGoals/{goalId} {
@@ -51,7 +68,7 @@ service cloud.firestore {
       allow read, write: if isAdmin();
     }
 
-    // Admin Audit Logs (Append-Only: create allowed for authenticated logging, read for admins)
+    // Admin Audit Logs (Append-Only)
     match /adminAuditLogs/{logId} {
       allow read: if isAdmin();
       allow create: if isAuthenticated();
@@ -65,7 +82,7 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
-    // Central Question Bank
+    // Central Question Bank (Admin only)
     match /questions/{questionId} {
       allow read, write: if isAdmin();
     }
@@ -90,11 +107,15 @@ service cloud.firestore {
 
     // Exams
     match /exams/{examId} {
-      // Authenticated users can read exams
-      allow read: if isAuthenticated();
+      // Students can read published exams; Admins can read both draft & published exams
+      allow read: if isAuthenticated() && (
+        resource.data.published == true ||
+        isAdmin()
+      );
+
       // Only admins can create, update, or publish exams
       allow create, update: if isAdmin();
-      allow delete: if false;
+      allow delete: if isAdmin();
 
       // Public question data
       match /questions/{questionId} {
@@ -104,8 +125,7 @@ service cloud.firestore {
 
       // Protected answer keys - hidden from regular students, accessible only to admin
       match /answerKeys/{questionId} {
-        allow read: if isAdmin();
-        allow create, update, delete: if isAdmin();
+        allow read, write: if isAdmin();
       }
     }
 
@@ -127,13 +147,14 @@ service cloud.firestore {
       // Students can create an attempt for themselves
       allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
       
-      // Students can update their attempt while in_progress (saving state or submitting)
+      // Students can update their attempt while in_progress (saving answers or submitting)
+      // Once status is 'submitted', attempt results are locked and only admin can adjust
       allow update: if isAuthenticated() && (
-        (resource.data.userId == request.auth.uid && resource.data.status == 'in_progress') ||
-        isAdmin()
+        isAdmin() ||
+        (resource.data.userId == request.auth.uid && resource.data.status == 'in_progress')
       );
         
-      allow delete: if false;
+      allow delete: if isAdmin();
 
       // Subcollection for answers during attempt
       match /answers/{questionId} {
@@ -142,13 +163,12 @@ service cloud.firestore {
           isAdmin()
         );
         allow create, update: if isAuthenticated() && (
+          isAdmin() ||
           (get(/databases/$(database)/documents/attempts/$(attemptId)).data.userId == request.auth.uid &&
-           get(/databases/$(database)/documents/attempts/$(attemptId)).data.status == 'in_progress') ||
-          isAdmin()
+           get(/databases/$(database)/documents/attempts/$(attemptId)).data.status == 'in_progress')
         );
-        allow delete: if false;
+        allow delete: if isAdmin();
       }
     }
   }
 }
-

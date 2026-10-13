@@ -50,6 +50,7 @@ interface ParsedExamData {
   description: string;
   language: string;
   difficulty: 'easy' | 'medium' | 'hard';
+  branch?: 'مشترك' | 'علمي' | 'أدبي';
   durationMinutes: number;
   totalQuestions: number;
   marksPerQuestion: number;
@@ -129,9 +130,21 @@ export const AdminExamImportView: React.FC<AdminExamImportViewProps> = ({
         body: JSON.stringify({ rawExamText: rawText.trim() }),
       });
 
-      const json = await res.json();
-      if (!res.ok || !json.success) {
-        throw new Error(json.error || 'فشلت معالجة وتحليل نص الامتحان عبر الخادم.');
+      const responseText = await res.text();
+      if (!responseText || !responseText.trim()) {
+        throw new Error('أرجع الخادم رداً فارغاً. تحقق من ضبط متغير البيئة GEMINI_API_KEY على الخادم.');
+      }
+
+      let json: any = null;
+      try {
+        json = JSON.parse(responseText);
+      } catch (parseErr) {
+        console.error('[AdminExamImportView] Failed to parse server response:', responseText);
+        throw new Error('فشل قراءة رد الخادم. الاستجابة ليست بتنسيق JSON صالح.');
+      }
+
+      if (!res.ok || !json?.ok) {
+        throw new Error(json?.error || 'تعذر تحليل نص الامتحان. تأكد من وضوح الأسئلة والخيارات.');
       }
 
       const { exam, questions, validation } = json.data;
@@ -143,6 +156,7 @@ export const AdminExamImportView: React.FC<AdminExamImportViewProps> = ({
 
       setParsedExam({
         ...exam,
+        branch: exam.branch || 'مشترك',
         subject: validSubject,
         subjectNameAr:
           SUBJECT_OPTIONS.find((s) => s.id === validSubject)?.name || exam.subjectNameAr || 'الفيزياء',
@@ -227,6 +241,7 @@ export const AdminExamImportView: React.FC<AdminExamImportViewProps> = ({
         durationMinutes: Number(parsedExam.durationMinutes) || 30,
         totalPoints: parsedQuestions.reduce((sum, q) => sum + (q.marks || 5), 0),
         difficulty: parsedExam.difficulty || 'medium',
+        branch: parsedExam.branch || 'مشترك',
         status: (publishImmediately ? 'available' : 'coming_soon') as any,
         published: publishImmediately,
         allowRetake: true,
@@ -509,6 +524,23 @@ export const AdminExamImportView: React.FC<AdminExamImportViewProps> = ({
                   <option value="easy">سهل ومباشر</option>
                   <option value="medium">متوسط (معايير وزارية)</option>
                   <option value="hard">صعب ومستويات تفكير عليا</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block mb-1">
+                  الفرع المستهدف *
+                </label>
+                <select
+                  value={parsedExam.branch || 'مشترك'}
+                  onChange={(e) =>
+                    setParsedExam({ ...parsedExam, branch: e.target.value as any })
+                  }
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#13192a] text-xs font-bold"
+                >
+                  <option value="مشترك">مشترك (الفرعين معاً)</option>
+                  <option value="علمي">الفرع العلمي فقط</option>
+                  <option value="أدبي">الفرع الأدبي فقط</option>
                 </select>
               </div>
 

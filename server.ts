@@ -618,13 +618,13 @@ async function startServer() {
       const authUser = await verifyAuthToken(req);
       const isPrimary = isPrimaryAdmin(authUser?.email);
       if (!authUser || (!authUser.admin && !isPrimary)) {
-        res.status(403).json({ error: 'غير مصرح لك باستخدام مستورد الامتحانات بالذكاء الاصطناعي.' });
+        res.status(403).json({ ok: false, error: 'غير مصرح لك باستخدام مستورد الامتحانات بالذكاء الاصطناعي.' });
         return;
       }
 
       const { rawExamText } = req.body;
       if (!rawExamText || typeof rawExamText !== 'string' || !rawExamText.trim()) {
-        res.status(400).json({ error: 'يرجى لصق محتوى الامتحان أولاً.' });
+        res.status(400).json({ ok: false, error: 'يرجى لصق محتوى الامتحان أولاً.' });
         return;
       }
 
@@ -632,12 +632,12 @@ async function startServer() {
       const parseResult = await parseRawExamWithGemini(ai, rawExamText.trim());
 
       res.json({
-        success: true,
+        ok: true,
         data: parseResult,
       });
     } catch (err: any) {
       console.error('[AI Parse Exam] Error:', err);
-      res.status(500).json({ error: err?.message || 'تعذر تحليل نص الامتحان بواسطة الذكاء الاصطناعي.' });
+      res.status(500).json({ ok: false, error: err?.message || 'تعذر تحليل نص الامتحان بواسطة الذكاء الاصطناعي.' });
     }
   });
 

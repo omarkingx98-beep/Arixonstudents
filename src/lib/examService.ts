@@ -83,7 +83,11 @@ export async function seedFirstExamIfMissing(): Promise<void> {
 /**
  * Fetch all published exams from Firestore, dynamically enriched with the user's attempt status
  */
-export async function getExamsList(subjectFilter?: SubjectId, currentUserId?: string): Promise<Exam[]> {
+export async function getExamsList(
+  subjectFilter?: SubjectId, 
+  currentUserId?: string,
+  userBranch?: string
+): Promise<Exam[]> {
   try {
     // Make sure first exam is seeded
     await seedFirstExamIfMissing();
@@ -117,6 +121,14 @@ export async function getExamsList(subjectFilter?: SubjectId, currentUserId?: st
         id: docSnapshot.id,
       };
 
+      // Branch filtration: if exam specifies branch, only show if matches student's branch or common
+      if (userBranch && (examObj as any).branch && (examObj as any).branch !== 'all' && (examObj as any).branch !== 'مشترك') {
+        const examBranch = (examObj as any).branch;
+        if (examBranch !== userBranch) {
+          return; // Skip exam not meant for this student's branch
+        }
+      }
+
       if (currentUserId && userAttemptsMap[examObj.id]) {
         const att = userAttemptsMap[examObj.id];
         if (att.status === 'submitted') {
@@ -127,7 +139,6 @@ export async function getExamsList(subjectFilter?: SubjectId, currentUserId?: st
             examObj.status = 'completed';
           }
         } else if (att.status === 'in_progress') {
-          // Check if expectedEndAt has not passed
           const isExpired = new Date(att.expectedEndAt).getTime() < Date.now();
           if (!isExpired) {
             examObj.userAttemptStatus = 'in_progress';

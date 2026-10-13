@@ -70,7 +70,7 @@ export const ExamsView: React.FC<ExamsViewProps> = ({
       if (viewMode !== 'list') return;
       setIsLoading(true);
       try {
-        const fetched = await getExamsList(selectedSubject, profile?.uid);
+        const fetched = await getExamsList(selectedSubject, profile?.uid, profile?.branch);
         if (isMounted) {
           setExams(fetched);
         }

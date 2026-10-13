@@ -16,7 +16,9 @@ import {
   Sparkles,
   Loader2,
   Shield,
+  CheckSquare,
 } from 'lucide-react';
+import { DailyGoals } from './DailyGoals';
 
 interface SettingsModalProps {
   onClose: () => void;
@@ -33,7 +35,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const { theme, setTheme } = useTheme();
   const { isAdmin } = useAdmin();
 
-  const [activeSubView, setActiveSubView] = useState<'main' | 'privacy' | 'about'>('main');
+  const [activeSubView, setActiveSubView] = useState<'main' | 'privacy' | 'about' | 'goals'>('main');
   const [selectedLanguage, setSelectedLanguage] = useState<'ar' | 'en'>('ar');
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
@@ -52,10 +54,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 dark:bg-black/80 overflow-y-auto">
       <div 
         id="settings-dialog-card"
-        className="w-full max-w-md bg-white dark:bg-[#111625] rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl p-6 text-slate-900 dark:text-slate-100 my-8 transition-all"
+        className="w-full max-w-lg bg-white dark:bg-[#111625] rounded-3xl border border-slate-200 dark:border-slate-800 shadow-2xl p-6 text-slate-900 dark:text-slate-100 my-8 transition-all max-h-[90vh] overflow-y-auto"
       >
         {/* Header */}
-        <div className="flex items-center justify-between pb-3.5 border-b border-slate-100 dark:border-slate-800 mb-4">
+        <div className="flex items-center justify-between pb-3.5 border-b border-slate-100 dark:border-slate-800 mb-4 sticky top-0 bg-white dark:bg-[#111625] z-10">
           <div className="flex items-center gap-2">
             {activeSubView !== 'main' && (
               <button
@@ -69,6 +71,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               {activeSubView === 'main' && 'الإعدادات'}
               {activeSubView === 'privacy' && 'سياسة الخصوصية'}
               {activeSubView === 'about' && 'حول منصة Arixon'}
+              {activeSubView === 'goals' && 'المهام والتذكيرات الدراسية'}
             </h3>
           </div>
 
@@ -175,6 +178,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <ChevronLeft className="w-4 h-4" />
                 </button>
               )}
+
+              <button
+                id="open-daily-goals-btn"
+                onClick={() => setActiveSubView('goals')}
+                className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors text-sm font-semibold cursor-pointer"
+              >
+                <div className="flex items-center gap-2.5 text-slate-700 dark:text-slate-300">
+                  <CheckSquare className="w-4 h-4 text-blue-500" />
+                  <span>المهام والتذكيرات الدراسية</span>
+                </div>
+                <ChevronLeft className="w-4 h-4 text-slate-400" />
+              </button>
 
               <button
                 id="open-privacy-policy-btn"
@@ -320,6 +335,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             <button
               onClick={() => setActiveSubView('main')}
               className="w-full py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-xs hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+            >
+              العودة للإعدادات
+            </button>
+          </div>
+        )}
+
+        {/* SUB-VIEW: Daily Goals & Tasks */}
+        {activeSubView === 'goals' && (
+          <div className="space-y-4">
+            <DailyGoals onNavigateToExams={onClose} />
+            <button
+              onClick={() => setActiveSubView('main')}
+              className="w-full py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-xs hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer"
             >
               العودة للإعدادات
             </button>

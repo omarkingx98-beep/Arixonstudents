@@ -265,6 +265,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate }) =>
           </button>
 
           <button
+            onClick={() => onNavigate('ai-import')}
+            className="px-4 py-2.5 rounded-xl bg-purple-50 dark:bg-purple-950/50 border border-purple-200 dark:border-purple-800 text-purple-700 dark:text-purple-300 hover:bg-purple-100 text-xs font-bold transition-all flex items-center gap-2 cursor-pointer"
+          >
+            <Sparkles className="w-4 h-4 text-purple-600" />
+            <span>استيراد امتحان (AI)</span>
+          </button>
+
+          <button
             onClick={() => onNavigate('ai-builder')}
             className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white text-xs font-bold transition-all shadow-sm shadow-purple-500/20 flex items-center gap-2 cursor-pointer"
           >

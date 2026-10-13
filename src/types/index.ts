@@ -309,6 +309,7 @@ export type AdminTab =
   | 'challenges'
   | 'analytics'
   | 'ai-builder'
+  | 'ai-import'
   | 'audit-logs'
   | 'settings'
   | 'profile';

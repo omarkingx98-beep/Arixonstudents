@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { saveExamWithValidation, fetchQuestionBank } from '../../lib/adminService';
 import { getExamQuestions } from '../../lib/examService';
+import { auth } from '../../lib/firebase';
 import type { Exam, SubjectId, QuestionBankItem, QuestionType } from '../../types';
 
 interface AdminCreateExamModalProps {
@@ -174,6 +175,13 @@ export const AdminCreateExamModal: React.FC<AdminCreateExamModalProps> = ({
     const isValid = validateForm(publishIntent);
     if (!isValid) return;
 
+    if (!auth.currentUser) {
+      const err = 'جلسة المشرف غير نشطة حالياً. يرجى تسجيل الدخول بحساب المشرف المعتمد.';
+      setSubmitError(err);
+      alert(err);
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       const subjectNames: Record<SubjectId, string> = {
@@ -205,7 +213,7 @@ export const AdminCreateExamModal: React.FC<AdminCreateExamModalProps> = ({
           questionCount: questions.length,
           createdAt: examToEdit?.createdAt || new Date().toISOString(),
           updatedAt: new Date().toISOString(),
-          createdBy: examToEdit?.createdBy || 'admin',
+          createdBy: examToEdit?.createdBy || auth.currentUser?.email || 'admin',
         },
         questions.map((q, i) => ({
           ...q,
@@ -216,8 +224,10 @@ export const AdminCreateExamModal: React.FC<AdminCreateExamModalProps> = ({
       onSaved();
       onClose();
     } catch (err: any) {
-      console.error('Error saving exam:', err);
-      setSubmitError(err.message || 'حدث خطأ أثناء حفظ الامتحان.');
+      console.error('[AdminCreateExamModal] Error saving exam:', err);
+      const detail = `فشل حفظ الامتحان (${err?.code || 'ERROR'}): ${err?.message || 'تحقق من صلاحيات المشرف أو قواعد Firestore'}`;
+      setSubmitError(detail);
+      alert(detail);
     } finally {
       setIsSubmitting(false);
     }

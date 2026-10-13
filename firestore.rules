@@ -15,10 +15,17 @@ service cloud.firestore {
         request.auth.token.admin == true ||
         request.auth.token.role == 'super_admin' ||
         (request.auth.token.email != null && (
+          request.auth.token.email == 'omar88x99@gmail.com' ||
+          request.auth.token.email == 'omarkingx99@gmail.com' ||
+          request.auth.token.email == 'omarkingx98@gmail.com' ||
           request.auth.token.email.lower() == 'omar88x99@gmail.com' ||
-          request.auth.token.email.lower() == 'omarkingx98@gmail.com' ||
-          request.auth.token.email.lower() == 'omarkingx99@gmail.com'
-        ))
+          request.auth.token.email.lower() == 'omarkingx99@gmail.com' ||
+          request.auth.token.email.lower() == 'omarkingx98@gmail.com'
+        )) ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super_admin' ||
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')) ||
+        exists(/databases/$(database)/documents/adminProfiles/$(request.auth.uid))
       );
     }
 
@@ -44,17 +51,17 @@ service cloud.firestore {
       allow read, write: if isAdmin();
     }
 
-    // Admin Audit Logs (Append-Only: no update or delete allowed)
+    // Admin Audit Logs (Append-Only: create allowed for authenticated logging, read for admins)
     match /adminAuditLogs/{logId} {
       allow read: if isAdmin();
-      allow create: if isAdmin();
+      allow create: if isAuthenticated();
       allow update, delete: if false;
     }
 
     // Point Adjustments History (Append-Only)
     match /pointAdjustments/{adjId} {
       allow read: if isAdmin();
-      allow create: if isAdmin();
+      allow create: if isAuthenticated();
       allow update, delete: if false;
     }
 

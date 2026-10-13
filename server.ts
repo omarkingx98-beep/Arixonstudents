@@ -40,6 +40,7 @@ try {
 }
 
 import { runTwoStageAiGeneration, runRegenerateSingleQuestion } from './server/aiPipeline';
+import { parseRawExamWithGemini } from './server/aiExamParser';
 let geminiClient: GoogleGenAI | null = null;
 function getGeminiClient(): GoogleGenAI {
   if (!geminiClient) {
@@ -605,6 +606,38 @@ async function startServer() {
     } catch (err: any) {
       console.error('[AI Regenerate Single] Error:', err);
       res.status(500).json({ error: err?.message || 'تعذر إعادة توليد السؤال.' });
+    }
+  });
+
+  /**
+   * AI Exam Importer Endpoint
+   * Strictly parses pasted exam content into structured JSON
+   */
+  app.post('/api/admin/ai-parse-exam', async (req: Request, res: Response) => {
+    try {
+      const authUser = await verifyAuthToken(req);
+      const isPrimary = isPrimaryAdmin(authUser?.email);
+      if (!authUser || (!authUser.admin && !isPrimary)) {
+        res.status(403).json({ error: 'غير مصرح لك باستخدام مستورد الامتحانات بالذكاء الاصطناعي.' });
+        return;
+      }
+
+      const { rawExamText } = req.body;
+      if (!rawExamText || typeof rawExamText !== 'string' || !rawExamText.trim()) {
+        res.status(400).json({ error: 'يرجى لصق محتوى الامتحان أولاً.' });
+        return;
+      }
+
+      const ai = getGeminiClient();
+      const parseResult = await parseRawExamWithGemini(ai, rawExamText.trim());
+
+      res.json({
+        success: true,
+        data: parseResult,
+      });
+    } catch (err: any) {
+      console.error('[AI Parse Exam] Error:', err);
+      res.status(500).json({ error: err?.message || 'تعذر تحليل نص الامتحان بواسطة الذكاء الاصطناعي.' });
     }
   });
 

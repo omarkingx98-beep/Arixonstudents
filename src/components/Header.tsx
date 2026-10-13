@@ -67,18 +67,18 @@ export const Header: React.FC<HeaderProps> = ({
         </nav>
 
         {/* Right Action Icons: Theme Toggle & Settings */}
-        <div className="flex items-center gap-2">
-          {/* Tutorial / Platform Guide Button */}
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          {/* Tutorial / Platform Guide Button - hidden on small mobile to avoid crowd */}
           {onOpenTutorial && (
             <button
               id="tutorial-header-btn"
               onClick={onOpenTutorial}
               aria-label="دليل المنصة"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/40 text-xs font-bold transition-all cursor-pointer shadow-xs"
+              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/40 text-xs font-bold transition-all cursor-pointer shadow-xs"
               title="جولة في منصة أريكسون"
             >
               <Sparkles className="w-3.5 h-3.5 text-blue-500" />
-              <span className="hidden sm:inline">دليل أريكسون</span>
+              <span>دليل أريكسون</span>
             </button>
           )}
 
@@ -88,11 +88,11 @@ export const Header: React.FC<HeaderProps> = ({
               id="admin-portal-header-btn"
               onClick={onOpenAdmin}
               aria-label="لوحة الإدارة"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 text-xs font-bold transition-all cursor-pointer shadow-xs"
+              className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 text-xs font-bold transition-all cursor-pointer shadow-xs shrink-0"
               title="لوحة تحكم المشرف العام"
             >
-              <ShieldCheck className="w-4 h-4 text-amber-500" />
-              <span className="hidden sm:inline">الإدارة</span>
+              <ShieldCheck className="w-4 h-4 text-amber-500 shrink-0" />
+              <span className="text-xs">الإدارة</span>
             </button>
           )}
 
@@ -101,7 +101,8 @@ export const Header: React.FC<HeaderProps> = ({
             id="theme-toggle-header-btn"
             onClick={toggleTheme}
             aria-label="تبديل المظهر"
-            className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700/80 transition-colors cursor-pointer"
+            className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700/80 transition-colors cursor-pointer shrink-0"
+            title="تبديل المظهر"
           >
             {theme === 'dark' ? (
               <Sun className="w-4 h-4 text-amber-400" />
@@ -115,7 +116,8 @@ export const Header: React.FC<HeaderProps> = ({
             id="settings-header-btn"
             onClick={onOpenSettings}
             aria-label="الإعدادات"
-            className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700/80 transition-colors cursor-pointer"
+            className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700/80 transition-colors cursor-pointer shrink-0"
+            title="الإعدادات"
           >
             <Settings className="w-4 h-4" />
           </button>
@@ -125,14 +127,15 @@ export const Header: React.FC<HeaderProps> = ({
             <button
               id="header-user-avatar-btn"
               onClick={() => onTabChange('profile')}
-              className="flex items-center gap-2 pl-2 pr-1 py-1 rounded-full border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 hover:border-blue-300 dark:hover:border-blue-700 transition-all cursor-pointer"
+              className="flex items-center gap-1.5 pl-1.5 pr-1 py-1 rounded-full border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 hover:border-blue-300 dark:hover:border-blue-700 transition-all cursor-pointer shrink-0"
+              title="الملف الشخصي"
             >
               <img
                 src={profile.photoURL || 'https://api.dicebear.com/7.x/bottts-neutral/svg?seed=Arixon1'}
                 alt={profile.username}
                 className="w-7 h-7 rounded-full object-cover"
               />
-              <span className="hidden sm:inline text-xs font-bold text-slate-800 dark:text-slate-200 max-w-[100px] truncate">
+              <span className="hidden lg:inline text-xs font-bold text-slate-800 dark:text-slate-200 max-w-[90px] truncate">
                 {profile.username}
               </span>
             </button>

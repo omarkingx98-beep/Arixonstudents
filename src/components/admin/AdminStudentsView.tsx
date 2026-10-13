@@ -14,6 +14,7 @@ import {
   BookOpen,
   PlusCircle,
   MinusCircle,
+  RotateCcw,
   X,
   AlertCircle,
   CheckCircle2,
@@ -24,7 +25,7 @@ import {
   adjustStudentPointsWithReason,
 } from '../../lib/adminService';
 import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
+import { db, auth } from '../../lib/firebase';
 import type { UserProfile, ExamAttempt } from '../../types';
 
 export const AdminStudentsView: React.FC = () => {
@@ -43,9 +44,12 @@ export const AdminStudentsView: React.FC = () => {
   const [isLoadingAttempts, setIsLoadingAttempts] = useState(false);
 
   // Adjust Points Dialog State
+  type AdjustMode = 'add' | 'deduct' | 'reset';
   const [isAdjustPointsOpen, setIsAdjustPointsOpen] = useState(false);
-  const [adjustAmount, setAdjustAmount] = useState<number>(10);
+  const [adjustMode, setAdjustMode] = useState<AdjustMode>('add');
+  const [adjustInputValue, setAdjustInputValue] = useState<number>(50);
   const [adjustReason, setAdjustReason] = useState<string>('');
+  const [adjustError, setAdjustError] = useState<string | null>(null);
   const [isAdjusting, setIsAdjusting] = useState(false);
 
   // Disable Student Dialog State
@@ -90,15 +94,39 @@ export const AdminStudentsView: React.FC = () => {
     }
   };
 
+  const getEffectiveDelta = (): number => {
+    if (!selectedStudent) return 0;
+    const currentPoints = selectedStudent.totalPoints || 0;
+    if (adjustMode === 'reset') {
+      return -currentPoints;
+    }
+    const val = Math.max(0, Number(adjustInputValue) || 0);
+    return adjustMode === 'deduct' ? -val : val;
+  };
+
   const handleAdjustPointsSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setAdjustError(null);
     if (!selectedStudent) return;
-    if (!adjustReason.trim()) {
-      alert('يرجى كتابة سبب تعديل النقاط بدقة للتوثيق والرقابة.');
+
+    if (!auth.currentUser) {
+      const msg = 'جلسة المشرف غير نشطة حالياً. يرجى تسجيل الدخول بحساب معتمد.';
+      setAdjustError(msg);
+      alert(msg);
       return;
     }
-    if (adjustAmount === 0) {
-      alert('مبلغ تعديل النقاط لا يمكن أن يكون صفراً.');
+
+    const delta = getEffectiveDelta();
+    if (delta === 0 && adjustMode !== 'reset') {
+      const msg = 'يرجى تحديد مقدار النقاط (قيمة أكبر من صفر).';
+      setAdjustError(msg);
+      alert(msg);
+      return;
+    }
+    if (!adjustReason.trim()) {
+      const msg = 'يرجى كتابة سبب تعديل النقاط بدقة للتوثيق والرقابة الإدارية.';
+      setAdjustError(msg);
+      alert(msg);
       return;
     }
 
@@ -107,11 +135,11 @@ export const AdminStudentsView: React.FC = () => {
       const res = await adjustStudentPointsWithReason({
         studentId: selectedStudent.uid,
         studentName: selectedStudent.displayName || selectedStudent.username,
-        amount: Number(adjustAmount),
+        amount: delta,
         reason: adjustReason.trim(),
       });
 
-      // Update local state
+      // Update local state immediately
       setSelectedStudent({
         ...selectedStudent,
         totalPoints: res.newBalance,
@@ -119,9 +147,13 @@ export const AdminStudentsView: React.FC = () => {
       await loadStudents();
       setIsAdjustPointsOpen(false);
       setAdjustReason('');
-      alert(`تم تعديل نقاط الطالب بنجاح! الرصيد الجديد: ${res.newBalance} نقطة.`);
+      setAdjustError(null);
+      alert(`تم تطبيق التعديل بنجاح!\nالرصيد السابق: ${res.previousBalance} نقطة\nالعملية: ${delta > 0 ? '+' : ''}${delta} نقطة\nالرصيد الجديد: ${res.newBalance} نقطة.`);
     } catch (err: any) {
-      alert(err.message || 'حدث خطأ أثناء تعديل النقاط.');
+      console.error('[AdminStudentsView AdjustPoints Error]:', err);
+      const detail = `فشلت العملية (${err?.code || 'ERROR'}): ${err?.message || 'تحقق من الصلاحيات أو قواعد Firestore'}`;
+      setAdjustError(detail);
+      alert(detail);
     } finally {
       setIsAdjusting(false);
     }
@@ -129,6 +161,12 @@ export const AdminStudentsView: React.FC = () => {
 
   const handleToggleDisable = async () => {
     if (!selectedStudent) return;
+
+    if (!auth.currentUser) {
+      alert('جلسة المشرف غير نشطة حالياً. يرجى تسجيل الدخول بحساب معتمد.');
+      return;
+    }
+
     const isCurrentlyDisabled = (selectedStudent as any).accountDisabled;
     const willDisable = !isCurrentlyDisabled;
 
@@ -154,9 +192,10 @@ export const AdminStudentsView: React.FC = () => {
       await loadStudents();
       setIsDisableOpen(false);
       setDisableReason('');
-      alert(`تم ${willDisable ? 'تعطيل' : 'إعادة تفعيل'} الحساب بنجاح.`);
+      alert(`تم ${willDisable ? 'تجميد' : 'إعادة تفعيل'} الحساب بنجاح.`);
     } catch (err: any) {
-      alert(err.message || 'حدث خطأ أثناء تغيير حالة الحساب.');
+      console.error('[AdminStudentsView ToggleDisable Error]:', err);
+      alert(`فشل تغيير حالة الحساب (${err?.code || 'ERROR'}): ${err?.message || 'تحقق من الصلاحيات'}`);
     } finally {
       setIsTogglingDisable(false);
     }
@@ -500,54 +539,220 @@ export const AdminStudentsView: React.FC = () => {
 
       {/* Adjust Points Dialog */}
       {isAdjustPointsOpen && selectedStudent && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/80">
-          <div className="bg-white dark:bg-[#0c101c] w-full max-w-md rounded-3xl border border-slate-200 dark:border-slate-800 p-6 space-y-4 shadow-2xl">
-            <h3 className="text-sm font-black text-slate-900 dark:text-white flex items-center gap-2">
-              <Trophy className="w-4 h-4 text-amber-500" />
-              <span>تعديل رصيد نقاط الطالب: {selectedStudent.displayName}</span>
-            </h3>
-
-            <form onSubmit={handleAdjustPointsSubmit} className="space-y-3">
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className="bg-white dark:bg-[#0c101c] w-full max-w-lg rounded-3xl border border-slate-200 dark:border-slate-800 p-6 space-y-4 shadow-2xl">
+            {/* Header */}
+            <div className="flex items-start justify-between">
               <div>
-                <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block mb-1">
-                  مقدار النقاط (يمكن إدخال قيمة موجبة للإضافة أو سالبة للخصم)
+                <h3 className="text-base font-black text-slate-900 dark:text-white flex items-center gap-2">
+                  <Trophy className="w-5 h-5 text-amber-500" />
+                  <span>تعديل رصيد النقاط</span>
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  الطالب: <strong className="text-slate-800 dark:text-slate-200">{selectedStudent.displayName || selectedStudent.username}</strong>
+                </p>
+              </div>
+              <div className="bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 px-3 py-1 rounded-xl text-xs font-black text-center">
+                <span className="block text-[10px] text-slate-400">الرصيد الحالي</span>
+                {selectedStudent.totalPoints || 0} نقطة
+              </div>
+            </div>
+
+            {adjustError && (
+              <div className="p-3 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/50 rounded-xl flex items-start gap-2.5 text-xs text-red-600 dark:text-red-400">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>{adjustError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleAdjustPointsSubmit} className="space-y-4">
+              {/* Operation Mode Tabs */}
+              <div>
+                <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block mb-1.5">
+                  نوع العملية
                 </label>
-                <input
-                  type="number"
-                  value={adjustAmount}
-                  onChange={(e) => setAdjustAmount(Number(e.target.value))}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#13192a] text-xs font-bold"
-                />
+                <div className="grid grid-cols-3 gap-2 p-1 bg-slate-100 dark:bg-[#13192a] rounded-2xl border border-slate-200 dark:border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAdjustMode('add');
+                      if (adjustInputValue === 0) setAdjustInputValue(50);
+                    }}
+                    className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-xs font-black transition-all ${
+                      adjustMode === 'add'
+                        ? 'bg-emerald-500 text-white shadow-md shadow-emerald-500/20'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                    }`}
+                  >
+                    <PlusCircle className="w-3.5 h-3.5" />
+                    <span>إضافة (+)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAdjustMode('deduct');
+                      if (adjustInputValue === 0) setAdjustInputValue(50);
+                    }}
+                    className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-xs font-black transition-all ${
+                      adjustMode === 'deduct'
+                        ? 'bg-rose-500 text-white shadow-md shadow-rose-500/20'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                    }`}
+                  >
+                    <MinusCircle className="w-3.5 h-3.5" />
+                    <span>خصم (-)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setAdjustMode('reset')}
+                    className={`flex items-center justify-center gap-1.5 py-2 px-3 rounded-xl text-xs font-black transition-all ${
+                      adjustMode === 'reset'
+                        ? 'bg-amber-500 text-white shadow-md shadow-amber-500/20'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                    }`}
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                    <span>تصفير (0)</span>
+                  </button>
+                </div>
               </div>
 
+              {/* Amount input & presets if not reset */}
+              {adjustMode !== 'reset' ? (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400">
+                      {adjustMode === 'add' ? 'مقدار النقاط للإضافة' : 'مقدار النقاط المخصومة (يُحسب بالسالب تلقائياً)'}
+                    </label>
+                    <span className="text-[10px] text-slate-400">أدخل قيمة موجبة عادية</span>
+                  </div>
+
+                  <div className="relative">
+                    <span className="absolute left-3 top-2.5 text-xs font-black text-slate-400">
+                      نقطة
+                    </span>
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      required
+                      value={adjustInputValue}
+                      onChange={(e) => setAdjustInputValue(Math.max(1, Number(e.target.value) || 0))}
+                      className="w-full pl-12 pr-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#13192a] text-sm font-black focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    />
+                  </div>
+
+                  {/* Quick Presets */}
+                  <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                    <span className="text-[10px] font-bold text-slate-500 ml-1">قيم سريعة:</span>
+                    {[10, 25, 50, 100, 250, 500].map((preset) => (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() => setAdjustInputValue(preset)}
+                        className={`text-[11px] font-bold px-2.5 py-1 rounded-lg border transition-all ${
+                          adjustInputValue === preset
+                            ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 border-transparent'
+                            : 'bg-slate-100 dark:bg-[#13192a] text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:border-slate-300'
+                        }`}
+                      >
+                        {adjustMode === 'add' ? `+${preset}` : `-${preset}`}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="p-3 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40 rounded-xl text-xs space-y-1">
+                  <p className="font-bold text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
+                    <AlertCircle className="w-4 h-4 shrink-0 text-amber-500" />
+                    <span>تأكيد تصفير الرصيد بالكامل</span>
+                  </p>
+                  <p className="text-slate-600 dark:text-slate-400 text-[11px]">
+                    سيتم خصم كامل نقاط الطالب ({selectedStudent.totalPoints || 0} نقطة) ليعود رصيده إلى 0 نقطة تماماً.
+                  </p>
+                </div>
+              )}
+
+              {/* Real-time Calculation Preview Card */}
+              <div className="p-3 bg-slate-50 dark:bg-[#13192a] rounded-2xl border border-slate-200 dark:border-slate-800 flex items-center justify-between text-xs">
+                <div>
+                  <span className="block text-[10px] text-slate-500 font-bold">الرصيد الحالي</span>
+                  <span className="font-bold text-slate-700 dark:text-slate-300">{selectedStudent.totalPoints || 0}</span>
+                </div>
+                <div className="text-center font-black">
+                  <span className="block text-[10px] text-slate-500">التغيير</span>
+                  <span className={getEffectiveDelta() > 0 ? 'text-emerald-500' : getEffectiveDelta() < 0 ? 'text-rose-500' : 'text-slate-400'}>
+                    {getEffectiveDelta() > 0 ? `+${getEffectiveDelta()}` : getEffectiveDelta()}
+                  </span>
+                </div>
+                <div className="text-left font-black">
+                  <span className="block text-[10px] text-slate-500 font-bold">الرصيد المتوقع</span>
+                  <span className="text-sm font-black text-slate-900 dark:text-white">
+                    {Math.max(0, (selectedStudent.totalPoints || 0) + getEffectiveDelta())} نقطة
+                  </span>
+                </div>
+              </div>
+
+              {/* Reason textarea */}
               <div>
                 <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block mb-1">
-                  سبب التعديل (إلزامي للرقابة والتدقيق) *
+                  سبب التعديل (إلزامي للرقابة والتدقيق الإداري) *
                 </label>
                 <textarea
                   rows={2}
                   required
                   value={adjustReason}
                   onChange={(e) => setAdjustReason(e.target.value)}
-                  placeholder="مثال: مكافأة التميز في مسابقة الفيزياء الشهرية..."
-                  className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#13192a] text-xs"
+                  placeholder={
+                    adjustMode === 'add'
+                      ? 'مثال: مكافأة التفوق في امتحان الفيزياء الشهرية...'
+                      : adjustMode === 'deduct'
+                      ? 'مثال: تصحيح خطأ في احتساب محاولة مكررة...'
+                      : 'مثال: إعادة تعيين الرصيد مع انطلاق الفصل الدراسي الجديد...'
+                  }
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#13192a] text-xs focus:outline-none focus:ring-2 focus:ring-amber-500"
                 />
               </div>
 
-              <div className="flex justify-end gap-2 pt-2">
+              {/* Action Buttons */}
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800/80">
                 <button
                   type="button"
-                  onClick={() => setIsAdjustPointsOpen(false)}
-                  className="px-3 py-1.5 text-xs font-bold text-slate-500"
+                  onClick={() => {
+                    setIsAdjustPointsOpen(false);
+                    setAdjustError(null);
+                  }}
+                  className="px-4 py-2 text-xs font-bold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
                 >
                   إلغاء
                 </button>
                 <button
                   type="submit"
                   disabled={isAdjusting}
-                  className="px-4 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold"
+                  className={`px-5 py-2 rounded-xl text-white text-xs font-black shadow-lg transition-all flex items-center gap-1.5 ${
+                    adjustMode === 'add'
+                      ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-500/20'
+                      : adjustMode === 'deduct'
+                      ? 'bg-rose-600 hover:bg-rose-700 shadow-rose-500/20'
+                      : 'bg-amber-600 hover:bg-amber-700 shadow-amber-500/20'
+                  }`}
                 >
-                  {isAdjusting ? 'جارٍ الحفظ...' : 'تأكيد التعديل'}
+                  {isAdjusting ? (
+                    'جارٍ الحفظ...'
+                  ) : (
+                    <>
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      <span>
+                        {adjustMode === 'add'
+                          ? 'تأكيد إضافة النقاط'
+                          : adjustMode === 'deduct'
+                          ? 'تأكيد خصم النقاط'
+                          : 'تأكيد تصفير الرصيد'}
+                      </span>
+                    </>
+                  )}
                 </button>
               </div>
             </form>

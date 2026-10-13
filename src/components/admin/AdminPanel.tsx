@@ -9,6 +9,7 @@ import { AdminAnnouncementsView } from './AdminAnnouncementsView';
 import { AdminChallengesView } from './AdminChallengesView';
 import { AdminAnalyticsView } from './AdminAnalyticsView';
 import { AdminAiBuilderView } from './AdminAiBuilderView';
+import { AdminExamImportView } from './AdminExamImportView';
 import { AdminAuditLogsView } from './AdminAuditLogsView';
 import { AdminSettingsView } from './AdminSettingsView';
 import { AdminProfileView } from './AdminProfileView';
@@ -36,6 +37,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onExitAdmin }) => {
       {currentTab === 'exams' && (
         <AdminExamsView
           onOpenAiBuilder={() => setCurrentTab('ai-builder')}
+          onOpenAiImporter={() => setCurrentTab('ai-import')}
+        />
+      )}
+
+      {currentTab === 'ai-import' && (
+        <AdminExamImportView
+          onBackToExams={() => setCurrentTab('exams')}
+          onExamCreated={() => setCurrentTab('exams')}
         />
       )}
 

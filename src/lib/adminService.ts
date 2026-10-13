@@ -307,13 +307,17 @@ export async function saveExamWithValidation(
     });
   }
 
-  // 3. Record audit log
-  await recordAdminAuditLog({
-    action: isNew ? 'create_exam' : (examData.published ? 'publish_exam' : 'edit_exam'),
-    targetType: 'exam',
-    targetId: examId,
-    details: `${isNew ? 'إنشاء' : 'تحديث'} امتحان: "${examData.title}" (${questions.length} أسئلة - ${examData.published ? 'منشور' : 'مسودة'})`,
-  });
+  // 3. Record audit log (best-effort, does not block exam creation)
+  try {
+    await recordAdminAuditLog({
+      action: isNew ? 'create_exam' : (examData.published ? 'publish_exam' : 'edit_exam'),
+      targetType: 'exam',
+      targetId: examId,
+      details: `${isNew ? 'إنشاء' : 'تحديث'} امتحان: "${examData.title}" (${questions.length} أسئلة - ${examData.published ? 'منشور' : 'مسودة'})`,
+    });
+  } catch (err: any) {
+    console.warn('[Admin Service] Notice writing exam audit log:', err?.message);
+  }
 
   return examId;
 }
@@ -633,12 +637,16 @@ export async function toggleStudentDisabledState(
     updatedAt: now,
   });
 
-  await recordAdminAuditLog({
-    action: disabled ? 'disable_student' : 'enable_student',
-    targetType: 'student',
-    targetId: studentUid,
-    details: `${disabled ? 'تعطيل' : 'إعادة تفعيل'} حساب الطالب "${studentName}" - السبب: ${reason}`,
-  });
+  try {
+    await recordAdminAuditLog({
+      action: disabled ? 'disable_student' : 'enable_student',
+      targetType: 'student',
+      targetId: studentUid,
+      details: `${disabled ? 'تعطيل' : 'إعادة تفعيل'} حساب الطالب "${studentName}" - السبب: ${reason}`,
+    });
+  } catch (err: any) {
+    console.warn('[Admin Service] Notice writing student disabled audit log:', err?.message);
+  }
 }
 
 export async function adjustStudentPointsWithReason(params: {
@@ -673,7 +681,7 @@ export async function adjustStudentPointsWithReason(params: {
     });
   });
 
-  // Record pointAdjustment document
+  // Record pointAdjustment document (best-effort, does not block main point update if rule restricts sub-collection)
   const adjId = `adj_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
   const now = new Date().toISOString();
   const adjRecord: PointAdjustmentRecord = {
@@ -689,14 +697,22 @@ export async function adjustStudentPointsWithReason(params: {
     createdAt: now,
   };
 
-  await setDoc(doc(db, 'pointAdjustments', adjId), adjRecord);
+  try {
+    await setDoc(doc(db, 'pointAdjustments', adjId), adjRecord);
+  } catch (err: any) {
+    console.warn('[Admin Service] Notice writing pointAdjustment record:', err?.message);
+  }
 
-  await recordAdminAuditLog({
-    action: 'point_adjustment',
-    targetType: 'student',
-    targetId: params.studentId,
-    details: `تعديل نقاط الطالب "${params.studentName}": (${params.amount > 0 ? '+' : ''}${params.amount} نقطة) - الرصيد السابق: ${prev} -> الرصيد الجديد: ${next} - السبب: ${params.reason}`,
-  });
+  try {
+    await recordAdminAuditLog({
+      action: 'point_adjustment',
+      targetType: 'student',
+      targetId: params.studentId,
+      details: `تعديل نقاط الطالب "${params.studentName}": (${params.amount > 0 ? '+' : ''}${params.amount} نقطة) - الرصيد السابق: ${prev} -> الرصيد الجديد: ${next} - السبب: ${params.reason}`,
+    });
+  } catch (err: any) {
+    console.warn('[Admin Service] Notice writing audit log:', err?.message);
+  }
 
   return { previousBalance: prev, newBalance: next };
 }

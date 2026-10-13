@@ -48,6 +48,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
   const navItems: Array<{ id: AdminTab; label: string; icon: React.FC<{ className?: string }> }> = [
     { id: 'dashboard', label: 'لوحة القيادة', icon: LayoutDashboard },
     { id: 'exams', label: 'إدارة الامتحانات', icon: BookOpen },
+    { id: 'ai-import', label: 'استيراد بالذكاء الاصطناعي', icon: Sparkles },
     { id: 'questions', label: 'بنك الأسئلة', icon: FileQuestion },
     { id: 'students', label: 'إدارة الطلاب', icon: Users },
     { id: 'leaderboard', label: 'المتصدرين والنقاط', icon: Trophy },
@@ -152,30 +153,41 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
         </div>
       </aside>
 
-      {/* Mobile Top Header */}
-      <header className="md:hidden flex items-center justify-between px-4 py-3 bg-white dark:bg-[#0c101c] border-b border-slate-200 dark:border-slate-800 sticky top-0 z-40">
-        <div className="flex items-center gap-2">
+      {/* Mobile Top Header - Clean, modern, responsive with no overlapping icons */}
+      <header className="md:hidden flex items-center justify-between px-3.5 py-2.5 bg-white/95 dark:bg-[#0c101c]/95 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 sticky top-0 z-40">
+        <div className="flex items-center gap-2 min-w-0">
           <button
             onClick={() => setIsMobileMenuOpen(true)}
-            className="p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all cursor-pointer"
+            aria-label="القائمة الجانبية"
+            className="p-2 rounded-xl text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors shrink-0 cursor-pointer active:scale-95"
+            title="القائمة الرئيسية"
           >
             <Menu className="w-5 h-5" />
           </button>
-          <Logo size="sm" showTagline={false} />
+          <div className="flex items-center gap-1.5 truncate">
+            <Logo size="sm" showTagline={false} />
+            <span className="text-[11px] font-black px-1.5 py-0.5 rounded-md bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20 shrink-0">
+              الإدارة
+            </span>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
+
+        <div className="flex items-center gap-1.5 shrink-0">
+          <button
+            onClick={toggleTheme}
+            aria-label="تبديل المظهر"
+            className="p-2 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+            title="تبديل الوضع الليلي / الفاتح"
+          >
+            {theme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-blue-600" />}
+          </button>
           <button
             onClick={onExitAdmin}
-            className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-900/50 flex items-center gap-1.5"
+            aria-label="العودة لمنصة الطلاب"
+            className="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-900/60 flex items-center gap-1 hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-all cursor-pointer active:scale-95"
           >
             <span>خروج</span>
             <ArrowRight className="w-3.5 h-3.5" />
-          </button>
-          <button
-            onClick={toggleTheme}
-            className="p-2 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
-          >
-            {theme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-blue-600" />}
           </button>
         </div>
       </header>

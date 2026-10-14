@@ -4,6 +4,11 @@ import { ThemeProvider } from './context/ThemeContext';
 import { AdminProvider, useAdmin } from './context/AdminContext';
 import { WelcomeAuth } from './components/WelcomeAuth';
 import { OnboardingModal } from './components/OnboardingModal';
+import { MandatoryBranchModal } from './components/MandatoryBranchModal';
+import { AnnouncementTicker } from './components/AnnouncementTicker';
+import { NotificationsDrawer } from './components/NotificationsDrawer';
+import { PublicProfileModal } from './components/PublicProfileModal';
+import { ChatModal } from './components/ChatModal';
 import { Header } from './components/Header';
 import { BottomNavigation } from './components/Navigation';
 import { HomeDashboard } from './components/HomeDashboard';
@@ -17,7 +22,8 @@ import { Logo } from './components/Logo';
 import { Loader2, AlertTriangle, RefreshCw, ShieldAlert } from 'lucide-react';
 import { seedFirstExamIfMissing } from './lib/examService';
 import { markTutorialAsSeen } from './lib/firebase';
-import type { NavigationTab, ExamAttempt } from './types';
+import { subscribeToNotifications } from './lib/notificationService';
+import type { NavigationTab, ExamAttempt, AppNotification } from './types';
 
 function MainAppShell() {
   const { status, error, profile, refreshProfile, signOut } = useAuth();
@@ -29,9 +35,35 @@ function MainAppShell() {
     return window.location.hash === '#admin' || window.location.search.includes('admin=true');
   });
 
+  // Notifications state
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [unreadNotifsCount, setUnreadNotifsCount] = useState(0);
+
+  // Social & Chat Modals state
+  const [inspectedUserId, setInspectedUserId] = useState<string | null>(null);
+  const [activeChatUser, setActiveChatUser] = useState<{
+    uid: string;
+    displayName: string;
+    username: string;
+    photoURL?: string;
+    branch?: string;
+  } | null>(null);
+
   // Cross-tab exam viewing state
   const [examInitialAttempt, setExamInitialAttempt] = useState<ExamAttempt | null>(null);
   const [examInitialViewMode, setExamInitialViewMode] = useState<'list' | 'results' | 'review'>('list');
+
+  // Realtime notifications listener
+  useEffect(() => {
+    if (status === 'authenticated' && profile?.uid) {
+      const unsubscribe = subscribeToNotifications(profile.uid, (list, unread) => {
+        setNotifications(list);
+        setUnreadNotifsCount(unread);
+      });
+      return () => unsubscribe();
+    }
+  }, [status, profile?.uid]);
 
   // Automatic tutorial launch for students who have not seen it yet
   useEffect(() => {
@@ -215,7 +247,17 @@ function MainAppShell() {
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenTutorial={() => setIsTutorialOpen(true)}
         onOpenAdmin={handleOpenAdmin}
+        onOpenNotifications={() => setIsNotificationsOpen(true)}
+        unreadNotificationsCount={unreadNotifsCount}
       />
+
+      {/* Ticker Announcements bar immediately below Header (C2) */}
+      <AnnouncementTicker />
+
+      {/* Mandatory Academic Branch Modal for existing students missing a branch (C1) */}
+      {profile && (!profile.branch || profile.branch.trim() === '') && (
+        <MandatoryBranchModal />
+      )}
 
       {/* Main Tab View Content */}
       <main className="flex-1 w-full max-w-5xl mx-auto px-4 sm:px-6 pt-6 pb-24 md:pb-12">
@@ -235,12 +277,16 @@ function MainAppShell() {
             }}
           />
         )}
-        {currentTab === 'leaderboard' && <LeaderboardView />}
+        {currentTab === 'leaderboard' && (
+          <LeaderboardView onSelectUser={(uid) => setInspectedUserId(uid)} />
+        )}
         {currentTab === 'profile' && (
           <ProfileView 
             onOpenSettings={() => setIsSettingsOpen(true)} 
             onViewAttempt={handleViewAttemptFromProfile}
             onOpenAdmin={handleOpenAdmin}
+            onSelectUser={(uid) => setInspectedUserId(uid)}
+            onOpenChatWithUser={(target) => setActiveChatUser(target)}
           />
         )}
       </main>
@@ -263,8 +309,38 @@ function MainAppShell() {
           onClose={() => setIsSettingsOpen(false)} 
           onOpenTutorial={() => setIsTutorialOpen(true)}
           onOpenAdmin={handleOpenAdmin}
+          onSelectUser={(uid) => setInspectedUserId(uid)}
+          onOpenChatWithUser={(target) => setActiveChatUser(target)}
         />
       )}
+
+      {/* Notifications Drawer (C3) */}
+      <NotificationsDrawer
+        isOpen={isNotificationsOpen}
+        onClose={() => setIsNotificationsOpen(false)}
+        notifications={notifications}
+        onOpenChatWithUser={(uid, name) => {
+          setIsNotificationsOpen(false);
+          setActiveChatUser({ uid, displayName: name, username: name });
+        }}
+      />
+
+      {/* Public Profile Safe Modal (C4) */}
+      <PublicProfileModal
+        targetUserId={inspectedUserId}
+        onClose={() => setInspectedUserId(null)}
+        onOpenChat={(target) => {
+          setInspectedUserId(null);
+          setActiveChatUser(target);
+        }}
+      />
+
+      {/* Real-time 1:1 Chat Modal (C5) */}
+      <ChatModal
+        isOpen={!!activeChatUser}
+        onClose={() => setActiveChatUser(null)}
+        targetUser={activeChatUser}
+      />
 
       {/* Interactive Student Tutorial Modal */}
       <StudentTutorialModal 

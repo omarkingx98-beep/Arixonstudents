@@ -9,10 +9,14 @@ const PRIMARY_ADMIN_EMAILS = [
   'omarkingx98@gmail.com',
 ].filter(Boolean);
 
+export const config = {
+  maxDuration: 60,
+};
+
 let geminiClient: GoogleGenAI | null = null;
 function getGeminiClient(): GoogleGenAI {
   if (!geminiClient) {
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
     if (!apiKey) {
       throw new Error('GEMINI_API_KEY environment variable is missing.');
     }

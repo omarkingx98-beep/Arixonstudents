@@ -18,12 +18,21 @@ import {
   X,
   AlertCircle,
   CheckCircle2,
+  Bell,
+  MessageSquare,
+  Send,
+  Radio,
+  BookOpenCheck,
 } from 'lucide-react';
 import {
   fetchAllStudents,
   toggleStudentDisabledState,
   adjustStudentPointsWithReason,
+  adminChangeStudentBranch,
+  adminSendStudentNotification,
+  adminToggleChatDisabled,
 } from '../../lib/adminService';
+import { broadcastAdminNotification } from '../../lib/notificationService';
 import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
 import { db, auth } from '../../lib/firebase';
 import type { UserProfile, ExamAttempt } from '../../types';
@@ -56,6 +65,22 @@ export const AdminStudentsView: React.FC = () => {
   const [isDisableOpen, setIsDisableOpen] = useState(false);
   const [disableReason, setDisableReason] = useState<string>('');
   const [isTogglingDisable, setIsTogglingDisable] = useState(false);
+
+  // Direct Student Notification Modal State
+  const [isSendNotifOpen, setIsSendNotifOpen] = useState(false);
+  const [notifTitle, setNotifTitle] = useState('');
+  const [notifMessage, setNotifMessage] = useState('');
+  const [isSendingNotif, setIsSendingNotif] = useState(false);
+
+  // Broadcast Notification Modal State
+  const [isBroadcastOpen, setIsBroadcastOpen] = useState(false);
+  const [broadcastTitle, setBroadcastTitle] = useState('');
+  const [broadcastMessage, setBroadcastMessage] = useState('');
+  const [isBroadcasting, setIsBroadcasting] = useState(false);
+
+  // Branch & Chat Action States
+  const [isChangingBranch, setIsChangingBranch] = useState(false);
+  const [isTogglingChat, setIsTogglingChat] = useState(false);
 
   const loadStudents = async () => {
     setIsLoading(true);
@@ -201,6 +226,128 @@ export const AdminStudentsView: React.FC = () => {
     }
   };
 
+  const handleSwitchBranch = async (newBranch: 'علمي' | 'أدبي') => {
+    if (!selectedStudent) return;
+    if (selectedStudent.branch === newBranch) return;
+
+    if (!window.confirm(`هل أنت متأكد من تغيير فرع الطالب "${selectedStudent.displayName || selectedStudent.username}" إلى الفرع ال${newBranch}؟`)) {
+      return;
+    }
+
+    setIsChangingBranch(true);
+    try {
+      await adminChangeStudentBranch(
+        selectedStudent.uid,
+        selectedStudent.displayName || selectedStudent.username,
+        newBranch
+      );
+
+      setSelectedStudent({
+        ...selectedStudent,
+        branch: newBranch,
+      });
+
+      await loadStudents();
+      alert(`تم تغيير فرع الطالب بنجاح إلى: الفرع ال${newBranch}`);
+    } catch (err: any) {
+      alert(err.message || 'فشل تغيير فرع الطالب.');
+    } finally {
+      setIsChangingBranch(false);
+    }
+  };
+
+  const handleSendDirectNotification = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedStudent || !notifTitle.trim() || !notifMessage.trim()) {
+      alert('يرجى ملء عنوان ونص الإشعار.');
+      return;
+    }
+
+    setIsSendingNotif(true);
+    try {
+      await adminSendStudentNotification(
+        selectedStudent.uid,
+        notifTitle.trim(),
+        notifMessage.trim()
+      );
+      setIsSendNotifOpen(false);
+      setNotifTitle('');
+      setNotifMessage('');
+      alert(`تم إرسال الإشعار المباشر إلى "${selectedStudent.displayName || selectedStudent.username}" بنجاح!`);
+    } catch (err: any) {
+      alert(err.message || 'فشل إرسال الإشعار.');
+    } finally {
+      setIsSendingNotif(false);
+    }
+  };
+
+  const handleToggleChatDisabled = async () => {
+    if (!selectedStudent) return;
+    const currentDisabled = (selectedStudent as any).chatDisabled || false;
+    const willDisable = !currentDisabled;
+
+    if (!window.confirm(`هل أنت متأكد من ${willDisable ? 'إيقاف' : 'إعادة تفعيل'} ميزة الدردشة الخاصة لهذا الطالب؟`)) {
+      return;
+    }
+
+    setIsTogglingChat(true);
+    try {
+      await adminToggleChatDisabled(
+        selectedStudent.uid,
+        selectedStudent.displayName || selectedStudent.username,
+        willDisable
+      );
+
+      setSelectedStudent({
+        ...selectedStudent,
+        chatDisabled: willDisable,
+      } as any);
+
+      await loadStudents();
+      alert(`تم ${willDisable ? 'إيقاف' : 'إعادة تفعيل'} الدردشة للطالب بنجاح.`);
+    } catch (err: any) {
+      alert(err.message || 'فشل تغيير حالة الدردشة.');
+    } finally {
+      setIsTogglingChat(false);
+    }
+  };
+
+  const handleBroadcastSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!broadcastTitle.trim() || !broadcastMessage.trim()) {
+      alert('يرجى كتابة عنوان وتفاصيل الإشعار العام.');
+      return;
+    }
+
+    if (students.length === 0) {
+      alert('لا يوجد طلاب مسجلون لإرسال البث.');
+      return;
+    }
+
+    if (!window.confirm(`هل أنت متأكد من بث هذا الإشعار لجميع الطلاب (${students.length} طالب)؟`)) {
+      return;
+    }
+
+    setIsBroadcasting(true);
+    try {
+      const studentIds = students.map((s) => s.uid);
+      await broadcastAdminNotification({
+        title: broadcastTitle.trim(),
+        message: broadcastMessage.trim(),
+        studentIds,
+      });
+
+      setIsBroadcastOpen(false);
+      setBroadcastTitle('');
+      setBroadcastMessage('');
+      alert(`تم بث الإشعار بنجاح لجميع الطلبة (${students.length} طالب)!`);
+    } catch (err: any) {
+      alert(err.message || 'فشل بث الإشعار.');
+    } finally {
+      setIsBroadcasting(false);
+    }
+  };
+
   // Filter logic
   const filteredStudents = students.filter((s) => {
     if (selectedBranch !== 'all' && s.branch !== selectedBranch) return false;
@@ -236,8 +383,19 @@ export const AdminStudentsView: React.FC = () => {
           </p>
         </div>
 
-        <div className="text-xs font-bold px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-          إجمالي الطلاب: {students.length}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setIsBroadcastOpen(true)}
+            className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-sm shadow-blue-500/20 transition-all"
+            title="إرسال إشعار عام يصل لجميع الطلاب في التطبيق"
+          >
+            <Radio className="w-3.5 h-3.5" />
+            <span>بث إشعار لجميع الطلاب</span>
+          </button>
+
+          <div className="text-xs font-bold px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+            إجمالي الطلاب: {students.length}
+          </div>
         </div>
       </div>
 
@@ -454,9 +612,18 @@ export const AdminStudentsView: React.FC = () => {
                 </div>
 
                 <div className="p-3 rounded-2xl bg-slate-50 dark:bg-[#13192a] border border-slate-200/60 dark:border-slate-800/60">
-                  <div className="text-[10px] text-slate-400">الفرع</div>
-                  <div className="text-xs font-bold text-slate-800 dark:text-slate-200 mt-0.5">
-                    {selectedStudent.branch || 'علمي'}
+                  <div className="text-[10px] text-slate-400">الفرع الأكاديمي</div>
+                  <div className="text-xs font-bold text-slate-800 dark:text-slate-200 mt-0.5 flex items-center justify-between">
+                    <span>{selectedStudent.branch || 'علمي'}</span>
+                    <button
+                      type="button"
+                      disabled={isChangingBranch}
+                      onClick={() => handleSwitchBranch(selectedStudent.branch === 'أدبي' ? 'علمي' : 'أدبي')}
+                      className="text-[10px] font-bold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer disabled:opacity-50"
+                      title="تغيير الفرع الدراسي للطالب"
+                    >
+                      {isChangingBranch ? '...' : `تحويل لـ ${selectedStudent.branch === 'أدبي' ? 'علمي' : 'أدبي'}`}
+                    </button>
                   </div>
                 </div>
               </div>
@@ -466,18 +633,47 @@ export const AdminStudentsView: React.FC = () => {
                 <span className="text-xs font-bold text-blue-900 dark:text-blue-300">
                   إجراءات المشرف على حساب الطالب:
                 </span>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <button
                     onClick={() => setIsAdjustPointsOpen(true)}
-                    className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                    className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs"
                   >
                     <Trophy className="w-3.5 h-3.5" />
                     <span>تعديل النقاط يدويًا</span>
                   </button>
 
                   <button
+                    onClick={() => {
+                      setNotifTitle('');
+                      setNotifMessage('');
+                      setIsSendNotifOpen(true);
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs"
+                    title="إرسال إشعار / رسالة خاصة تظهر للطالب في حسابه"
+                  >
+                    <Bell className="w-3.5 h-3.5" />
+                    <span>إرسال إشعار</span>
+                  </button>
+
+                  <button
+                    onClick={handleToggleChatDisabled}
+                    disabled={isTogglingChat}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs ${
+                      (selectedStudent as any).chatDisabled
+                        ? 'bg-indigo-600 hover:bg-indigo-700 text-white'
+                        : 'bg-slate-700 hover:bg-slate-800 text-white'
+                    }`}
+                    title="التحكم بصلاحية إرسال الرسائل الخاصة للطلبة الآخرين"
+                  >
+                    <MessageSquare className="w-3.5 h-3.5" />
+                    <span>
+                      {(selectedStudent as any).chatDisabled ? 'تفعيل الدردشة' : 'إيقاف الدردشة'}
+                    </span>
+                  </button>
+
+                  <button
                     onClick={() => setIsDisableOpen(true)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer ${
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer shadow-xs ${
                       (selectedStudent as any).accountDisabled
                         ? 'bg-emerald-600 text-white hover:bg-emerald-700'
                         : 'bg-red-600 text-white hover:bg-red-700'
@@ -812,6 +1008,154 @@ export const AdminStudentsView: React.FC = () => {
                 {isTogglingDisable ? 'جارٍ التنفيذ...' : 'تأكيد الإجراء'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Direct Student Notification Dialog */}
+      {isSendNotifOpen && selectedStudent && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white dark:bg-[#0c101c] w-full max-w-md rounded-3xl border border-slate-200 dark:border-slate-800 p-6 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-2">
+                <Bell className="w-5 h-5 text-blue-600" />
+                <h3 className="text-base font-black text-slate-900 dark:text-white">
+                  إرسال إشعار مباشر للطالب
+                </h3>
+              </div>
+              <button
+                onClick={() => setIsSendNotifOpen(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              سيصل هذا الإشعار فوراً إلى جرس التنبيهات الخاص بالطالب ({selectedStudent.displayName || selectedStudent.username}).
+            </p>
+
+            <form onSubmit={handleSendDirectNotification} className="space-y-3">
+              <div>
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                  عنوان الإشعار *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={notifTitle}
+                  onChange={(e) => setNotifTitle(e.target.value)}
+                  placeholder="مثال: تنبيه بخصوص موعد الامتحان التجريبي"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#13192a] text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                  نص الرسالة / الإشعار *
+                </label>
+                <textarea
+                  rows={3}
+                  required
+                  value={notifMessage}
+                  onChange={(e) => setNotifMessage(e.target.value)}
+                  placeholder="اكتب تفاصيل الرسالة الموجهة للطالب..."
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#13192a] text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsSendNotifOpen(false)}
+                  className="px-3 py-2 text-xs font-bold text-slate-500 hover:text-slate-700"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSendingNotif}
+                  className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>{isSendingNotif ? 'جارٍ الإرسال...' : 'إرسال الإشعار'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Broadcast Notification Dialog */}
+      {isBroadcastOpen && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white dark:bg-[#0c101c] w-full max-w-lg rounded-3xl border border-slate-200 dark:border-slate-800 p-6 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-2">
+                <Radio className="w-5 h-5 text-blue-600 animate-pulse" />
+                <h3 className="text-base font-black text-slate-900 dark:text-white">
+                  بث إشعار عام لجميع الطلاب
+                </h3>
+              </div>
+              <button
+                onClick={() => setIsBroadcastOpen(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-3 rounded-2xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-900 text-blue-700 dark:text-blue-300 text-xs">
+              سيتم إرسال هذا الإشعار تلقائياً إلى صناديق إشعارات جميع الطلاب المسجلين ({students.length} طالب) مع تنبيه جرس أحمر فورياً.
+            </div>
+
+            <form onSubmit={handleBroadcastSubmit} className="space-y-3">
+              <div>
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                  عنوان الإشعار العام *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={broadcastTitle}
+                  onChange={(e) => setBroadcastTitle(e.target.value)}
+                  placeholder="مثال: إطلاق بنك امتحانات توجيهي 2009 الجديد"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#13192a] text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                  نص الإشعار والتفاصيل *
+                </label>
+                <textarea
+                  rows={3}
+                  required
+                  value={broadcastMessage}
+                  onChange={(e) => setBroadcastMessage(e.target.value)}
+                  placeholder="اكتب نص الإشعار بالتفصيل..."
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#13192a] text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsBroadcastOpen(false)}
+                  className="px-3 py-2 text-xs font-bold text-slate-500 hover:text-slate-700"
+                >
+                  إلغاء
+                </button>
+                <button
+                  type="submit"
+                  disabled={isBroadcasting}
+                  className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                  <span>{isBroadcasting ? 'جارٍ البث للجميع...' : 'تأكيد البث للجميع'}</span>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

@@ -22,24 +22,34 @@ import {
   Sparkles,
   ChevronLeft,
   ShieldCheck,
+  Users,
+  MessageSquare,
 } from 'lucide-react';
+import { getFriendsList } from '../lib/friendService';
+import type { FriendItem } from '../types';
 
 interface ProfileViewProps {
   onOpenSettings: () => void;
   onViewAttempt?: (attempt: ExamAttempt) => void;
   onOpenAdmin?: () => void;
+  onOpenChatWithUser?: (user: { uid: string; displayName: string; username: string; photoURL?: string; branch?: string }) => void;
+  onSelectUser?: (userId: string) => void;
 }
 
 export const ProfileView: React.FC<ProfileViewProps> = ({ 
   onOpenSettings,
   onViewAttempt,
   onOpenAdmin,
+  onOpenChatWithUser,
+  onSelectUser,
 }) => {
   const { profile } = useAuth();
   const { isAdmin, isSuperAdmin } = useAdmin();
   const [isEditing, setIsEditing] = useState(false);
   const [examHistory, setExamHistory] = useState<ExamAttempt[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(true);
+  const [friends, setFriends] = useState<FriendItem[]>([]);
+  const [isLoadingFriends, setIsLoadingFriends] = useState(false);
 
   const totalPoints = profile?.totalPoints ?? 0;
   const examsCompleted = profile?.examsCompleted ?? 0;
@@ -70,6 +80,27 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       }
     }
     loadHistory();
+    return () => {
+      isMounted = false;
+    };
+  }, [profile?.uid]);
+
+  // Load friends list from Firestore
+  useEffect(() => {
+    let isMounted = true;
+    async function loadFriends() {
+      if (!profile?.uid) return;
+      setIsLoadingFriends(true);
+      try {
+        const list = await getFriendsList(profile.uid);
+        if (isMounted) setFriends(list);
+      } catch (err) {
+        console.warn('Error loading friends list:', err);
+      } finally {
+        if (isMounted) setIsLoadingFriends(false);
+      }
+    }
+    loadFriends();
     return () => {
       isMounted = false;
     };
@@ -115,8 +146,13 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                 <p className="text-sm font-mono text-blue-600 dark:text-blue-400 font-semibold mt-0.5" dir="ltr">
                   @{profile?.username}
                 </p>
-                <div className="inline-flex items-center gap-1.5 mt-2 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300">
-                  <span>طالب توجيهي 2009 موثّق</span>
+                <div className="flex items-center gap-1.5 mt-2 flex-wrap justify-center sm:justify-start">
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300">
+                    طالب توجيهي 2009 موثّق
+                  </span>
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                    {profile?.branch ? `فرع ${profile.branch}` : 'الفرع العلمي'}
+                  </span>
                 </div>
               </div>
 
@@ -306,6 +342,91 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
             <p className="text-xs text-slate-400">
               ابدأ الآن بأول امتحان تنافسي في الفيزياء لقياس فهمك لمفهومي الزخم الخطي والدفع وتجميع أولى نقاطك!
             </p>
+          </div>
+        )}
+      </div>
+
+      {/* Friends List Section (C5) */}
+      <div 
+        id="my-friends-section"
+        className="rounded-3xl border border-slate-200/90 dark:border-slate-800/90 bg-white dark:bg-[#111625] p-6 shadow-xs space-y-4"
+      >
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Users className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+            <h2 className="text-base font-bold text-slate-900 dark:text-white">
+              قائمة أصدقائي ({friends.length})
+            </h2>
+          </div>
+          <span className="text-xs text-slate-400">
+            أصدقاؤك على أريكسون
+          </span>
+        </div>
+
+        {isLoadingFriends && (
+          <div className="p-6 text-center text-xs text-slate-400">
+            جاري تحميل قائمة الأصدقاء...
+          </div>
+        )}
+
+        {!isLoadingFriends && friends.length === 0 && (
+          <div className="p-6 text-center rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 text-slate-500 dark:text-slate-400 text-xs space-y-1.5">
+            <Users className="w-7 h-7 mx-auto text-slate-300 dark:text-slate-600" />
+            <p className="font-semibold text-slate-700 dark:text-slate-300">
+              ليس لديك أصدقاء مضافون بعد
+            </p>
+            <p className="text-[11px] text-slate-400">
+              يمكنك إضافة أصدقاء من خلال الضغط على أي طالب في جدول الترتيب وإرسال طلب صداقة!
+            </p>
+          </div>
+        )}
+
+        {!isLoadingFriends && friends.length > 0 && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {friends.map((friend) => (
+              <div 
+                key={friend.uid}
+                className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-800 flex items-center justify-between gap-3 hover:border-blue-300 dark:hover:border-blue-700 transition-all"
+              >
+                <div 
+                  className="flex items-center gap-2.5 min-w-0 cursor-pointer"
+                  onClick={() => onSelectUser && onSelectUser(friend.uid)}
+                  title="عرض الملف العام"
+                >
+                  <img 
+                    src={friend.photoURL || 'https://api.dicebear.com/7.x/bottts-neutral/svg?seed=Arixon1'} 
+                    alt={friend.displayName}
+                    className="w-10 h-10 rounded-xl object-cover border border-slate-200 dark:border-slate-700"
+                  />
+                  <div className="min-w-0">
+                    <div className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white truncate">
+                      {friend.displayName}
+                    </div>
+                    <div className="text-[10px] text-blue-600 dark:text-blue-400 font-mono" dir="ltr">
+                      @{friend.username}
+                    </div>
+                    {friend.branch && (
+                      <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 inline-block mt-0.5">
+                        {friend.branch}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {onOpenChatWithUser && (
+                    <button
+                      onClick={() => onOpenChatWithUser(friend)}
+                      className="p-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1 cursor-pointer"
+                      title="مراسلة خاصة 1:1"
+                    >
+                      <MessageSquare className="w-3.5 h-3.5" />
+                      <span className="hidden xs:inline text-[11px]">مراسلة</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>

@@ -150,7 +150,7 @@ RAW EXAM TEXT TO PARSE:
 ${rawText}
 \"\"\"`;
 
-  const candidateModels = ['gemini-3.8-flash', 'gemini-3.1-flash-lite'];
+  const candidateModels = ['gemini-3.8-flash', 'gemini-3.1-flash-lite', 'gemini-2.5-flash'];
   let rawJsonText = '';
   let lastError: any = null;
 

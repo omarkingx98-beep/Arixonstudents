@@ -23,6 +23,8 @@ export interface UserProfile {
   accountDisabled?: boolean;
   disabledReason?: string | null;
   disabledAt?: string | null;
+  chatDisabled?: boolean;
+  showAgeInPublicProfile?: boolean;
   createdAt: string;
   updatedAt: string;
   lastActiveAt: string;
@@ -482,3 +484,101 @@ export type IngestedSourceMaterial = SourceIngestionReport;
 
 
 
+
+
+// ==========================================
+// Phase 4: Social, Notifications & Realtime Chat
+// ==========================================
+
+export type NotificationType = 
+  | 'chat_message' 
+  | 'friend_request' 
+  | 'friend_accept' 
+  | 'admin_announcement' 
+  | 'admin_direct_message';
+
+export interface AppNotification {
+  id: string;
+  recipientId: string;
+  senderId?: string;
+  senderName?: string;
+  senderPhoto?: string;
+  type: NotificationType;
+  title: string;
+  message: string;
+  link?: string;
+  read: boolean;
+  createdAt: string;
+  metadata?: Record<string, any>;
+}
+
+export type FriendRequestStatus = 'pending' | 'accepted' | 'rejected';
+
+export interface FriendRequest {
+  id: string;
+  senderId: string;
+  senderName: string;
+  senderUsername: string;
+  senderPhoto?: string;
+  senderBranch?: string;
+  receiverId: string;
+  receiverName: string;
+  status: FriendRequestStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FriendItem {
+  uid: string;
+  displayName: string;
+  username: string;
+  photoURL?: string;
+  branch?: string;
+  totalPoints: number;
+  friendSince: string;
+}
+
+export interface ChatConversation {
+  id: string; // chat_{minUid}_{maxUid}
+  participants: string[];
+  participantDetails: Record<string, {
+    displayName: string;
+    username: string;
+    photoURL?: string;
+    branch?: string;
+  }>;
+  lastMessage: string;
+  lastMessageAt: string;
+  lastSenderId: string;
+  unreadCount?: Record<string, number>;
+  reported?: boolean;
+  reportReason?: string;
+  reportedBy?: string;
+  blockedBy?: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  chatId: string;
+  senderId: string;
+  senderName: string;
+  senderPhoto?: string;
+  text: string;
+  createdAt: string;
+  read: boolean;
+}
+
+export interface PublicUserProfile {
+  uid: string;
+  displayName: string;
+  username: string;
+  photoURL?: string;
+  branch?: string;
+  totalPoints: number;
+  rank?: number;
+  age?: number;
+  createdAt: string;
+  examsCompleted?: number;
+}

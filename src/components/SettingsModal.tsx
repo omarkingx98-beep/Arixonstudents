@@ -17,27 +17,50 @@ import {
   Loader2,
   Shield,
   CheckSquare,
+  Users,
+  MessageSquare,
 } from 'lucide-react';
 import { DailyGoals } from './DailyGoals';
+import { getFriendsList } from '../lib/friendService';
+import type { FriendItem } from '../types';
 
 interface SettingsModalProps {
   onClose: () => void;
   onOpenTutorial?: () => void;
   onOpenAdmin?: () => void;
+  onOpenChatWithUser?: (user: { uid: string; displayName: string; username: string; photoURL?: string; branch?: string }) => void;
+  onSelectUser?: (userId: string) => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({ 
   onClose, 
   onOpenTutorial,
-  onOpenAdmin 
+  onOpenAdmin,
+  onOpenChatWithUser,
+  onSelectUser,
 }) => {
-  const { signOut } = useAuth();
+  const { profile, signOut } = useAuth();
   const { theme, setTheme } = useTheme();
   const { isAdmin } = useAdmin();
 
-  const [activeSubView, setActiveSubView] = useState<'main' | 'privacy' | 'about' | 'goals'>('main');
+  const [activeSubView, setActiveSubView] = useState<'main' | 'privacy' | 'about' | 'goals' | 'friends'>('main');
   const [selectedLanguage, setSelectedLanguage] = useState<'ar' | 'en'>('ar');
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [friends, setFriends] = useState<FriendItem[]>([]);
+  const [isLoadingFriends, setIsLoadingFriends] = useState(false);
+
+  const loadFriends = async () => {
+    if (!profile?.uid) return;
+    setIsLoadingFriends(true);
+    try {
+      const list = await getFriendsList(profile.uid);
+      setFriends(list);
+    } catch (err) {
+      console.warn('Error loading friends in settings:', err);
+    } finally {
+      setIsLoadingFriends(false);
+    }
+  };
 
   const handleLogout = async () => {
     try {
@@ -72,6 +95,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               {activeSubView === 'privacy' && 'سياسة الخصوصية'}
               {activeSubView === 'about' && 'حول منصة Arixon'}
               {activeSubView === 'goals' && 'المهام والتذكيرات الدراسية'}
+              {activeSubView === 'friends' && 'قائمة أصدقائي'}
             </h3>
           </div>
 
@@ -178,6 +202,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <ChevronLeft className="w-4 h-4" />
                 </button>
               )}
+
+              <button
+                id="open-friends-btn"
+                onClick={() => {
+                  loadFriends();
+                  setActiveSubView('friends');
+                }}
+                className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors text-sm font-semibold cursor-pointer"
+              >
+                <div className="flex items-center gap-2.5 text-slate-700 dark:text-slate-300">
+                  <Users className="w-4 h-4 text-emerald-500" />
+                  <span>قائمة أصدقائي على أريكسون</span>
+                </div>
+                <ChevronLeft className="w-4 h-4 text-slate-400" />
+              </button>
 
               <button
                 id="open-daily-goals-btn"
@@ -345,6 +384,98 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         {activeSubView === 'goals' && (
           <div className="space-y-4">
             <DailyGoals onNavigateToExams={onClose} />
+            <button
+              onClick={() => setActiveSubView('main')}
+              className="w-full py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-xs hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+            >
+              العودة للإعدادات
+            </button>
+          </div>
+        )}
+
+        {/* SUB-VIEW: Friends List */}
+        {activeSubView === 'friends' && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-500 dark:text-slate-400">
+                إجمالي الأصدقاء: {friends.length}
+              </span>
+              <button
+                onClick={loadFriends}
+                className="text-xs text-blue-600 dark:text-blue-400 hover:underline font-semibold cursor-pointer"
+              >
+                تحديث
+              </button>
+            </div>
+
+            {isLoadingFriends && (
+              <div className="p-8 text-center text-xs text-slate-400">
+                جاري تحميل قائمة الأصدقاء...
+              </div>
+            )}
+
+            {!isLoadingFriends && friends.length === 0 && (
+              <div className="p-8 text-center rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 text-slate-500 dark:text-slate-400 text-xs space-y-2">
+                <Users className="w-8 h-8 mx-auto text-slate-300 dark:text-slate-600" />
+                <p className="font-semibold text-slate-700 dark:text-slate-300">
+                  لا يوجد أصدقاء في قائمتك حالياً
+                </p>
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  تواصل مع زملائك من خلال الضغط على أسمائهم في جدول الترتيب وإرسال طلبات صداقة لبدء المحادثات التنافسية.
+                </p>
+              </div>
+            )}
+
+            {!isLoadingFriends && friends.length > 0 && (
+              <div className="space-y-2 max-h-[50vh] overflow-y-auto pr-1">
+                {friends.map((friend) => (
+                  <div
+                    key={friend.uid}
+                    className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200/60 dark:border-slate-800 flex items-center justify-between gap-3"
+                  >
+                    <div 
+                      className="flex items-center gap-2.5 min-w-0 cursor-pointer"
+                      onClick={() => {
+                        onClose();
+                        if (onSelectUser) onSelectUser(friend.uid);
+                      }}
+                      title="عرض الملف العام"
+                    >
+                      <img
+                        src={friend.photoURL || 'https://api.dicebear.com/7.x/bottts-neutral/svg?seed=Arixon1'}
+                        alt={friend.displayName}
+                        className="w-9 h-9 rounded-xl object-cover border border-slate-200 dark:border-slate-700"
+                      />
+                      <div className="min-w-0">
+                        <div className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white truncate">
+                          {friend.displayName}
+                        </div>
+                        <div className="text-[10px] text-blue-600 dark:text-blue-400 font-mono" dir="ltr">
+                          @{friend.username}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {onOpenChatWithUser && (
+                        <button
+                          onClick={() => {
+                            onClose();
+                            onOpenChatWithUser(friend);
+                          }}
+                          className="px-2.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold transition-all shadow-xs flex items-center gap-1 cursor-pointer"
+                          title="مراسلة خاصة"
+                        >
+                          <MessageSquare className="w-3.5 h-3.5" />
+                          <span>مراسلة</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
             <button
               onClick={() => setActiveSubView('main')}
               className="w-full py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-xs hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer"

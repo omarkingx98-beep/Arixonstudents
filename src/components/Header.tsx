@@ -3,7 +3,7 @@ import { Logo } from './Logo';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { useAdmin } from '../context/AdminContext';
-import { Sun, Moon, Settings, Home, BookOpen, Trophy, User, ShieldCheck, Sparkles } from 'lucide-react';
+import { Sun, Moon, Settings, Home, BookOpen, Trophy, User, ShieldCheck, Sparkles, Bell } from 'lucide-react';
 import type { NavigationTab } from '../types';
 
 interface HeaderProps {
@@ -12,6 +12,8 @@ interface HeaderProps {
   onOpenSettings: () => void;
   onOpenTutorial?: () => void;
   onOpenAdmin?: () => void;
+  onOpenNotifications?: () => void;
+  unreadNotificationsCount?: number;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -20,6 +22,8 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenSettings,
   onOpenTutorial,
   onOpenAdmin,
+  onOpenNotifications,
+  unreadNotificationsCount = 0,
 }) => {
   const { theme, toggleTheme } = useTheme();
   const { profile } = useAuth();
@@ -110,6 +114,24 @@ export const Header: React.FC<HeaderProps> = ({
               <Moon className="w-4 h-4 text-slate-700" />
             )}
           </button>
+
+          {/* Notifications Trigger */}
+          {onOpenNotifications && (
+            <button
+              id="notifications-header-btn"
+              onClick={onOpenNotifications}
+              aria-label="الإشعارات"
+              className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700/80 transition-colors cursor-pointer shrink-0 relative"
+              title="الإشعارات والتنبيهات"
+            >
+              <Bell className="w-4 h-4" />
+              {unreadNotificationsCount > 0 && (
+                <span className="absolute -top-1 -right-1 px-1.5 py-0.2 rounded-full text-[10px] font-black bg-red-600 text-white ring-2 ring-white dark:ring-[#090d16] animate-pulse">
+                  {unreadNotificationsCount > 9 ? '+9' : unreadNotificationsCount}
+                </span>
+              )}
+            </button>
+          )}
 
           {/* Settings Trigger */}
           <button

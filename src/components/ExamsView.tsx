@@ -86,7 +86,7 @@ export const ExamsView: React.FC<ExamsViewProps> = ({
     return () => {
       isMounted = false;
     };
-  }, [selectedSubject, profile?.uid, viewMode]);
+  }, [selectedSubject, profile?.uid, profile?.branch, viewMode]);
 
   // Sync initialAttempt prop changes
   useEffect(() => {
@@ -219,16 +219,21 @@ export const ExamsView: React.FC<ExamsViewProps> = ({
     <div className="space-y-6 pb-24 md:pb-8 animate-fadeIn">
       {/* Page Header */}
       <div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 dark:text-white">
             الامتحانات التنافسية
           </h1>
           <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300">
             توجيهي 2009
           </span>
+          {profile?.branch && (
+            <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+              فرع: {profile.branch}
+            </span>
+          )}
         </div>
         <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-          امتحانات إلكترونية مؤقتة مطابقة لأحدث مناهج التوجيهي، تصحيح فوري ونقاط مباشرة لرفع ترتيبك.
+          امتحانات إلكترونية مخصصة لفرعك ومطابقة لأحدث مناهج التوجيهي، تصحيح فوري ونقاط مباشرة لرفع ترتيبك.
         </p>
       </div>
 

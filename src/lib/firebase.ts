@@ -254,33 +254,33 @@ export function getAuthErrorMessage(err: any): string {
 
   switch (code) {
     case 'auth/invalid-email':
-      return 'صيغة البريد الإلكتروني غير صحيحة، يرجى التأكد من كتابته بشكل سليم.';
+      return 'بريد غير صالح';
     case 'auth/user-not-found':
-      return 'لم يتم العثور على حساب مسجل بهذا البريد الإلكتروني.';
+      return 'لا يوجد حساب بهذا البريد';
     case 'auth/wrong-password':
-      return 'كلمة المرور غير صحيحة، يرجى المحاولة مجدداً.';
+      return 'كلمة المرور غير صحيحة';
     case 'auth/invalid-credential':
-      return 'بيانات تسجيل الدخول غير صحيحة (تأكد من البريد الإلكتروني وكلمة المرور).';
+      return 'البريد أو كلمة المرور غير صحيحة';
     case 'auth/email-already-in-use':
-      return 'هذا البريد الإلكتروني مسجل بالفعل. يرجى تسجيل الدخول بدلاً من إنشاء حساب جديد.';
+      return 'هذا البريد مستخدم بالفعل';
     case 'auth/weak-password':
-      return 'كلمة المرور ضعيفة جداً. يجب أن تتكون من 6 خانات أو أحرف على الأقل.';
+      return 'كلمة المرور ضعيفة (6 أحرف على الأقل)';
     case 'auth/operation-not-allowed':
-      return 'تسجيل الدخول بهذه الطريقة غير مفعّل حالياً.';
+      return 'تسجيل الدخول بهذه الطريقة غير مفعّل';
     case 'auth/network-request-failed':
-      return 'تعذر الاتصال بالخادم، يرجى التحقق من اتصال الإنترنت والمحاولة ثانية.';
+      return 'تحقق من الاتصال بالإنترنت';
     case 'auth/too-many-requests':
-      return 'تم حظر محاولات الدخول مؤقتاً بسبب تكرار المحاولات غير الناجحة. يرجى الانتظار بضع دقائق.';
+      return 'محاولات كثيرة، حاول لاحقًا';
     case 'auth/unauthorized-domain':
-      return 'نطاق التطبيق الحالي غير مصرح به للمصادقة حالياً.';
+      return 'نطاق التطبيق غير مصرح به';
     case 'auth/popup-closed-by-user':
-      return 'تم إغلاق نافذة تسجيل الدخول قبل إتمام العملية.';
+      return 'تم إغلاق نافذة تسجيل الدخول';
     case 'auth/popup-blocked':
-      return 'تم حظر النافذة المنبثقة بواسطة المتصفح، يرجى السماح بالنوافذ المنبثقة.';
+      return 'تم حظر النافذة المنبثقة بواسطة المتصفح';
     case 'auth/account-exists-with-different-credential':
-      return 'يوجد حساب مسجل مسبقاً بهذا البريد الإلكتروني باستخدام وسيلة دخول أخرى.';
+      return 'هذا البريد مستخدم بالفعل بوسيلة دخول أخرى';
     default:
-      return err.message || 'فشلت عملية تسجيل الدخول، يرجى المحاولة لاحقاً.';
+      return err.message || 'حدث خطأ، يرجى المحاولة لاحقاً';
   }
 }
 
@@ -332,6 +332,7 @@ export async function createUserProfile(
     displayName: string;
     age?: number;
     city?: string;
+    branch?: string;
     gender?: 'male' | 'female' | 'other' | 'prefer_not_to_say';
     whatsappGroup?: string;
     photoURL?: string;
@@ -352,6 +353,7 @@ export async function createUserProfile(
     username: details.username.trim().toLowerCase(),
     displayName: details.displayName.trim() || user.displayName || 'طالب أريكسون',
     email: user.email || '',
+    branch: details.branch?.trim() || 'علمي',
     totalPoints: 0,
     weeklyPoints: 0,
     monthlyPoints: 0,
@@ -362,6 +364,7 @@ export async function createUserProfile(
     updatedAt: now,
     lastActiveAt: now,
     hasSeenTutorial: false,
+    role: 'student',
   };
 
   if (details.photoURL || user.photoURL) {
@@ -383,6 +386,14 @@ export async function createUserProfile(
   // Sanitize data so no undefined field is ever sent to Firestore
   const profile = sanitizeFirestoreData(rawProfile) as UserProfile;
   await setDoc(userDocRef, profile);
+
+  // Sync public profile
+  try {
+    await syncPublicProfile(profile);
+  } catch (syncErr) {
+    console.warn('[firebase] Sync public profile warning:', syncErr);
+  }
+
   return profile;
 }
 
@@ -428,6 +439,90 @@ export async function updateUserProfile(
   }
 }
 
+/**
+ * Update student branch (only allowed once by student, or by admin)
+ */
+export async function updateStudentBranch(uid: string, branch: 'علمي' | 'أدبي'): Promise<void> {
+  const userDocRef = doc(db, 'users', uid);
+  const now = new Date().toISOString();
+  await updateDoc(userDocRef, {
+    branch,
+    updatedAt: now,
+  });
+
+  // Also sync public profile
+  const pubRef = doc(db, 'publicProfiles', uid);
+  await setDoc(pubRef, { branch, updatedAt: now }, { merge: true });
+
+  // Update local storage cache
+  try {
+    const cachedStr = localStorage.getItem(`arixon_cached_profile_${uid}`);
+    if (cachedStr) {
+      const cached = JSON.parse(cachedStr);
+      cached.branch = branch;
+      localStorage.setItem(`arixon_cached_profile_${uid}`, JSON.stringify(cached));
+    }
+  } catch {}
+}
+
+/**
+ * Synchronize safe public profile without sensitive fields
+ */
+export async function syncPublicProfile(profile: UserProfile): Promise<void> {
+  if (!profile.uid) return;
+  const pubRef = doc(db, 'publicProfiles', profile.uid);
+  const pubData: any = {
+    uid: profile.uid,
+    displayName: profile.displayName || profile.username,
+    username: profile.username,
+    photoURL: profile.photoURL || undefined,
+    branch: profile.branch || 'علمي',
+    totalPoints: profile.totalPoints || 0,
+    createdAt: profile.createdAt,
+    examsCompleted: profile.examsCompleted || 0,
+    updatedAt: new Date().toISOString(),
+  };
+
+  // Only expose age if explicitly enabled or allowed
+  if (profile.showAgeInPublicProfile !== false && profile.age) {
+    pubData.age = profile.age;
+  }
+
+  await setDoc(pubRef, sanitizeFirestoreData(pubData), { merge: true });
+}
+
+/**
+ * Fetch public user profile safely
+ */
+export async function fetchPublicUserProfile(uid: string): Promise<any | null> {
+  try {
+    const pubRef = doc(db, 'publicProfiles', uid);
+    const snap = await getDoc(pubRef);
+    if (snap.exists()) {
+      return snap.data();
+    }
+    // Fallback to reading users doc
+    const uDoc = await getDoc(doc(db, 'users', uid));
+    if (uDoc.exists()) {
+      const u = uDoc.data() as UserProfile;
+      return {
+        uid: u.uid,
+        displayName: u.displayName || u.username,
+        username: u.username,
+        photoURL: u.photoURL,
+        branch: u.branch || 'علمي',
+        totalPoints: u.totalPoints || 0,
+        createdAt: u.createdAt,
+        examsCompleted: u.examsCompleted || 0,
+        age: u.showAgeInPublicProfile !== false ? u.age : undefined,
+      };
+    }
+    return null;
+  } catch (err) {
+    console.warn('[firebase] Error fetching public profile:', err);
+    return null;
+  }
+}
 
 /**
  * Mark tutorial as seen in Firestore and local cache

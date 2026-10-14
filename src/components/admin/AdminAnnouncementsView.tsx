@@ -9,7 +9,7 @@ import {
   AlertCircle,
   X,
 } from 'lucide-react';
-import { fetchAnnouncements, saveAnnouncement } from '../../lib/adminService';
+import { fetchAnnouncements, saveAnnouncement, deleteAdminAnnouncement } from '../../lib/adminService';
 import type { Announcement } from '../../types';
 
 export const AdminAnnouncementsView: React.FC = () => {
@@ -25,6 +25,7 @@ export const AdminAnnouncementsView: React.FC = () => {
   const [content, setContent] = useState('');
   const [priority, setPriority] = useState<'low' | 'medium' | 'high'>('medium');
   const [published, setPublished] = useState(true);
+  const [expiresAt, setExpiresAt] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const loadData = async () => {
@@ -49,6 +50,7 @@ export const AdminAnnouncementsView: React.FC = () => {
     setContent('');
     setPriority('medium');
     setPublished(true);
+    setExpiresAt('');
     setIsModalOpen(true);
   };
 
@@ -58,7 +60,18 @@ export const AdminAnnouncementsView: React.FC = () => {
     setContent(ann.content);
     setPriority(ann.priority || 'medium');
     setPublished(ann.published);
+    setExpiresAt(ann.expiresAt ? ann.expiresAt.substring(0, 16) : '');
     setIsModalOpen(true);
+  };
+
+  const handleDelete = async (ann: Announcement) => {
+    if (!window.confirm(`هل أنت متأكد من رغبتك بحذف إعلان "${ann.title}" نهائياً من قاعدة البيانات؟`)) return;
+    try {
+      await deleteAdminAnnouncement(ann.id, ann.title);
+      await loadData();
+    } catch (err: any) {
+      alert(err.message || 'فشل حذف الإعلان.');
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -76,9 +89,10 @@ export const AdminAnnouncementsView: React.FC = () => {
         content: content.trim(),
         priority,
         published,
+        expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null,
         createdAt: editingAnn?.createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-        publishedAt: published ? new Date().toISOString() : null,
+        publishedAt: published ? (editingAnn?.publishedAt || new Date().toISOString()) : null,
         createdBy: editingAnn?.createdBy || 'admin',
       });
 
@@ -190,10 +204,17 @@ export const AdminAnnouncementsView: React.FC = () => {
                   </button>
                   <button
                     onClick={() => openEditModal(ann)}
-                    className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600"
+                    className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 cursor-pointer"
                     title="تعديل"
                   >
                     <Edit3 className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={() => handleDelete(ann)}
+                    className="p-1.5 rounded-lg border border-red-200 dark:border-red-900/60 hover:bg-red-50 dark:hover:bg-red-950/40 text-red-600 dark:text-red-400 cursor-pointer"
+                    title="حذف الإعلان نهائياً"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 </div>
               </div>
@@ -205,6 +226,12 @@ export const AdminAnnouncementsView: React.FC = () => {
                 <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 whitespace-pre-wrap leading-relaxed">
                   {ann.content}
                 </p>
+                {ann.expiresAt && (
+                  <div className="mt-2 text-[10px] text-amber-600 dark:text-amber-400 flex items-center gap-1 font-semibold">
+                    <Clock className="w-3 h-3" />
+                    <span>ينتهي في: {new Date(ann.expiresAt).toLocaleString('ar-EG')}</span>
+                  </div>
+                )}
               </div>
 
               <div className="text-[10px] text-slate-400 pt-2 border-t border-slate-100 dark:border-slate-800/60 flex items-center justify-between">

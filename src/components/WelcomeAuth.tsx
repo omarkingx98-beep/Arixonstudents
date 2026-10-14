@@ -320,6 +320,11 @@ export const WelcomeAuth: React.FC = () => {
                       {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                   </div>
+                  {activeError && (
+                    <p id="password-error-line" className="text-[11px] text-red-500 font-medium mt-1 pr-1 text-right animate-fadeIn">
+                      {activeError}
+                    </p>
+                  )}
                 </div>
               )}
 

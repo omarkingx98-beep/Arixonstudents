@@ -80,6 +80,7 @@ export const OnboardingModal: React.FC = () => {
   const [gender, setGender] = useState<'male' | 'female' | 'prefer_not_to_say'>('prefer_not_to_say');
   const [whatsappGroup, setWhatsappGroup] = useState('');
   const [selectedAvatar, setSelectedAvatar] = useState('');
+  const [branch, setBranch] = useState<'علمي' | 'أدبي'>('علمي');
 
   // Status
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -148,6 +149,7 @@ export const OnboardingModal: React.FC = () => {
       const profile = await createUserProfile(user, {
         displayName: displayName.trim(),
         username: username.trim(),
+        branch,
         age: isNaN(Number(parsedAge)) ? undefined : parsedAge,
         city: city || undefined,
         gender: gender || undefined,
@@ -293,6 +295,39 @@ export const OnboardingModal: React.FC = () => {
                 <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
                   سيكون هذا معرّفك الدائم في لوحة الصدارة والتصنيفات.
                 </p>
+              </div>
+
+              {/* Mandatory Branch Selection */}
+              <div>
+                <label className="block text-xs sm:text-sm font-semibold mb-1.5 text-slate-700 dark:text-slate-300">
+                  الفرع الدراسي (إلزامي لمرة واحدة) <span className="text-red-500">*</span>
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setBranch('علمي')}
+                    className={`py-2.5 px-3 rounded-xl border-2 font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                      branch === 'علمي'
+                        ? 'border-blue-600 bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 shadow-xs'
+                        : 'border-slate-200 dark:border-slate-700/80 bg-slate-50 dark:bg-[#182032] text-slate-600 dark:text-slate-300'
+                    }`}
+                  >
+                    <span>الفرع العلمي</span>
+                    {branch === 'علمي' && <Check className="w-3.5 h-3.5 text-blue-600" />}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBranch('أدبي')}
+                    className={`py-2.5 px-3 rounded-xl border-2 font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                      branch === 'أدبي'
+                        ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                        : 'border-slate-200 dark:border-slate-700/80 bg-slate-50 dark:bg-[#182032] text-slate-600 dark:text-slate-300'
+                    }`}
+                  >
+                    <span>الفرع الأدبي</span>
+                    {branch === 'أدبي' && <Check className="w-3.5 h-3.5 text-indigo-600" />}
+                  </button>
+                </div>
               </div>
 
               {/* Avatar Selector */}

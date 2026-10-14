@@ -4,7 +4,11 @@ import { fetchLeaderboard } from '../lib/firebase';
 import type { LeaderboardEntry } from '../types';
 import { Trophy, Medal, Award, Flame, Sparkles, Loader2 } from 'lucide-react';
 
-export const LeaderboardView: React.FC = () => {
+interface LeaderboardViewProps {
+  onSelectUser?: (userId: string) => void;
+}
+
+export const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onSelectUser }) => {
   const { profile, user } = useAuth();
   const [period, setPeriod] = useState<'all' | 'weekly' | 'monthly'>('all');
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
@@ -158,12 +162,13 @@ export const LeaderboardView: React.FC = () => {
                 <div
                   key={entry.uid}
                   id={`leaderboard-row-${entry.uid}`}
-                  className={`grid grid-cols-12 items-center px-4 sm:px-6 py-3.5 transition-colors ${
+                  onClick={() => onSelectUser && onSelectUser(entry.uid)}
+                  className={`grid grid-cols-12 items-center px-4 sm:px-6 py-3.5 transition-all cursor-pointer ${
                     entry.isCurrentUser
                       ? 'bg-blue-50/70 dark:bg-blue-950/40 border-r-4 border-r-blue-600'
-                      : 'hover:bg-slate-50 dark:hover:bg-slate-800/40'
+                      : 'hover:bg-blue-50/40 dark:hover:bg-slate-800/60'
                   }`}
-                >
+                  title="اضغط لعرض الملف العام للطالب والمراسلة"
                   {/* Rank Column */}
                   <div className="col-span-2 sm:col-span-1 flex items-center justify-center">
                     {isFirst ? (

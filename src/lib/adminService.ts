@@ -10,6 +10,7 @@ import {
   orderBy,
   limit,
   runTransaction,
+  deleteDoc,
 } from 'firebase/firestore';
 import { db, auth, sanitizeFirestoreData } from './firebase';
 import type {
@@ -717,6 +718,90 @@ export async function adjustStudentPointsWithReason(params: {
   return { previousBalance: prev, newBalance: next };
 }
 
+export async function adminChangeStudentBranch(
+  studentUid: string,
+  studentName: string,
+  newBranch: 'علمي' | 'أدبي'
+): Promise<void> {
+  const userDocRef = doc(db, 'users', studentUid);
+  const now = new Date().toISOString();
+
+  await updateDoc(userDocRef, {
+    branch: newBranch,
+    updatedAt: now,
+  });
+
+  // Sync public profile
+  try {
+    const pubRef = doc(db, 'publicProfiles', studentUid);
+    await setDoc(pubRef, { branch: newBranch, updatedAt: now }, { merge: true });
+  } catch (err: any) {
+    console.warn('[Admin Service] Notice syncing public profile branch:', err?.message);
+  }
+
+  try {
+    await recordAdminAuditLog({
+      action: 'update_student_branch',
+      targetType: 'student',
+      targetId: studentUid,
+      details: `تغيير فرع الطالب "${studentName}" إلى: الفرع ال${newBranch}`,
+    });
+  } catch {}
+}
+
+export async function adminSendStudentNotification(
+  studentUid: string,
+  title: string,
+  message: string
+): Promise<void> {
+  const notifId = `notif_admin_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+  const now = new Date().toISOString();
+
+  const docRef = doc(db, 'notifications', notifId);
+  await setDoc(docRef, sanitizeFirestoreData({
+    id: notifId,
+    recipientId: studentUid,
+    senderName: 'إدارة منصة أريكسون',
+    type: 'admin_direct_message',
+    title: title.trim(),
+    message: message.trim(),
+    read: false,
+    createdAt: now,
+  }));
+
+  try {
+    await recordAdminAuditLog({
+      action: 'send_student_notification',
+      targetType: 'student',
+      targetId: studentUid,
+      details: `إرسال إشعار مباشر للطالب: "${title}"`,
+    });
+  } catch {}
+}
+
+export async function adminToggleChatDisabled(
+  studentUid: string,
+  studentName: string,
+  chatDisabled: boolean
+): Promise<void> {
+  const userDocRef = doc(db, 'users', studentUid);
+  const now = new Date().toISOString();
+
+  await updateDoc(userDocRef, {
+    chatDisabled,
+    updatedAt: now,
+  });
+
+  try {
+    await recordAdminAuditLog({
+      action: chatDisabled ? 'disable_student_chat' : 'enable_student_chat',
+      targetType: 'student',
+      targetId: studentUid,
+      details: `${chatDisabled ? 'تعطيل' : 'إعادة تفعيل'} ميزة الدردشة للطالب "${studentName}"`,
+    });
+  } catch {}
+}
+
 // ==========================================
 // 5. Announcements
 // ==========================================
@@ -760,6 +845,71 @@ export async function saveAnnouncement(ann: Omit<Announcement, 'id'> & { id?: st
   });
 
   return id;
+}
+
+export async function deleteAdminAnnouncement(announcementId: string, title: string): Promise<void> {
+  const docRef = doc(db, 'announcements', announcementId);
+  await deleteDoc(docRef);
+
+  await recordAdminAuditLog({
+    action: 'archive_announcement',
+    targetType: 'announcement',
+    targetId: announcementId,
+    details: `حذف إعلان نهائياً: "${title}"`,
+  });
+}
+
+export async function toggleStudentChatDisabledState(
+  studentUid: string,
+  studentName: string,
+  disabled: boolean,
+  reason: string
+): Promise<void> {
+  const userRef = doc(db, 'users', studentUid);
+  const now = new Date().toISOString();
+  await updateDoc(userRef, {
+    chatDisabled: disabled,
+    chatDisabledReason: disabled ? reason : null,
+    chatDisabledAt: disabled ? now : null,
+    updatedAt: now,
+  });
+
+  await recordAdminAuditLog({
+    action: 'disable_student',
+    targetType: 'student',
+    targetId: studentUid,
+    details: `${disabled ? 'تعطيل' : 'إعادة تفعيل'} ميزة الدردشة للطالب "${studentName}" - السبب: ${reason}`,
+  });
+}
+
+export async function sendDirectAdminNotification(params: {
+  studentUid: string;
+  studentName: string;
+  title: string;
+  message: string;
+}): Promise<string> {
+  const notifId = `notif_admin_${Date.now()}`;
+  const now = new Date().toISOString();
+
+  await setDoc(doc(db, 'notifications', notifId), sanitizeFirestoreData({
+    id: notifId,
+    recipientId: params.studentUid,
+    senderName: 'إدارة منصة أريكسون',
+    type: 'admin_direct_message',
+    title: params.title.trim(),
+    message: params.message.trim(),
+    read: false,
+    createdAt: now,
+  }));
+
+  await recordAdminAuditLog({
+    action: 'point_adjustment',
+    targetType: 'student',
+    targetId: params.studentUid,
+    details: `إرسال تنبيه إداري مباشر للطالب "${params.studentName}": "${params.title}"`,
+  });
+
+  return notifId;
 }
 
 // ==========================================

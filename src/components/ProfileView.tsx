@@ -150,9 +150,15 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
                   <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300">
                     طالب توجيهي 2009 موثّق
                   </span>
-                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                    {profile?.branch ? `فرع ${profile.branch}` : 'الفرع العلمي'}
-                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setIsEditing(true)}
+                    title="تغيير الفرع الدراسي (العلمي / الأدبي)"
+                    className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:hover:bg-emerald-900/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 transition-colors cursor-pointer"
+                  >
+                    <span>{profile?.branch ? `فرع ${profile.branch}` : 'الفرع العلمي'}</span>
+                    <Edit3 className="w-2.5 h-2.5 opacity-70" />
+                  </button>
                 </div>
               </div>
 

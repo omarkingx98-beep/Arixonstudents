@@ -7,7 +7,9 @@ import { getAuth } from 'firebase-admin/auth';
 import { GoogleGenAI } from '@google/genai';
 import configJson from './firebase-applet-config.json' with { type: 'json' };
 
-const __filename = fileURLToPath(import.meta.url);
+const __filename = typeof import.meta !== 'undefined' && import.meta.url
+  ? fileURLToPath(import.meta.url)
+  : (typeof (globalThis as any).__filename === 'string' ? (globalThis as any).__filename : path.resolve(process.cwd(), 'server.ts'));
 const __dirname = path.dirname(__filename);
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;

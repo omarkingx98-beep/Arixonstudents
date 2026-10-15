@@ -16,6 +16,7 @@ export const FIRST_EXAM: Exam = {
   status: 'available',
   published: true,
   allowRetake: true,
+  branch: 'علمي',
   createdAt: '2025-09-01T08:00:00.000Z',
   updatedAt: new Date().toISOString(),
   createdBy: 'وزارة التربية والتعليم - بنك الامتحانات الوزارية',

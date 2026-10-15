@@ -45,7 +45,15 @@ export interface DailyGoal {
   createdAt: string;
 }
 
-export type ExamStatus = 'available' | 'coming_soon' | 'closed' | 'completed';
+export type ExamStatus = 
+  | 'draft' 
+  | 'published' 
+  | 'unpublished' 
+  | 'archived' 
+  | 'available' 
+  | 'coming_soon' 
+  | 'closed' 
+  | 'completed';
 
 export interface Exam {
   id: string;
@@ -60,7 +68,11 @@ export interface Exam {
   difficulty: 'easy' | 'medium' | 'hard';
   status: ExamStatus;
   published: boolean;
+  version?: number; // Version tracking (increments on edit of published exam)
   allowRetake: boolean;
+  branch?: string; // 'علمي' | 'أدبي' | 'مشترك' | 'all'
+  grade?: string; // e.g. 'tw2009'
+  isArchived?: boolean;
   createdAt: string;
   updatedAt: string;
   createdBy: string;
@@ -97,6 +109,7 @@ export interface ExamAttempt {
   id: string;
   userId: string;
   examId: string;
+  examVersion?: number; // Locks attempt to the specific exam version taken
   startedAt: string;
   expectedEndAt: string;
   submittedAt: string | null;
@@ -499,7 +512,41 @@ export type NotificationType =
   | 'friend_request' 
   | 'friend_accept' 
   | 'admin_announcement' 
-  | 'admin_direct_message';
+  | 'admin_direct_message'
+  | 'exam_published'
+  | 'exam_unpublished'
+  | 'exam_republished'
+  | 'exam_updated';
+
+export type BroadcastType = 
+  | 'exam_published' 
+  | 'exam_unpublished' 
+  | 'exam_republished' 
+  | 'exam_updated' 
+  | 'announcement';
+
+export interface BroadcastAudience {
+  grade?: string; // 'tw2009' | 'all'
+  track: 'all' | 'scientific' | 'literary' | 'علمي' | 'أدبي' | 'مشترك';
+}
+
+export interface BroadcastNotification {
+  id: string;
+  type: BroadcastType;
+  title: string;
+  message?: string;
+  examId?: string;
+  examTitle?: string;
+  audience: BroadcastAudience;
+  createdAt: string;
+  createdBy: string;
+  updatedAt?: string;
+}
+
+export interface StudentNotifState {
+  lastReadAt: string;
+  updatedAt?: string;
+}
 
 export interface AppNotification {
   id: string;

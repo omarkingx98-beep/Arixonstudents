@@ -103,7 +103,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!profile || !conversation || !inputText.trim() || isSending) return;
+    if (!profile || !targetUser || !inputText.trim() || isSending) return;
 
     if (profile.chatDisabled) {
       alert('تم إيقاف ميزة الدردشة لحسابك من قِبل إدارة المنصة.');
@@ -116,15 +116,46 @@ export const ChatModal: React.FC<ChatModalProps> = ({
     setErrorMsg(null);
 
     try {
+      let activeConv = conversation;
+      if (!activeConv) {
+        activeConv = await getOrCreateChatConversation(
+          {
+            uid: profile.uid,
+            displayName: profile.displayName || profile.username || 'طالب',
+            username: profile.username || 'student',
+            photoURL: profile.photoURL,
+            branch: profile.branch,
+          },
+          targetUser
+        );
+        setConversation(activeConv);
+      }
+
+      // Optimistic append
+      const optimisticMsg: ChatMessage = {
+        id: `temp_${Date.now()}`,
+        chatId: activeConv.id,
+        senderId: profile.uid,
+        senderName: profile.displayName || profile.username || 'طالب',
+        senderPhoto: profile.photoURL,
+        text: textToSend,
+        createdAt: new Date().toISOString(),
+        read: false,
+      };
+      setMessages((prev) => [...prev, optimisticMsg]);
+      setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, 50);
+
       await sendChatMessage({
-        chatId: conversation.id,
+        chatId: activeConv.id,
         senderProfile: profile,
         receiverId: targetUser.uid,
         text: textToSend,
       });
     } catch (err: any) {
       console.error('[ChatModal] Send message error:', err);
-      setErrorMsg(err.message || 'فشل إرسال الرسالة.');
+      setErrorMsg(err.message || 'فشل إرسال الرسالة، يرجى المحاولة ثانية.');
     } finally {
       setIsSending(false);
     }

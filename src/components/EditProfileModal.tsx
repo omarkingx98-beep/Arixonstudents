@@ -55,6 +55,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ onClose }) =
   const { profile, refreshProfile } = useAuth();
 
   const [displayName, setDisplayName] = useState(profile?.displayName || '');
+  const [branch, setBranch] = useState<'علمي' | 'أدبي'>(profile?.branch === 'أدبي' ? 'أدبي' : 'علمي');
   const [city, setCity] = useState(profile?.city || 'عَمّان');
   const [age, setAge] = useState(profile?.age ? String(profile.age) : '17');
   const [whatsappGroup, setWhatsappGroup] = useState(profile?.whatsappGroup || '');
@@ -79,6 +80,7 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ onClose }) =
 
       await updateUserProfile(profile.uid, {
         displayName: displayName.trim(),
+        branch,
         city: city || undefined,
         age: isNaN(Number(parsedAge)) ? undefined : parsedAge,
         whatsappGroup: whatsappGroup.trim() || undefined,
@@ -169,6 +171,39 @@ export const EditProfileModal: React.FC<EditProfileModalProps> = ({ onClose }) =
                 className="w-full pl-3 pr-9 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
               <User className="w-4 h-4 absolute right-3 top-2.5 text-slate-400" />
+            </div>
+          </div>
+
+          {/* Academic Branch Selection */}
+          <div>
+            <label className="block text-xs font-semibold mb-1 text-slate-700 dark:text-slate-300">
+              الفرع الدراسي (توجيهي 2009)
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setBranch('علمي')}
+                className={`py-2 px-3 rounded-xl border-2 font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                  branch === 'علمي'
+                    ? 'border-blue-600 bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 shadow-xs'
+                    : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 text-slate-600 dark:text-slate-400'
+                }`}
+              >
+                <span>الفرع العلمي</span>
+                {branch === 'علمي' && <Check className="w-3.5 h-3.5 text-blue-600" />}
+              </button>
+              <button
+                type="button"
+                onClick={() => setBranch('أدبي')}
+                className={`py-2 px-3 rounded-xl border-2 font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                  branch === 'أدبي'
+                    ? 'border-indigo-600 bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 shadow-xs'
+                    : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 text-slate-600 dark:text-slate-400'
+                }`}
+              >
+                <span>الفرع الأدبي</span>
+                {branch === 'أدبي' && <Check className="w-3.5 h-3.5 text-indigo-600" />}
+              </button>
             </div>
           </div>
 

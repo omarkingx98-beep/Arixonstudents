@@ -25,26 +25,30 @@ import {
   FIRST_EXAM_QUESTIONS,
   type QuestionWithKey
 } from '../data/firstExamData';
+import {
+  LITERARY_EXAM,
+  LITERARY_EXAM_ID,
+  LITERARY_EXAM_QUESTIONS,
+} from '../data/literaryExamData';
 
 /**
- * Ensures the first physics exam and its public questions exist in Firestore.
+ * Ensures initial ministerial exams and questions exist in Firestore for all branches.
  * Automatically runs on app launch so real data is present in Firestore without manual setup.
  */
 export async function seedFirstExamIfMissing(): Promise<void> {
   try {
+    // 1. Seed Physics exam (Scientific branch)
     const examDocRef = doc(db, 'exams', FIRST_EXAM_ID);
     const examSnap = await getDoc(examDocRef);
 
-    const needsSeeding = !examSnap.exists() || 
+    const needsPhysicsSeeding = !examSnap.exists() || 
       examSnap.data()?.durationMinutes !== 35 || 
       examSnap.data()?.questionCount !== 20;
 
-    if (needsSeeding) {
-      console.log('Seeding/updating full 20-question Physics Exam into Firestore...');
-      // 1. Create or update main exam doc
+    if (needsPhysicsSeeding) {
+      console.log('Seeding full 20-question Physics Exam into Firestore...');
       await setDoc(examDocRef, FIRST_EXAM, { merge: true });
 
-      // 2. Create questions subcollection (public fields only)
       for (const q of FIRST_EXAM_QUESTIONS) {
         const qRef = doc(db, 'exams', FIRST_EXAM_ID, 'questions', q.id);
         const publicQuestionData: Question = {
@@ -61,7 +65,6 @@ export async function seedFirstExamIfMissing(): Promise<void> {
         };
         await setDoc(qRef, publicQuestionData, { merge: true });
 
-        // 3. Create protected answer keys in separate subcollection
         const keyRef = doc(db, 'exams', FIRST_EXAM_ID, 'answerKeys', q.id);
         await setDoc(keyRef, {
           id: q.id,
@@ -73,7 +76,45 @@ export async function seedFirstExamIfMissing(): Promise<void> {
           distractorAnalysis: q.distractorAnalysis,
         }, { merge: true });
       }
-      console.log('Successfully seeded 20 questions of physics exam into Firestore.');
+    }
+
+    // 2. Seed Arabic exam (Literary & Common branch)
+    const litDocRef = doc(db, 'exams', LITERARY_EXAM_ID);
+    const litSnap = await getDoc(litDocRef);
+
+    const needsLitSeeding = !litSnap.exists() || 
+      litSnap.data()?.questionCount !== 15;
+
+    if (needsLitSeeding) {
+      console.log('Seeding full 15-question Arabic Exam into Firestore...');
+      await setDoc(litDocRef, LITERARY_EXAM, { merge: true });
+
+      for (const q of LITERARY_EXAM_QUESTIONS) {
+        const qRef = doc(db, 'exams', LITERARY_EXAM_ID, 'questions', q.id);
+        const publicQuestionData: Question = {
+          id: q.id,
+          examId: LITERARY_EXAM_ID,
+          order: q.order,
+          questionText: q.questionText,
+          options: q.options,
+          difficulty: q.difficulty,
+          source: q.source,
+          points: q.points,
+          questionType: q.questionType,
+          hint: q.hint,
+        };
+        await setDoc(qRef, publicQuestionData, { merge: true });
+
+        const keyRef = doc(db, 'exams', LITERARY_EXAM_ID, 'answerKeys', q.id);
+        await setDoc(keyRef, {
+          id: q.id,
+          correctAnswer: q.correctAnswer,
+          explanation: q.explanation,
+          hint: q.hint,
+          solutionSteps: q.solutionSteps,
+          distractorAnalysis: q.distractorAnalysis,
+        }, { merge: true });
+      }
     }
   } catch (error) {
     console.warn('Seeding check/create note:', error);

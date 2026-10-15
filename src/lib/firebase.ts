@@ -402,7 +402,7 @@ export async function createUserProfile(
  */
 export async function updateUserProfile(
   uid: string,
-  updates: Partial<Pick<UserProfile, 'displayName' | 'username' | 'age' | 'city' | 'gender' | 'whatsappGroup' | 'photoURL'>>
+  updates: Partial<Pick<UserProfile, 'displayName' | 'username' | 'age' | 'city' | 'gender' | 'whatsappGroup' | 'photoURL' | 'branch'>>
 ): Promise<void> {
   const rawUpdates: any = {
     ...updates,
@@ -422,9 +422,20 @@ export async function updateUserProfile(
 
   try {
     const userDocRef = doc(db, 'users', uid);
-    await updateDoc(userDocRef, cleanUpdates);
+    await setDoc(userDocRef, cleanUpdates, { merge: true });
+
+    // Also sync public profile fields
+    const pubRef = doc(db, 'publicProfiles', uid);
+    const pubUpdates: any = {};
+    if (cleanUpdates.displayName) pubUpdates.displayName = cleanUpdates.displayName;
+    if (cleanUpdates.username) pubUpdates.username = cleanUpdates.username;
+    if (cleanUpdates.photoURL) pubUpdates.photoURL = cleanUpdates.photoURL;
+    if (cleanUpdates.branch) pubUpdates.branch = cleanUpdates.branch;
+    if (Object.keys(pubUpdates).length > 0) {
+      await setDoc(pubRef, pubUpdates, { merge: true });
+    }
   } catch (err) {
-    console.warn('Firestore updateDoc failed, saved locally:', err);
+    console.warn('Firestore user update notice (cached locally):', err);
   }
 
   // Update local cache
@@ -440,19 +451,23 @@ export async function updateUserProfile(
 }
 
 /**
- * Update student branch (only allowed once by student, or by admin)
+ * Update student branch (safe setDoc merge for instant persistence)
  */
 export async function updateStudentBranch(uid: string, branch: 'علمي' | 'أدبي'): Promise<void> {
   const userDocRef = doc(db, 'users', uid);
   const now = new Date().toISOString();
-  await updateDoc(userDocRef, {
+  await setDoc(userDocRef, {
     branch,
     updatedAt: now,
-  });
+  }, { merge: true });
 
   // Also sync public profile
-  const pubRef = doc(db, 'publicProfiles', uid);
-  await setDoc(pubRef, { branch, updatedAt: now }, { merge: true });
+  try {
+    const pubRef = doc(db, 'publicProfiles', uid);
+    await setDoc(pubRef, { branch, updatedAt: now }, { merge: true });
+  } catch (err) {
+    console.warn('Public profile branch sync notice:', err);
+  }
 
   // Update local storage cache
   try {

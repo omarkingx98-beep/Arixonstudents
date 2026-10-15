@@ -19,9 +19,11 @@ import {
   CheckSquare,
   Users,
   MessageSquare,
+  GraduationCap,
 } from 'lucide-react';
 import { DailyGoals } from './DailyGoals';
 import { getFriendsList } from '../lib/friendService';
+import { updateStudentBranch } from '../lib/firebase';
 import type { FriendItem } from '../types';
 
 interface SettingsModalProps {
@@ -39,7 +41,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onOpenChatWithUser,
   onSelectUser,
 }) => {
-  const { profile, signOut } = useAuth();
+  const { profile, signOut, refreshProfile } = useAuth();
   const { theme, setTheme } = useTheme();
   const { isAdmin } = useAdmin();
 
@@ -48,6 +50,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [friends, setFriends] = useState<FriendItem[]>([]);
   const [isLoadingFriends, setIsLoadingFriends] = useState(false);
+  const [isSwitchingBranch, setIsSwitchingBranch] = useState(false);
+
+  const handleBranchSwitch = async (newBranch: 'علمي' | 'أدبي') => {
+    if (!profile?.uid || isSwitchingBranch || profile.branch === newBranch) return;
+    try {
+      setIsSwitchingBranch(true);
+      await updateStudentBranch(profile.uid, newBranch);
+      await refreshProfile();
+    } catch (err: any) {
+      console.warn('Error updating branch in settings:', err);
+    } finally {
+      setIsSwitchingBranch(false);
+    }
+  };
 
   const loadFriends = async () => {
     if (!profile?.uid) return;
@@ -181,6 +197,57 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </div>
               <p className="text-[11px] text-slate-400 mt-1.5">
                 الواجهة مهيأة هيكلياً بالكامل للغتين، واللغة العربية هي المعتمدة رسمياً لمناهج التوجيهي.
+              </p>
+            </div>
+
+            {/* Academic Branch Selection */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <label className="block text-xs font-bold text-slate-400 uppercase tracking-wider">
+                  الفرع الأكاديمي (توجيهي 2009)
+                </label>
+                {isSwitchingBranch && (
+                  <span className="text-[11px] text-blue-500 font-bold flex items-center gap-1">
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    جارٍ الحفظ...
+                  </span>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  id="settings-branch-sci-btn"
+                  type="button"
+                  onClick={() => handleBranchSwitch('علمي')}
+                  disabled={isSwitchingBranch}
+                  className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-2xl border text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+                    (profile?.branch || 'علمي') === 'علمي'
+                      ? 'border-blue-600 bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 shadow-xs'
+                      : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:border-slate-300'
+                  }`}
+                >
+                  <GraduationCap className="w-4 h-4 text-blue-500" />
+                  <span>الفرع العلمي</span>
+                  {(profile?.branch || 'علمي') === 'علمي' && <Check className="w-3.5 h-3.5" />}
+                </button>
+
+                <button
+                  id="settings-branch-lit-btn"
+                  type="button"
+                  onClick={() => handleBranchSwitch('أدبي')}
+                  disabled={isSwitchingBranch}
+                  className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-2xl border text-xs sm:text-sm font-bold transition-all cursor-pointer ${
+                    profile?.branch === 'أدبي'
+                      ? 'border-indigo-600 bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 shadow-xs'
+                      : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:border-slate-300'
+                  }`}
+                >
+                  <GraduationCap className="w-4 h-4 text-indigo-500" />
+                  <span>الفرع الأدبي</span>
+                  {profile?.branch === 'أدبي' && <Check className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+              <p className="text-[11px] text-slate-400 mt-1.5">
+                تحديد فرعك يخصص الامتحانات وبنك الأسئلة ولوحة الشرف تلقائياً بما يلائم مسارك الوزاري.
               </p>
             </div>
 

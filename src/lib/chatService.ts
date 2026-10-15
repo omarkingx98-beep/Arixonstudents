@@ -45,16 +45,16 @@ export async function getOrCreateChatConversation(
     participants: [currentUser.uid, targetUser.uid],
     participantDetails: {
       [currentUser.uid]: {
-        displayName: currentUser.displayName || currentUser.username,
-        username: currentUser.username,
-        photoURL: currentUser.photoURL,
-        branch: currentUser.branch,
+        displayName: currentUser.displayName || currentUser.username || 'طالب',
+        username: currentUser.username || 'student',
+        photoURL: currentUser.photoURL || '',
+        branch: currentUser.branch || 'علمي',
       },
       [targetUser.uid]: {
-        displayName: targetUser.displayName || targetUser.username,
-        username: targetUser.username,
-        photoURL: targetUser.photoURL,
-        branch: targetUser.branch,
+        displayName: targetUser.displayName || targetUser.username || 'طالب',
+        username: targetUser.username || 'student',
+        photoURL: targetUser.photoURL || '',
+        branch: targetUser.branch || 'علمي',
       },
     },
     lastMessage: 'بدء المحادثة',
@@ -135,23 +135,29 @@ export async function sendChatMessage(params: {
   // 1. Write message doc
   await setDoc(doc(db, 'chats', params.chatId, 'messages', msgId), sanitizeFirestoreData(msgData));
 
-  // 2. Update conversation doc
-  await updateDoc(chatRef, {
-    lastMessage: cleanText,
-    lastMessageAt: now,
-    lastSenderId: params.senderProfile.uid,
-    updatedAt: now,
-  });
+  // 2. Update conversation doc with setDoc merge so it never throws if document is being initialized
+  try {
+    await setDoc(chatRef, {
+      id: params.chatId,
+      participants: [params.senderProfile.uid, params.receiverId],
+      lastMessage: cleanText,
+      lastMessageAt: now,
+      lastSenderId: params.senderProfile.uid,
+      updatedAt: now,
+    }, { merge: true });
+  } catch (convErr) {
+    console.warn('[chatService] Conversation summary update notice:', convErr);
+  }
 
   // 3. Send realtime notification to receiver
   try {
     await sendAppNotification({
       recipientId: params.receiverId,
       senderId: params.senderProfile.uid,
-      senderName: params.senderProfile.displayName || params.senderProfile.username,
+      senderName: params.senderProfile.displayName || params.senderProfile.username || 'طالب',
       senderPhoto: params.senderProfile.photoURL,
       type: 'chat_message',
-      title: `رسالة جديدة من ${params.senderProfile.displayName || params.senderProfile.username}`,
+      title: `رسالة جديدة من ${params.senderProfile.displayName || params.senderProfile.username || 'طالب'}`,
       message: cleanText.length > 50 ? `${cleanText.substring(0, 50)}...` : cleanText,
       link: `chat:${params.chatId}`,
     });

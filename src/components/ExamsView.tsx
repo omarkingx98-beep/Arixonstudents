@@ -50,6 +50,7 @@ export const ExamsView: React.FC<ExamsViewProps> = ({
 }) => {
   const { profile, refreshProfile } = useAuth();
   const [selectedSubject, setSelectedSubject] = useState<SubjectId>('all');
+  const [branchFilter, setBranchFilter] = useState<'my_branch' | 'all' | 'علمي' | 'أدبي'>('my_branch');
   const [exams, setExams] = useState<Exam[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
@@ -63,6 +64,13 @@ export const ExamsView: React.FC<ExamsViewProps> = ({
   const [currentExam, setCurrentExam] = useState<Exam | null>(null);
   const [currentQuestions, setCurrentQuestions] = useState<Question[]>([]);
 
+  // Determine effective branch to query
+  const effectiveBranch = branchFilter === 'my_branch' 
+    ? (profile?.branch || 'علمي') 
+    : branchFilter === 'all' 
+      ? 'all' 
+      : branchFilter;
+
   // Load exams on filter change or view mode change back to 'list'
   useEffect(() => {
     let isMounted = true;
@@ -70,7 +78,7 @@ export const ExamsView: React.FC<ExamsViewProps> = ({
       if (viewMode !== 'list') return;
       setIsLoading(true);
       try {
-        const fetched = await getExamsList(selectedSubject, profile?.uid, profile?.branch);
+        const fetched = await getExamsList(selectedSubject, profile?.uid, effectiveBranch);
         if (isMounted) {
           setExams(fetched);
         }
@@ -86,7 +94,7 @@ export const ExamsView: React.FC<ExamsViewProps> = ({
     return () => {
       isMounted = false;
     };
-  }, [selectedSubject, profile?.uid, profile?.branch, viewMode]);
+  }, [selectedSubject, profile?.uid, effectiveBranch, viewMode]);
 
   // Sync initialAttempt prop changes
   useEffect(() => {
@@ -235,6 +243,59 @@ export const ExamsView: React.FC<ExamsViewProps> = ({
         <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
           امتحانات إلكترونية مخصصة لفرعك ومطابقة لأحدث مناهج التوجيهي، تصحيح فوري ونقاط مباشرة لرفع ترتيبك.
         </p>
+      </div>
+
+      {/* Branch Stream Tabs */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none border-b border-slate-100 dark:border-slate-800/80 pt-1">
+        <span className="text-xs text-slate-400 font-bold whitespace-nowrap pl-1">مسار الفرع:</span>
+        <button
+          type="button"
+          id="branch-filter-my-branch"
+          onClick={() => setBranchFilter('my_branch')}
+          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+            branchFilter === 'my_branch'
+              ? 'bg-emerald-600 text-white shadow-xs'
+              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+          }`}
+        >
+          {profile?.branch ? `فرعي (${profile.branch})` : 'فرعي'}
+        </button>
+        <button
+          type="button"
+          id="branch-filter-sci"
+          onClick={() => setBranchFilter('علمي')}
+          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+            branchFilter === 'علمي'
+              ? 'bg-blue-600 text-white shadow-xs'
+              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+          }`}
+        >
+          الفرع العلمي
+        </button>
+        <button
+          type="button"
+          id="branch-filter-lit"
+          onClick={() => setBranchFilter('أدبي')}
+          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+            branchFilter === 'أدبي'
+              ? 'bg-indigo-600 text-white shadow-xs'
+              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+          }`}
+        >
+          الفرع الأدبي
+        </button>
+        <button
+          type="button"
+          id="branch-filter-all"
+          onClick={() => setBranchFilter('all')}
+          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+            branchFilter === 'all'
+              ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-xs'
+              : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+          }`}
+        >
+          كافة الفروع
+        </button>
       </div>
 
       {/* Subject Filter Pills */}

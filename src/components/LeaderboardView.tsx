@@ -169,6 +169,7 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onSelectUser }
                       : 'hover:bg-blue-50/40 dark:hover:bg-slate-800/60'
                   }`}
                   title="اضغط لعرض الملف العام للطالب والمراسلة"
+                >
                   {/* Rank Column */}
                   <div className="col-span-2 sm:col-span-1 flex items-center justify-center">
                     {isFirst ? (

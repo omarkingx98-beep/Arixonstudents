@@ -15,18 +15,16 @@ service cloud.firestore {
         request.auth.token.get('admin', false) == true ||
         request.auth.token.get('role', '') == 'super_admin' ||
         request.auth.token.get('role', '') == 'admin' ||
-        (request.auth.token.email != null && (
-          request.auth.token.email in [
-            'omar88x99@gmail.com',
-            'omarkingx99@gmail.com',
-            'omarkingx98@gmail.com'
-          ] ||
-          request.auth.token.email.lower() in [
-            'omar88x99@gmail.com',
-            'omarkingx99@gmail.com',
-            'omarkingx98@gmail.com'
-          ]
-        )) ||
+        request.auth.token.get('email', '') in [
+          'omar88x99@gmail.com',
+          'omarkingx99@gmail.com',
+          'omarkingx98@gmail.com'
+        ] ||
+        request.auth.token.get('email', '').lower() in [
+          'omar88x99@gmail.com',
+          'omarkingx99@gmail.com',
+          'omarkingx98@gmail.com'
+        ] ||
         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') in ['super_admin', 'admin']) ||
         exists(/databases/$(database)/documents/adminProfiles/$(request.auth.uid))

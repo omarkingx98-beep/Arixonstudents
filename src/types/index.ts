@@ -30,7 +30,22 @@ export interface UserProfile {
   lastActiveAt: string;
 }
 
-export type SubjectId = 'all' | 'math' | 'physics' | 'arabic' | 'chemistry' | 'biology' | 'english' | 'islamic' | 'other';
+export type SubjectId = 
+  | 'all' 
+  | 'math' 
+  | 'physics' 
+  | 'arabic' 
+  | 'chemistry' 
+  | 'biology' 
+  | 'english' 
+  | 'islamic' 
+  | 'history' 
+  | 'geography' 
+  | 'islamic_studies' 
+  | 'financial_culture' 
+  | 'geology' 
+  | 'computer' 
+  | 'other';
 
 export interface DailyGoal {
   id: string;
@@ -128,6 +143,7 @@ export interface ExamAttempt {
   lesson?: string;
   totalPoints?: number;
   userDisplayName?: string;
+  reviews?: QuestionReview[];
 }
 
 export interface QuestionAnswer {
@@ -215,6 +231,8 @@ export type AdminAuditAction =
   | 'create_template'
   | 'settings_change'
   | 'admin_bootstrap'
+  | 'student_report'
+  | 'student_block'
   | 'permission_failure';
 
 export interface AdminAuditLog {

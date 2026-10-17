@@ -16,7 +16,7 @@ export const LITERARY_EXAM: Exam & { branch: string } = {
   difficulty: 'medium',
   status: 'available',
   published: true,
-  allowRetake: true,
+  allowRetake: false,
   branch: 'مشترك', // المشترك يشمل الأدبي والعلمي
   createdAt: '2025-09-02T08:00:00.000Z',
   updatedAt: new Date().toISOString(),

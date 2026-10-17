@@ -18,6 +18,7 @@ interface ExamDetailsModalProps {
   isOpen: boolean;
   onClose: () => void;
   onStartExam: (exam: Exam) => Promise<void>;
+  onViewResult?: (attemptId: string) => void;
   isLoading?: boolean;
 }
 
@@ -26,11 +27,14 @@ export const ExamDetailsModal: React.FC<ExamDetailsModalProps> = ({
   isOpen,
   onClose,
   onStartExam,
+  onViewResult,
   isLoading = false,
 }) => {
   const [error, setError] = useState<string | null>(null);
 
   if (!isOpen) return null;
+
+  const isCompleted = exam.userAttemptStatus === 'completed' || exam.status === 'completed';
 
   const handleStart = async () => {
     setError(null);
@@ -145,13 +149,22 @@ export const ExamDetailsModal: React.FC<ExamDetailsModalProps> = ({
             </ul>
           </div>
 
-          {/* Mandatory Critical Warning */}
-          <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200/80 dark:border-amber-900/60 flex items-start gap-3 text-amber-800 dark:text-amber-300">
-            <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
-            <div className="text-xs sm:text-sm font-medium leading-relaxed">
-              <strong>تنبيه هام:</strong> بمجرد بدء الامتحان سيبدأ احتساب الوقت تنازلياً ولا يمكن إيقاف المؤقت أو تجميده عند إغلاق المتصفح.
+          {/* Completed Notice vs Mandatory Critical Warning */}
+          {isCompleted ? (
+            <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200/80 dark:border-emerald-900/60 flex items-start gap-3 text-emerald-800 dark:text-emerald-300">
+              <CheckCircle2 className="w-5 h-5 flex-shrink-0 mt-0.5 text-emerald-600 dark:text-emerald-400" />
+              <div className="text-xs sm:text-sm font-medium leading-relaxed">
+                <strong>تم حل الامتحان مسبقاً بنجاح:</strong> لقد قمت بإنجاز هذا الامتحان مسبقاً وحصلت على {exam.userScore ?? 0}%. امتحانات المنصة مخصصة لمحاولة واحدة فقط، ويمكنك الآن مراجعة نتائجك وإجاباتك النموذجية دون إعادة الاختبار.
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200/80 dark:border-amber-900/60 flex items-start gap-3 text-amber-800 dark:text-amber-300">
+              <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+              <div className="text-xs sm:text-sm font-medium leading-relaxed">
+                <strong>تنبيه هام:</strong> بمجرد بدء الامتحان سيبدأ احتساب الوقت تنازلياً ولا يمكن إيقاف المؤقت أو تجميده عند إغلاق المتصفح. الامتحان متاح لمحاولة واحدة فقط.
+              </div>
+            </div>
+          )}
 
           {error && (
             <div className="p-3.5 rounded-xl bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-900 text-red-600 dark:text-red-400 text-xs">
@@ -162,24 +175,43 @@ export const ExamDetailsModal: React.FC<ExamDetailsModalProps> = ({
 
         {/* Footer Actions */}
         <div className="p-5 sm:p-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 flex items-center gap-3">
-          <button
-            id="confirm-start-exam-btn"
-            onClick={handleStart}
-            disabled={isLoading}
-            className="flex-1 py-3 px-5 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-blue-500/25 transition-all cursor-pointer disabled:opacity-70"
-          >
-            {isLoading ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span>جاري تهيئة الامتحان...</span>
-              </>
-            ) : (
-              <>
-                <Play className="w-4 h-4 fill-current" />
-                <span>بدء الامتحان الآن</span>
-              </>
-            )}
-          </button>
+          {isCompleted ? (
+            <button
+              id="confirm-view-result-btn"
+              onClick={() => {
+                if (onViewResult && exam.userLastAttemptId) {
+                  onViewResult(exam.userLastAttemptId);
+                  onClose();
+                } else {
+                  handleStart();
+                }
+              }}
+              disabled={isLoading}
+              className="flex-1 py-3 px-5 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-500/25 transition-all cursor-pointer disabled:opacity-70"
+            >
+              <CheckCircle2 className="w-4 h-4" />
+              <span>عرض النتيجة والمراجعة النموذجية</span>
+            </button>
+          ) : (
+            <button
+              id="confirm-start-exam-btn"
+              onClick={handleStart}
+              disabled={isLoading}
+              className="flex-1 py-3 px-5 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-blue-500/25 transition-all cursor-pointer disabled:opacity-70"
+            >
+              {isLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>جاري تهيئة الامتحان...</span>
+                </>
+              ) : (
+                <>
+                  <Play className="w-4 h-4 fill-current" />
+                  <span>بدء الامتحان الآن</span>
+                </>
+              )}
+            </button>
+          )}
 
           <button
             id="cancel-exam-details-btn"

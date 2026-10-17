@@ -9,6 +9,7 @@ import { AnnouncementTicker } from './components/AnnouncementTicker';
 import { NotificationsDrawer } from './components/NotificationsDrawer';
 import { PublicProfileModal } from './components/PublicProfileModal';
 import { ChatModal } from './components/ChatModal';
+import { UserSearchModal } from './components/UserSearchModal';
 import { Header } from './components/Header';
 import { BottomNavigation } from './components/Navigation';
 import { HomeDashboard } from './components/HomeDashboard';
@@ -20,10 +21,16 @@ import { StudentTutorialModal } from './components/StudentTutorialModal';
 import { AdminPanel } from './components/admin/AdminPanel';
 import { Logo } from './components/Logo';
 import { Loader2, AlertTriangle, RefreshCw, ShieldAlert } from 'lucide-react';
-import { seedFirstExamIfMissing } from './lib/examService';
+import { seedFirstExamIfMissing, getExamById } from './lib/examService';
 import { markTutorialAsSeen } from './lib/firebase';
 import { subscribeToNotifications } from './lib/notificationService';
-import type { NavigationTab, ExamAttempt, AppNotification } from './types';
+import { 
+  subscribeToStudentBroadcasts, 
+  getStudentNotifState, 
+  updateStudentNotifState, 
+  calculateUnreadBroadcasts 
+} from './lib/broadcastService';
+import type { NavigationTab, ExamAttempt, AppNotification, BroadcastNotification } from './types';
 
 function MainAppShell() {
   const { status, error, profile, refreshProfile, signOut } = useAuth();
@@ -39,6 +46,8 @@ function MainAppShell() {
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [unreadNotifsCount, setUnreadNotifsCount] = useState(0);
+  const [broadcasts, setBroadcasts] = useState<BroadcastNotification[]>([]);
+  const [lastReadBroadcastAt, setLastReadBroadcastAt] = useState<string | null>(null);
 
   // Social & Chat Modals state
   const [inspectedUserId, setInspectedUserId] = useState<string | null>(null);
@@ -49,6 +58,7 @@ function MainAppShell() {
     photoURL?: string;
     branch?: string;
   } | null>(null);
+  const [isUserSearchOpen, setIsUserSearchOpen] = useState(false);
 
   // Cross-tab exam viewing state
   const [examInitialAttempt, setExamInitialAttempt] = useState<ExamAttempt | null>(null);
@@ -64,6 +74,49 @@ function MainAppShell() {
       return () => unsubscribe();
     }
   }, [status, profile?.uid]);
+
+  // Realtime broadcasts listener & student notifState (D2)
+  useEffect(() => {
+    if (status === 'authenticated' && profile?.uid) {
+      getStudentNotifState(profile.uid).then((st) => {
+        if (st?.lastReadAt) setLastReadBroadcastAt(st.lastReadAt);
+      });
+
+      const unsubBroadcasts = subscribeToStudentBroadcasts(profile.branch, (bList) => {
+        setBroadcasts(bList);
+      });
+
+      return () => {
+        unsubBroadcasts();
+      };
+    }
+  }, [status, profile?.uid, profile?.branch]);
+
+  const unreadBroadcasts = calculateUnreadBroadcasts(broadcasts, lastReadBroadcastAt);
+  const totalUnreadCount = unreadNotifsCount + unreadBroadcasts;
+
+  const handleOpenNotifications = () => {
+    setIsNotificationsOpen(true);
+    if (profile?.uid) {
+      const now = new Date().toISOString();
+      setLastReadBroadcastAt(now);
+      updateStudentNotifState(profile.uid).catch(() => {});
+    }
+  };
+
+  const handleOpenExamFromBroadcast = async (examId: string) => {
+    setIsNotificationsOpen(false);
+    try {
+      const targetExam = await getExamById(examId);
+      if (!targetExam || targetExam.status === 'unpublished' || targetExam.status === 'archived' || !targetExam.published) {
+        alert('الامتحان غير متاح حالياً.');
+        return;
+      }
+      setCurrentTab('exams');
+    } catch {
+      alert('الامتحان غير متاح حالياً.');
+    }
+  };
 
   // Automatic tutorial launch for students who have not seen it yet
   useEffect(() => {
@@ -247,8 +300,9 @@ function MainAppShell() {
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenTutorial={() => setIsTutorialOpen(true)}
         onOpenAdmin={handleOpenAdmin}
-        onOpenNotifications={() => setIsNotificationsOpen(true)}
-        unreadNotificationsCount={unreadNotifsCount}
+        onOpenNotifications={handleOpenNotifications}
+        onOpenUserSearch={() => setIsUserSearchOpen(true)}
+        unreadNotificationsCount={totalUnreadCount}
       />
 
       {/* Ticker Announcements bar immediately below Header (C2) */}
@@ -287,6 +341,7 @@ function MainAppShell() {
             onOpenAdmin={handleOpenAdmin}
             onSelectUser={(uid) => setInspectedUserId(uid)}
             onOpenChatWithUser={(target) => setActiveChatUser(target)}
+            onOpenUserSearch={() => setIsUserSearchOpen(true)}
           />
         )}
       </main>
@@ -314,11 +369,14 @@ function MainAppShell() {
         />
       )}
 
-      {/* Notifications Drawer (C3) */}
+      {/* Notifications Drawer (C3 & D2) */}
       <NotificationsDrawer
         isOpen={isNotificationsOpen}
         onClose={() => setIsNotificationsOpen(false)}
         notifications={notifications}
+        broadcasts={broadcasts}
+        lastReadBroadcastAt={lastReadBroadcastAt}
+        onOpenExam={handleOpenExamFromBroadcast}
         onOpenChatWithUser={(uid, name) => {
           setIsNotificationsOpen(false);
           setActiveChatUser({ uid, displayName: name, username: name });
@@ -341,6 +399,22 @@ function MainAppShell() {
         onClose={() => setActiveChatUser(null)}
         targetUser={activeChatUser}
       />
+
+      {/* Student Username Search Modal */}
+      {isUserSearchOpen && (
+        <UserSearchModal
+          isOpen={isUserSearchOpen}
+          onClose={() => setIsUserSearchOpen(false)}
+          onOpenProfile={(uid) => {
+            setIsUserSearchOpen(false);
+            setInspectedUserId(uid);
+          }}
+          onOpenChat={(target) => {
+            setIsUserSearchOpen(false);
+            setActiveChatUser(target);
+          }}
+        />
+      )}
 
       {/* Interactive Student Tutorial Modal */}
       <StudentTutorialModal 

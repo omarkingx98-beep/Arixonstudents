@@ -278,9 +278,9 @@ export async function saveExamWithValidation(
     const q = questions[i];
     const qId = q.id || `q_${examId}_${i + 1}`;
     
-    // Public question fields
+    // Question fields
     const publicQRef = doc(db, 'exams', examId, 'questions', qId);
-    const publicData: Question = {
+    const publicData: any = {
       id: qId,
       examId,
       order: i + 1,
@@ -290,7 +290,10 @@ export async function saveExamWithValidation(
       source: q.source || 'أريكسون 2009',
       points: q.points || 5,
       questionType: q.questionType || 'multiple_choice',
+      correctAnswer: q.correctAnswer,
+      explanation: q.explanation,
       hint: (q as any).hint || undefined,
+      solutionSteps: (q as any).solutionSteps || undefined,
       distractorAnalysis: (q as any).distractorAnalysis || undefined,
     };
     await setDoc(publicQRef, sanitizeFirestoreData(publicData));
@@ -323,12 +326,31 @@ export async function saveExamWithValidation(
   return examId;
 }
 
-export async function setExamPublishStatus(examId: string, published: boolean, title: string): Promise<void> {
+export async function setExamPublishStatus(
+  examId: string, 
+  published: boolean, 
+  title: string, 
+  extraBranch?: string
+): Promise<void> {
   const examDocRef = doc(db, 'exams', examId);
   const now = new Date().toISOString();
+
+  let branch = extraBranch || 'all';
+  let previousStatus = 'draft';
+  try {
+    const snap = await getDoc(examDocRef);
+    if (snap.exists()) {
+      const data = snap.data();
+      branch = data.branch || branch;
+      previousStatus = data.status || (data.published ? 'published' : 'draft');
+    }
+  } catch {}
+
+  const nextStatus = published ? 'published' : 'unpublished';
+
   await updateDoc(examDocRef, {
     published,
-    status: published ? 'available' : 'coming_soon',
+    status: nextStatus,
     updatedAt: now,
   });
 
@@ -336,8 +358,40 @@ export async function setExamPublishStatus(examId: string, published: boolean, t
     action: published ? 'publish_exam' : 'unpublish_exam',
     targetType: 'exam',
     targetId: examId,
-    details: `${published ? 'نشر' : 'إلغاء نشر'} امتحان: "${title}"`,
+    details: `${published ? (previousStatus === 'unpublished' ? 'إعادة نشر' : 'نشر') : 'إيقاف نشر'} امتحان: "${title}"`,
   });
+
+  // Automated economical broadcast notification for students
+  try {
+    const { createOrCoalesceBroadcast } = await import('./broadcastService');
+    const isRepublished = published && previousStatus === 'unpublished';
+    const bType = published 
+      ? (isRepublished ? 'exam_republished' : 'exam_published')
+      : 'exam_unpublished';
+
+    const bTitle = published
+      ? (isRepublished ? `تمت إعادة إتاحة امتحان: ${title}` : `تم نشر امتحان جديد: ${title}`)
+      : `تم إيقاف امتحان مؤقتاً: ${title}`;
+
+    const bMessage = published
+      ? 'أصبح الامتحان متاحاً الآن في قائمة الامتحانات لجميع طلبة المسار.'
+      : 'تم إيقاف هذا الامتحان مؤقتاً للمراجعة والتحديث.';
+
+    await createOrCoalesceBroadcast({
+      type: bType,
+      title: bTitle,
+      message: bMessage,
+      examId,
+      examTitle: title,
+      audience: {
+        grade: '2009',
+        track: (branch as any) || 'all',
+      },
+      adminEmail: auth.currentUser?.email || 'admin@arixon.edu',
+    });
+  } catch (bErr) {
+    console.warn('[Admin Service] Broadcast dispatch notice:', bErr);
+  }
 }
 
 export async function archiveExam(examId: string, title: string): Promise<void> {
@@ -345,7 +399,7 @@ export async function archiveExam(examId: string, title: string): Promise<void> 
   const now = new Date().toISOString();
   await updateDoc(examDocRef, {
     published: false,
-    status: 'closed',
+    status: 'archived',
     isArchived: true,
     updatedAt: now,
   });
@@ -590,7 +644,7 @@ export async function batchImportValidQuestions(validRows: QuestionValidationRow
 }
 
 function getSubjectNameAr(sub: SubjectId): string {
-  const map: Record<SubjectId, string> = {
+  const map: Partial<Record<SubjectId, string>> = {
     all: 'الكل',
     physics: 'الفيزياء',
     math: 'الرياضيات',
@@ -1235,5 +1289,107 @@ export async function saveExamTemplate(template: Omit<ExamTemplate, 'id'>): Prom
   });
 
   return id;
+}
+
+export interface StudentReportItem {
+  id: string;
+  reporterId: string;
+  reporterName: string;
+  reporterUsername?: string;
+  reportedUserId: string;
+  reportedUserName: string;
+  reportedUserUsername?: string;
+  actionType: 'report' | 'block';
+  reason: string;
+  details?: string;
+  createdAt: string;
+  status: 'pending' | 'resolved' | 'dismissed';
+}
+
+/**
+ * Submit a student report or block alert directly to the Administration notifications
+ */
+export async function submitStudentReportOrBlock(params: {
+  reporterId: string;
+  reporterName: string;
+  reporterUsername?: string;
+  reportedUserId: string;
+  reportedUserName: string;
+  reportedUserUsername?: string;
+  actionType: 'report' | 'block';
+  reason: string;
+  details?: string;
+}): Promise<string> {
+  const reportId = `rep_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+  const now = new Date().toISOString();
+
+  const reportData: StudentReportItem = {
+    id: reportId,
+    reporterId: params.reporterId,
+    reporterName: params.reporterName,
+    reporterUsername: params.reporterUsername,
+    reportedUserId: params.reportedUserId,
+    reportedUserName: params.reportedUserName,
+    reportedUserUsername: params.reportedUserUsername,
+    actionType: params.actionType,
+    reason: params.reason,
+    details: params.details || '',
+    createdAt: now,
+    status: 'pending',
+  };
+
+  // 1. Write report document to adminReports collection
+  try {
+    await setDoc(doc(db, 'adminReports', reportId), sanitizeFirestoreData(reportData));
+  } catch (err) {
+    console.warn('[adminService] Notice writing adminReport to Firestore:', err);
+  }
+
+  // 2. Write to adminAuditLogs so admin dashboard & audit logs pick it up immediately
+  const actionText = params.actionType === 'block' ? 'حظر طالب' : 'إبلاغ عن طالب';
+  try {
+    await setDoc(doc(db, 'adminAuditLogs', reportId), sanitizeFirestoreData({
+      id: reportId,
+      timestamp: now,
+      adminId: params.reporterId,
+      adminName: params.reporterName,
+      adminEmail: params.reporterUsername ? `@${params.reporterUsername}` : 'student',
+      action: params.actionType === 'block' ? 'student_block' : 'student_report',
+      targetType: 'student',
+      targetId: params.reportedUserId,
+      details: `🚨 ${actionText}: قام الطالب ${params.reporterName} (@${params.reporterUsername || ''}) بـ ${actionText} ضد ${params.reportedUserName} (@${params.reportedUserUsername || ''}) - السبب: ${params.reason} ${params.details ? `(${params.details})` : ''}`,
+    }));
+  } catch (logErr) {
+    console.warn('[adminService] Notice logging report to audit logs:', logErr);
+  }
+
+  // 3. Save to local cache for instant admin notifications display
+  try {
+    const key = 'arixon_admin_reports';
+    const local = JSON.parse(localStorage.getItem(key) || '[]');
+    localStorage.setItem(key, JSON.stringify([reportData, ...local].slice(0, 50)));
+  } catch {}
+
+  return reportId;
+}
+
+/**
+ * Fetch pending student reports and block alerts for administrators
+ */
+export async function fetchAdminReports(): Promise<StudentReportItem[]> {
+  try {
+    const snap = await getDocs(query(collection(db, 'adminReports'), orderBy('createdAt', 'desc'), limit(50)));
+    const list: StudentReportItem[] = [];
+    snap.forEach((d) => list.push(d.data() as StudentReportItem));
+    if (list.length > 0) return list;
+  } catch (err) {
+    console.warn('[adminService] Error fetching admin reports from Firestore:', err);
+  }
+  try {
+    const local = JSON.parse(localStorage.getItem('arixon_admin_reports') || '[]');
+    return local;
+  } catch {
+    return [];
+  }
 }
 

@@ -68,7 +68,7 @@ export const AiExamBuilderModal: React.FC<AiExamBuilderModalProps> = ({
     setIsSaving(true);
 
     try {
-      const subjectNamesMap: Record<SubjectId, string> = {
+      const subjectNamesMap: Partial<Record<SubjectId, string>> = {
         physics: 'الفيزياء',
         math: 'الرياضيات',
         chemistry: 'الكيمياء',

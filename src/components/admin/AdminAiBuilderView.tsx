@@ -54,7 +54,7 @@ interface AdminAiBuilderViewProps {
   onQuestionSaved?: () => void;
 }
 
-const CURRICULUM_SUGGESTIONS: Record<SubjectId, string[]> = {
+const CURRICULUM_SUGGESTIONS: Partial<Record<SubjectId, string[]>> = {
   physics: [
     'الزخم الخطي والدفع والتصادمات',
     'الحركة الدورانية وعزم القصور',
@@ -166,7 +166,7 @@ export const AdminAiBuilderView: React.FC<AdminAiBuilderViewProps> = ({
   const [manualExamDuration, setManualExamDuration] = useState(40);
   const [manualExamPoints, setManualExamPoints] = useState(100);
 
-  const subjectNames: Record<SubjectId, string> = {
+  const subjectNames: Partial<Record<SubjectId, string>> = {
     all: 'الكل',
     physics: 'الفيزياء',
     math: 'الرياضيات',

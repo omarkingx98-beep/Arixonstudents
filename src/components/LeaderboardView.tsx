@@ -11,6 +11,7 @@ interface LeaderboardViewProps {
 export const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onSelectUser }) => {
   const { profile, user } = useAuth();
   const [period, setPeriod] = useState<'all' | 'weekly' | 'monthly'>('all');
+  const [branchFilter, setBranchFilter] = useState<'all' | 'علمي' | 'أدبي'>('all');
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
@@ -19,7 +20,7 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onSelectUser }
     async function loadLeaderboard() {
       setIsLoading(true);
       try {
-        const data = await fetchLeaderboard(period);
+        const data = await fetchLeaderboard(period, branchFilter);
         if (isMounted) {
           // Flag current user
           const mapped = data.map((entry) => ({
@@ -40,7 +41,7 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onSelectUser }
     return () => {
       isMounted = false;
     };
-  }, [period, user]);
+  }, [period, branchFilter, user]);
 
   return (
     <div className="space-y-6 pb-20 md:pb-8">
@@ -53,35 +54,69 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onSelectUser }
           <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400">
             جيل 2009
           </span>
+          {branchFilter !== 'all' && (
+            <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300">
+              فرع: {branchFilter}
+            </span>
+          )}
         </div>
         <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-          تنافس بنزاهة مع نخبة طلبة التوجيهي واصعد نحو القمة
+          تنافس بنزاهة مع نخبة طلبة التوجيهي واصعد نحو القمة مع كل إجابة صحيحة
         </p>
       </div>
 
-      {/* Tabs: الترتيب العام / الأسبوعي / الشهري */}
-      <div className="flex p-1 rounded-2xl bg-slate-100 dark:bg-slate-800/70 border border-slate-200/60 dark:border-slate-800 max-w-md">
-        {[
-          { id: 'all' as const, label: 'الترتيب العام' },
-          { id: 'weekly' as const, label: 'الأسبوعي' },
-          { id: 'monthly' as const, label: 'الشهري' },
-        ].map((tab) => {
-          const isActive = period === tab.id;
-          return (
-            <button
-              key={tab.id}
-              id={`leaderboard-tab-${tab.id}`}
-              onClick={() => setPeriod(tab.id)}
-              className={`flex-1 py-2 text-xs sm:text-sm font-bold rounded-xl transition-all cursor-pointer ${
-                isActive
-                  ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-sm'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
-              }`}
-            >
-              {tab.label}
-            </button>
-          );
-        })}
+      {/* Control Tabs: Time Period & Academic Track */}
+      <div className="space-y-3">
+        {/* Period Tabs: الترتيب العام / الأسبوعي / الشهري */}
+        <div className="flex p-1 rounded-2xl bg-slate-100 dark:bg-slate-800/70 border border-slate-200/60 dark:border-slate-800 max-w-md">
+          {[
+            { id: 'all' as const, label: 'الترتيب العام' },
+            { id: 'weekly' as const, label: 'الأسبوعي' },
+            { id: 'monthly' as const, label: 'الشهري' },
+          ].map((tab) => {
+            const isActive = period === tab.id;
+            return (
+              <button
+                key={tab.id}
+                id={`leaderboard-tab-${tab.id}`}
+                onClick={() => setPeriod(tab.id)}
+                className={`flex-1 py-2 text-xs sm:text-sm font-bold rounded-xl transition-all cursor-pointer ${
+                  isActive
+                    ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-sm'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Branch Filter Tabs: الكل / الفرع العلمي / الفرع الأدبي */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+          <span className="text-xs text-slate-400 font-bold whitespace-nowrap pl-1">تصنيف الفرع:</span>
+          {[
+            { id: 'all' as const, label: 'جميع الفروع' },
+            { id: 'علمي' as const, label: 'الفرع العلمي' },
+            { id: 'أدبي' as const, label: 'الفرع الأدبي' },
+          ].map((b) => {
+            const isSelected = branchFilter === b.id;
+            return (
+              <button
+                key={b.id}
+                id={`leaderboard-branch-${b.id}`}
+                onClick={() => setBranchFilter(b.id)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
+                  isSelected
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'bg-white dark:bg-[#111625] border border-slate-200/80 dark:border-slate-800/80 text-slate-600 dark:text-slate-400 hover:border-blue-400'
+                }`}
+              >
+                {b.label}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Loading state */}
@@ -203,6 +238,11 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onSelectUser }
                         <span className="text-sm font-bold text-slate-900 dark:text-white truncate">
                           {entry.displayName || entry.username}
                         </span>
+                        {(entry as any).branch && (
+                          <span className="text-[9px] font-semibold px-1.5 py-0.2 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                            {(entry as any).branch}
+                          </span>
+                        )}
                         {entry.isCurrentUser && (
                           <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-600 text-white flex-shrink-0">
                             أنت

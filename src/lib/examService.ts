@@ -144,14 +144,23 @@ export async function getExamsList(
     const exams: Exam[] = [];
 
     // Also get all user attempts if user is signed in to mark completed/in_progress
-    const userAttemptsMap: Record<string, ExamAttempt> = {};
+    const userSubmittedAttempts: Record<string, ExamAttempt> = {};
+    const userInProgressAttempts: Record<string, ExamAttempt> = {};
+
     if (currentUserId) {
       const attemptsRef = collection(db, 'attempts');
       const attemptsQuery = query(attemptsRef, where('userId', '==', currentUserId));
       const attemptsSnap = await getDocs(attemptsQuery);
       attemptsSnap.forEach((d) => {
-        const att = d.data() as ExamAttempt;
-        userAttemptsMap[att.examId] = att;
+        const att = { ...(d.data() as ExamAttempt), id: d.id };
+        if (att.status === 'submitted') {
+          const prev = userSubmittedAttempts[att.examId];
+          if (!prev || new Date(att.submittedAt || 0) > new Date(prev.submittedAt || 0)) {
+            userSubmittedAttempts[att.examId] = att;
+          }
+        } else if (att.status === 'in_progress') {
+          userInProgressAttempts[att.examId] = att;
+        }
       });
     }
 
@@ -162,28 +171,59 @@ export async function getExamsList(
         id: docSnapshot.id,
       };
 
-      // Branch filtration: if exam specifies branch, only show if matches student's branch or common
-      if (userBranch && (examObj as any).branch && (examObj as any).branch !== 'all' && (examObj as any).branch !== 'مشترك') {
+      // Status check: do not show unpublished, draft, or archived exams to students
+      const st = (examObj.status as string) || (examObj.published ? 'published' : 'draft');
+      if (st === 'unpublished' || st === 'archived' || st === 'draft' || examObj.published === false) {
+        return;
+      }
+
+      // Branch filtration: strict separation between Literary and Scientific tracks
+      if (userBranch && userBranch !== 'all') {
         const examBranch = (examObj as any).branch;
-        if (examBranch !== userBranch) {
-          return; // Skip exam not meant for this student's branch
+        const examSub = examObj.subject;
+
+        // Literary track (أدبي): strictly exclude scientific-only subjects
+        if (userBranch === 'أدبي') {
+          if (['physics', 'chemistry', 'biology', 'geology'].includes(examSub) || examBranch === 'علمي') {
+            return; // Never show Physics/Chemistry/Biology/Geology in Literary
+          }
+        }
+
+        // Scientific track (علمي): strictly exclude literary-only subjects
+        if (userBranch === 'علمي') {
+          if (['history', 'geography', 'financial_culture'].includes(examSub) || examBranch === 'أدبي') {
+            return; // Never show History/Geography/Financial Culture in Scientific
+          }
+        }
+
+        // Target branch check: if exam has a specific branch requirement
+        if (examBranch && examBranch !== 'all' && examBranch !== 'مشترك') {
+          if (examBranch !== userBranch) {
+            return;
+          }
         }
       }
 
-      if (currentUserId && userAttemptsMap[examObj.id]) {
-        const att = userAttemptsMap[examObj.id];
-        if (att.status === 'submitted') {
+      // Student attempt status: if submitted, it is permanently completed (one-time completion)
+      if (currentUserId) {
+        if (userSubmittedAttempts[examObj.id]) {
+          const att = userSubmittedAttempts[examObj.id];
           examObj.userAttemptStatus = 'completed';
+          examObj.status = 'completed';
           examObj.userLastAttemptId = att.id;
           examObj.userScore = att.score ?? 0;
-          if (!examObj.allowRetake) {
-            examObj.status = 'completed';
-          }
-        } else if (att.status === 'in_progress') {
+        } else if (userInProgressAttempts[examObj.id]) {
+          const att = userInProgressAttempts[examObj.id];
           const isExpired = new Date(att.expectedEndAt).getTime() < Date.now();
           if (!isExpired) {
             examObj.userAttemptStatus = 'in_progress';
             examObj.userLastAttemptId = att.id;
+          } else {
+            // Expired attempt -> locked as completed
+            examObj.userAttemptStatus = 'completed';
+            examObj.status = 'completed';
+            examObj.userLastAttemptId = att.id;
+            examObj.userScore = att.score ?? 0;
           }
         }
       }
@@ -243,11 +283,28 @@ export async function getExamQuestions(examId: string): Promise<Question[]> {
       });
     });
 
-    // Fallback to initial question data if subcollection is empty
-    if (questions.length === 0 && examId === FIRST_EXAM_ID) {
+    // Fallback to full initial question set if questions in subcollection are incomplete or empty
+    const isArabicExam = examId === LITERARY_EXAM_ID || examId.includes('arabic') || examId.includes('lit');
+    const isPhysicsExam = examId === FIRST_EXAM_ID || examId.includes('physics');
+
+    if (isArabicExam && questions.length < 15) {
+      return LITERARY_EXAM_QUESTIONS.map(q => ({
+        id: q.id,
+        examId,
+        questionText: q.questionText,
+        options: q.options,
+        difficulty: q.difficulty,
+        source: q.source,
+        points: q.points,
+        order: q.order,
+        questionType: q.questionType,
+        hint: q.hint,
+      }));
+    }
+    if (isPhysicsExam && questions.length < 20) {
       return FIRST_EXAM_QUESTIONS.map(q => ({
         id: q.id,
-        examId: FIRST_EXAM_ID,
+        examId,
         questionText: q.questionText,
         options: q.options,
         difficulty: q.difficulty,
@@ -262,10 +319,13 @@ export async function getExamQuestions(examId: string): Promise<Question[]> {
     return questions;
   } catch (error) {
     console.error('Error fetching exam questions:', error);
-    if (examId === FIRST_EXAM_ID) {
-      return FIRST_EXAM_QUESTIONS.map(q => ({
+    const isArabicExam = examId === LITERARY_EXAM_ID || examId.includes('arabic') || examId.includes('lit');
+    const isPhysicsExam = examId === FIRST_EXAM_ID || examId.includes('physics');
+
+    if (isArabicExam) {
+      return LITERARY_EXAM_QUESTIONS.map(q => ({
         id: q.id,
-        examId: FIRST_EXAM_ID,
+        examId,
         questionText: q.questionText,
         options: q.options,
         difficulty: q.difficulty,
@@ -273,6 +333,21 @@ export async function getExamQuestions(examId: string): Promise<Question[]> {
         points: q.points,
         order: q.order,
         questionType: q.questionType,
+        hint: q.hint,
+      }));
+    }
+    if (isPhysicsExam) {
+      return FIRST_EXAM_QUESTIONS.map(q => ({
+        id: q.id,
+        examId,
+        questionText: q.questionText,
+        options: q.options,
+        difficulty: q.difficulty,
+        source: q.source,
+        points: q.points,
+        order: q.order,
+        questionType: q.questionType,
+        hint: q.hint,
       }));
     }
     return [];
@@ -313,8 +388,8 @@ export async function startOrResumeAttempt(
     }
   });
 
-  // If retake is not allowed and exam is completed
-  if (completedAttempt && !exam.allowRetake) {
+  // Strict one-time rule: Once completed, retake is strictly prohibited
+  if (completedAttempt) {
     const questions = await getExamQuestions(examId);
     return { attempt: completedAttempt, questions, isResumed: true };
   }
@@ -340,6 +415,7 @@ export async function startOrResumeAttempt(
     id: attemptId,
     userId,
     examId,
+    examVersion: exam.version || 1,
     examTitle: exam.title,
     examSubject: exam.subjectNameAr || exam.subject,
     lesson: exam.lesson,
@@ -524,27 +600,64 @@ export async function submitExamAttempt(
 
   // 2. Fetch questions with answer keys
   let questionsWithKeys: QuestionWithKey[] = [];
-  if (attempt.examId === FIRST_EXAM_ID) {
+  const isSubmissionArabic = attempt.examId === LITERARY_EXAM_ID || 
+    attempt.examId.includes('arabic') || 
+    attempt.examId.includes('lit') || 
+    (attempt.examSubject && attempt.examSubject.includes('عرب'));
+  const isSubmissionPhysics = attempt.examId === FIRST_EXAM_ID || 
+    attempt.examId.includes('physics') || 
+    (attempt.examSubject && attempt.examSubject.includes('فيزياء'));
+
+  if (isSubmissionPhysics) {
     questionsWithKeys = FIRST_EXAM_QUESTIONS;
+  } else if (isSubmissionArabic) {
+    questionsWithKeys = LITERARY_EXAM_QUESTIONS;
   } else {
-    // For other exams, fetch questions and their keys
+    // For other exams, fetch questions from Firestore
     try {
       const qCol = collection(db, 'exams', attempt.examId, 'questions');
       const qSnap = await getDocs(query(qCol, orderBy('order', 'asc')));
       for (const d of qSnap.docs) {
-        const qData = d.data() as Question;
-        const keyDoc = await getDoc(doc(db, 'exams', attempt.examId, 'answerKeys', d.id));
-        const keyData = keyDoc.exists() ? keyDoc.data() : { correctAnswer: 0, explanation: '' };
+        const qData = d.data() as any;
+        let correctAnswer = qData.correctAnswer ?? 0;
+        let explanation = qData.explanation ?? '';
+        let hint = qData.hint ?? '';
+        let solutionSteps = qData.solutionSteps ?? null;
+        let distractorAnalysis = qData.distractorAnalysis ?? null;
+
+        try {
+          const keyDoc = await getDoc(doc(db, 'exams', attempt.examId, 'answerKeys', d.id));
+          if (keyDoc.exists()) {
+            const keyData = keyDoc.data();
+            if (keyData.correctAnswer !== undefined) correctAnswer = keyData.correctAnswer;
+            if (keyData.explanation) explanation = keyData.explanation;
+            if (keyData.hint) hint = keyData.hint;
+            if (keyData.solutionSteps) solutionSteps = keyData.solutionSteps;
+            if (keyData.distractorAnalysis) distractorAnalysis = keyData.distractorAnalysis;
+          }
+        } catch {
+          // If answerKeys reading fails, qData has fallback
+        }
+
         questionsWithKeys.push({
-          ...qData,
           id: d.id,
-          correctAnswer: keyData.correctAnswer ?? 0,
-          explanation: keyData.explanation ?? '',
-          distractorAnalysis: (keyData as any).distractorAnalysis || qData.distractorAnalysis || undefined,
+          examId: attempt.examId,
+          order: qData.order || (questionsWithKeys.length + 1),
+          questionText: qData.questionText || '',
+          options: qData.options || [],
+          difficulty: qData.difficulty || 'medium',
+          source: qData.source || 'أريكسون',
+          points: qData.points || 5,
+          questionType: qData.questionType || 'multiple_choice',
+          correctAnswer,
+          explanation,
+          hint,
+          solutionSteps,
+          distractorAnalysis,
         });
       }
-    } catch {
-      questionsWithKeys = FIRST_EXAM_QUESTIONS;
+    } catch (err) {
+      console.error('Error fetching questions for exam submission:', err);
     }
   }
 
@@ -561,11 +674,11 @@ export async function submitExamAttempt(
   for (const q of questionsWithKeys) {
     const studentAns = savedAnswers[q.id] !== undefined ? savedAnswers[q.id] : null;
     const isUnanswered = studentAns === null;
-    const isCorrect = !isUnanswered && studentAns === q.correctAnswer;
+    const isCorrect = !isUnanswered && Number(studentAns) === Number(q.correctAnswer);
 
     if (isCorrect) {
       correctCount++;
-      pointsEarned += q.points;
+      pointsEarned += (q.points || 5);
     } else if (isUnanswered) {
       unansweredCount++;
     } else {
@@ -586,8 +699,8 @@ export async function submitExamAttempt(
       solutionSteps: q.solutionSteps,
       formulaUsed: q.formulaUsed,
       distractorAnalysis: q.distractorAnalysis || undefined,
-      points: q.points,
-      pointsEarned: isCorrect ? q.points : 0,
+      points: q.points || 5,
+      pointsEarned: isCorrect ? (q.points || 5) : 0,
       source: q.source,
     });
   }
@@ -595,8 +708,8 @@ export async function submitExamAttempt(
   const now = new Date();
   const startTime = new Date(attempt.startedAt).getTime();
   const durationSeconds = Math.max(0, Math.floor((now.getTime() - startTime) / 1000));
-  const totalExamPoints = attempt.totalPoints || 100;
-  const finalScore = Math.round((pointsEarned / totalExamPoints) * 100);
+  const totalExamPoints = attempt.totalPoints || (questionsWithKeys.length * 5) || 100;
+  const finalScore = Math.min(100, Math.round((pointsEarned / totalExamPoints) * 100));
 
   const submittedAttempt: ExamAttempt = {
     ...attempt,
@@ -634,7 +747,7 @@ export async function submitExamAttempt(
     localStorage.setItem(`arixon_attempt_${attemptId}`, JSON.stringify({ ...submittedAttempt, reviews }));
   } catch {}
 
-  // 6. Update user's profile statistics in Firestore & local cache
+  // 6. Update user's profile statistics in Firestore & local cache (totalPoints, weeklyPoints, monthlyPoints)
   try {
     const userDocRef = doc(db, 'users', userId);
     await runTransaction(db, async (transaction) => {
@@ -653,6 +766,23 @@ export async function submitExamAttempt(
         });
       }
     });
+
+    // Also sync points and exams completed to public profile
+    const pubRef = doc(db, 'publicProfiles', userId);
+    const pubSnap = await getDoc(pubRef);
+    const currentPubPoints = pubSnap.exists() ? (pubSnap.data().totalPoints || 0) : 0;
+    const currentPubWeekly = pubSnap.exists() ? (pubSnap.data().weeklyPoints || 0) : 0;
+    const currentPubMonthly = pubSnap.exists() ? (pubSnap.data().monthlyPoints || 0) : 0;
+    const currentPubExams = pubSnap.exists() ? (pubSnap.data().examsCompleted || 0) : 0;
+    await setDoc(pubRef, {
+      totalPoints: currentPubPoints + pointsEarned,
+      weeklyPoints: currentPubWeekly + pointsEarned,
+      monthlyPoints: currentPubMonthly + pointsEarned,
+      examsCompleted: currentPubExams + 1,
+      correctAnswers: (pubSnap.exists() ? (pubSnap.data().correctAnswers || 0) : 0) + correctCount,
+      wrongAnswers: (pubSnap.exists() ? (pubSnap.data().wrongAnswers || 0) : 0) + wrongCount,
+      updatedAt: now.toISOString(),
+    }, { merge: true });
   } catch (transErr) {
     console.warn('Error updating user stats in Firestore:', transErr);
   }
@@ -679,17 +809,196 @@ export async function submitExamAttempt(
 }
 
 /**
- * Fetch reviews for an attempt
+ * Fetch reviews for an attempt with auto-repair if attempt suffered from fallback bug
  */
 export async function getAttemptReviews(attemptId: string, userId: string): Promise<QuestionReview[]> {
   try {
     const attemptDoc = await getDoc(doc(db, 'attempts', attemptId));
     if (!attemptDoc.exists()) return [];
-    const data = attemptDoc.data();
-    if (data.userId !== userId) {
+    const attemptData = attemptDoc.data() as ExamAttempt;
+    if (attemptData.userId !== userId) {
       throw new Error('غير مصرح بالوصول لمراجعة هذا الامتحان.');
     }
-    return (data.reviews as QuestionReview[]) || [];
+
+    const savedReviews = (attemptData.reviews as QuestionReview[]) || [];
+
+    // Check if reviews suffered from the fallback bug:
+    // e.g., examId is NOT physics FIRST_EXAM_ID, but savedReviews contains physics questions
+    const hasPhysicsMismatch = attemptData.examId !== FIRST_EXAM_ID && 
+      savedReviews.some(r => r.questionText?.includes('الزخم الخطي') || r.questionId === 'q1');
+
+    if (savedReviews.length > 0 && !hasPhysicsMismatch) {
+      return savedReviews;
+    }
+
+    // Auto-repair: reconstruct reviews from actual exam questions and saved student answers!
+    const savedAnswers = await getSavedAnswersForAttempt(attemptId);
+    let questionsWithKeys: QuestionWithKey[] = [];
+
+    if (attemptData.examId === FIRST_EXAM_ID) {
+      questionsWithKeys = FIRST_EXAM_QUESTIONS;
+    } else if (attemptData.examId === LITERARY_EXAM_ID) {
+      questionsWithKeys = LITERARY_EXAM_QUESTIONS;
+    } else {
+      const qCol = collection(db, 'exams', attemptData.examId, 'questions');
+      const qSnap = await getDocs(query(qCol, orderBy('order', 'asc')));
+      for (const d of qSnap.docs) {
+        const qData = d.data() as any;
+        let correctAnswer = qData.correctAnswer ?? 0;
+        let explanation = qData.explanation ?? '';
+        let hint = qData.hint ?? '';
+        let solutionSteps = qData.solutionSteps ?? null;
+        let distractorAnalysis = qData.distractorAnalysis ?? null;
+        try {
+          const keyDoc = await getDoc(doc(db, 'exams', attemptData.examId, 'answerKeys', d.id));
+          if (keyDoc.exists()) {
+            const k = keyDoc.data();
+            if (k.correctAnswer !== undefined) correctAnswer = k.correctAnswer;
+            if (k.explanation) explanation = k.explanation;
+            if (k.hint) hint = k.hint;
+            if (k.solutionSteps) solutionSteps = k.solutionSteps;
+            if (k.distractorAnalysis) distractorAnalysis = k.distractorAnalysis;
+          }
+        } catch {}
+        questionsWithKeys.push({
+          id: d.id,
+          examId: attemptData.examId,
+          order: qData.order || (questionsWithKeys.length + 1),
+          questionText: qData.questionText || '',
+          options: qData.options || [],
+          difficulty: qData.difficulty || 'medium',
+          source: qData.source || 'أريكسون',
+          points: qData.points || 5,
+          questionType: qData.questionType || 'multiple_choice',
+          correctAnswer,
+          explanation,
+          hint,
+          solutionSteps,
+          distractorAnalysis,
+        });
+      }
+    }
+
+    if (questionsWithKeys.length === 0) {
+      return savedReviews;
+    }
+
+    // Reconstruct reviews
+    let correctCount = 0;
+    let wrongCount = 0;
+    let unansweredCount = 0;
+    let pointsEarned = 0;
+    const reconstructedReviews: QuestionReview[] = [];
+
+    for (const q of questionsWithKeys) {
+      const studentAns = savedAnswers[q.id] !== undefined ? savedAnswers[q.id] : null;
+      const isUnanswered = studentAns === null;
+      const isCorrect = !isUnanswered && Number(studentAns) === Number(q.correctAnswer);
+
+      if (isCorrect) {
+        correctCount++;
+        pointsEarned += (q.points || 5);
+      } else if (isUnanswered) {
+        unansweredCount++;
+      } else {
+        wrongCount++;
+      }
+
+      reconstructedReviews.push({
+        questionId: q.id,
+        questionNumber: q.order,
+        questionText: q.questionText,
+        options: q.options,
+        studentAnswer: studentAns,
+        correctAnswer: q.correctAnswer,
+        isCorrect,
+        isUnanswered,
+        explanation: q.explanation,
+        hint: q.hint,
+        solutionSteps: q.solutionSteps,
+        formulaUsed: q.formulaUsed,
+        distractorAnalysis: q.distractorAnalysis,
+        points: q.points || 5,
+        pointsEarned: isCorrect ? (q.points || 5) : 0,
+        source: q.source,
+      });
+    }
+
+    // Persist repaired reviews and score back to Firestore attempt doc
+    try {
+      const totalExamPoints = attemptData.totalPoints || (questionsWithKeys.length * 5) || 100;
+      const finalScore = Math.min(100, Math.round((pointsEarned / totalExamPoints) * 100));
+      await updateDoc(doc(db, 'attempts', attemptId), {
+        reviews: reconstructedReviews,
+        score: finalScore,
+        pointsEarned,
+        correctAnswers: correctCount,
+        wrongAnswers: wrongCount,
+        unanswered: unansweredCount,
+      });
+
+      // Credit missing points to user profile and public profile if score was previously 0
+      const pointDifference = pointsEarned - (attemptData.pointsEarned || 0);
+      if (pointDifference > 0) {
+        try {
+          const userDocRef = doc(db, 'users', userId);
+          const uSnap = await getDoc(userDocRef);
+          if (uSnap.exists()) {
+            const uData = uSnap.data() as UserProfile;
+            const newTotal = (uData.totalPoints || 0) + pointDifference;
+            const newWeekly = (uData.weeklyPoints || 0) + pointDifference;
+            const newMonthly = (uData.monthlyPoints || 0) + pointDifference;
+            await updateDoc(userDocRef, {
+              totalPoints: newTotal,
+              weeklyPoints: newWeekly,
+              monthlyPoints: newMonthly,
+              correctAnswers: (uData.correctAnswers || 0) + correctCount,
+              updatedAt: new Date().toISOString(),
+            });
+
+            // Sync to publicProfile
+            const pubRef = doc(db, 'publicProfiles', userId);
+            await setDoc(pubRef, {
+              totalPoints: newTotal,
+              weeklyPoints: newWeekly,
+              monthlyPoints: newMonthly,
+              correctAnswers: (uData.correctAnswers || 0) + correctCount,
+              updatedAt: new Date().toISOString(),
+            }, { merge: true });
+
+            // Update localStorage cached profile
+            const cacheKey = `arixon_cached_profile_${userId}`;
+            const rawProfile = localStorage.getItem(cacheKey);
+            if (rawProfile) {
+              const parsed = JSON.parse(rawProfile);
+              parsed.totalPoints = newTotal;
+              parsed.weeklyPoints = newWeekly;
+              parsed.monthlyPoints = newMonthly;
+              localStorage.setItem(cacheKey, JSON.stringify(parsed));
+            }
+          }
+        } catch (credErr) {
+          console.warn('Notice crediting repaired exam points:', credErr);
+        }
+      }
+
+      // Update attempt in localStorage cache
+      try {
+        localStorage.setItem(`arixon_attempt_${attemptId}`, JSON.stringify({
+          ...attemptData,
+          reviews: reconstructedReviews,
+          score: finalScore,
+          pointsEarned,
+          correctAnswers: correctCount,
+          wrongAnswers: wrongCount,
+          unanswered: unansweredCount,
+        }));
+      } catch {}
+    } catch (saveErr) {
+      console.warn('Notice saving repaired reviews to attempt:', saveErr);
+    }
+
+    return reconstructedReviews;
   } catch (error) {
     console.error('Error fetching reviews:', error);
     return [];

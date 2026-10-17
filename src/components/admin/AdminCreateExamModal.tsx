@@ -11,6 +11,7 @@ import {
   Sparkles,
   HelpCircle,
   Layers,
+  AlertTriangle,
 } from 'lucide-react';
 import { saveExamWithValidation, fetchQuestionBank } from '../../lib/adminService';
 import { getExamQuestions } from '../../lib/examService';
@@ -63,6 +64,7 @@ export const AdminCreateExamModal: React.FC<AdminCreateExamModalProps> = ({
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [notifyStudentsOnEdit, setNotifyStudentsOnEdit] = useState<boolean>(true);
 
   // Load existing questions if editing
   useEffect(() => {
@@ -185,7 +187,7 @@ export const AdminCreateExamModal: React.FC<AdminCreateExamModalProps> = ({
 
     setIsSubmitting(true);
     try {
-      const subjectNames: Record<SubjectId, string> = {
+      const subjectNames: Partial<Record<SubjectId, string>> = {
         all: 'الكل',
         physics: 'الفيزياء',
         math: 'الرياضيات',
@@ -197,7 +199,10 @@ export const AdminCreateExamModal: React.FC<AdminCreateExamModalProps> = ({
         other: 'مبحث آخر',
       };
 
-      await saveExamWithValidation(
+      const isEditingPublished = Boolean(examToEdit?.published);
+      const nextVersion = isEditingPublished ? ((examToEdit?.version || 1) + 1) : (examToEdit?.version || 1);
+
+      const savedExamId = await saveExamWithValidation(
         {
           id: examToEdit?.id,
           title: title.trim(),
@@ -209,8 +214,9 @@ export const AdminCreateExamModal: React.FC<AdminCreateExamModalProps> = ({
           totalPoints: Number(totalPoints),
           difficulty,
           branch: branch || 'مشترك',
-          status: publishIntent ? 'available' : 'coming_soon',
+          status: publishIntent ? 'published' : (examToEdit?.status || 'coming_soon'),
           published: publishIntent,
+          version: nextVersion,
           allowRetake,
           questionCount: questions.length,
           createdAt: examToEdit?.createdAt || new Date().toISOString(),
@@ -222,6 +228,27 @@ export const AdminCreateExamModal: React.FC<AdminCreateExamModalProps> = ({
           order: i + 1,
         }))
       );
+
+      // Automated broadcast notification if substantive edit on a published exam
+      if (examToEdit && isEditingPublished && notifyStudentsOnEdit) {
+        try {
+          const { createOrCoalesceBroadcast } = await import('../../lib/broadcastService');
+          await createOrCoalesceBroadcast({
+            type: 'exam_updated',
+            title: `تم تحديث امتحان: ${title.trim()}`,
+            message: `تم تحديث محتوى وأسئلة الامتحان (الإصدار ${nextVersion}).`,
+            examId: savedExamId,
+            examTitle: title.trim(),
+            audience: {
+              grade: '2009',
+              track: (branch as any) || 'all',
+            },
+            adminEmail: auth.currentUser?.email || 'admin@arixon.edu',
+          });
+        } catch (bErr) {
+          console.warn('[AdminCreateExamModal] Notice sending update broadcast:', bErr);
+        }
+      }
 
       onSaved();
       onClose();
@@ -315,6 +342,30 @@ export const AdminCreateExamModal: React.FC<AdminCreateExamModalProps> = ({
           {/* TAB 1: OVERVIEW */}
           {activeTab === 'overview' && (
             <div className="space-y-4">
+              {/* Published Exam Warning Banner (D1 requirement) */}
+              {examToEdit?.published && (
+                <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 space-y-2">
+                  <div className="flex items-center gap-2 text-amber-800 dark:text-amber-300 font-bold text-xs">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>تحذير تعديل امتحان منشور (الإصدار الحالي: v{examToEdit.version || 1})</span>
+                  </div>
+                  <p className="text-[11px] text-amber-700/90 dark:text-amber-400/90 leading-relaxed">
+                    هذا الامتحان متاح للطلاب حالياً. عند الحفظ، سيتم ترقية رقم الإصدار تلقائياً إلى (v{(examToEdit.version || 1) + 1})، وستبقى نتائج ومراجعات محاولات الطلاب السابقة ثابتة ومحمية بالكامل ولن تتأثر بالتعديل.
+                  </p>
+
+                  <label className="flex items-center gap-2 pt-1 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={notifyStudentsOnEdit}
+                      onChange={(e) => setNotifyStudentsOnEdit(e.target.checked)}
+                      className="rounded border-amber-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
+                    />
+                    <span className="text-xs font-bold text-amber-900 dark:text-amber-200">
+                      أبلغ الطلاب بهذا التعديل (إشعار عام فوري للطلاب المستهدفين)
+                    </span>
+                  </label>
+                </div>
+              )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-700 dark:text-slate-300">

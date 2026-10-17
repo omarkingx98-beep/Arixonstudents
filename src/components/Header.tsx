@@ -3,7 +3,7 @@ import { Logo } from './Logo';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { useAdmin } from '../context/AdminContext';
-import { Sun, Moon, Settings, Home, BookOpen, Trophy, User, ShieldCheck, Sparkles, Bell } from 'lucide-react';
+import { Sun, Moon, Settings, Home, BookOpen, Trophy, User, ShieldCheck, Sparkles, Bell, Search } from 'lucide-react';
 import type { NavigationTab } from '../types';
 
 interface HeaderProps {
@@ -13,6 +13,7 @@ interface HeaderProps {
   onOpenTutorial?: () => void;
   onOpenAdmin?: () => void;
   onOpenNotifications?: () => void;
+  onOpenUserSearch?: () => void;
   unreadNotificationsCount?: number;
 }
 
@@ -23,6 +24,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenTutorial,
   onOpenAdmin,
   onOpenNotifications,
+  onOpenUserSearch,
   unreadNotificationsCount = 0,
 }) => {
   const { theme, toggleTheme } = useTheme();
@@ -114,6 +116,19 @@ export const Header: React.FC<HeaderProps> = ({
               <Moon className="w-4 h-4 text-slate-700" />
             )}
           </button>
+
+          {/* Search Students by Username */}
+          {onOpenUserSearch && (
+            <button
+              id="user-search-header-btn"
+              onClick={onOpenUserSearch}
+              aria-label="البحث عن الطلاب"
+              className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700/80 transition-colors cursor-pointer shrink-0"
+              title="البحث عن طالب باليوزر"
+            >
+              <Search className="w-4 h-4 text-blue-500" />
+            </button>
+          )}
 
           {/* Notifications Trigger */}
           {onOpenNotifications && (

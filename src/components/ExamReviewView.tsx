@@ -24,13 +24,18 @@ export const ExamReviewView: React.FC<ExamReviewViewProps> = ({
   userId,
   onBack,
 }) => {
-  const [reviews, setReviews] = useState<QuestionReview[]>((attempt as any).reviews || []);
-  const [isLoading, setIsLoading] = useState<boolean>(!((attempt as any).reviews?.length));
+  const initialReviews = (attempt as any).reviews || [];
+  // Detect if review contains physics fallback questions on a non-physics exam
+  const hasMismatch = attempt.examId !== 'exam_physics_tw2009_01' && 
+    initialReviews.some((r: any) => r.questionText?.includes('الزخم الخطي') || r.questionId === 'q1');
+
+  const [reviews, setReviews] = useState<QuestionReview[]>(hasMismatch ? [] : initialReviews);
+  const [isLoading, setIsLoading] = useState<boolean>(hasMismatch || !initialReviews.length);
   const [filterMode, setFilterMode] = useState<'all' | 'correct' | 'wrong' | 'unanswered'>('all');
 
   useEffect(() => {
     let isMounted = true;
-    if (!reviews || reviews.length === 0) {
+    if (hasMismatch || !reviews || reviews.length === 0) {
       async function loadReviews() {
         setIsLoading(true);
         try {
@@ -49,7 +54,7 @@ export const ExamReviewView: React.FC<ExamReviewViewProps> = ({
     return () => {
       isMounted = false;
     };
-  }, [attempt.id, userId]);
+  }, [attempt.id, userId, hasMismatch]);
 
   const filteredReviews = (reviews || []).filter((q) => {
     if (filterMode === 'correct') return q.isCorrect;
@@ -57,6 +62,11 @@ export const ExamReviewView: React.FC<ExamReviewViewProps> = ({
     if (filterMode === 'unanswered') return q.isUnanswered;
     return true;
   });
+
+  const correctCount = reviews.filter((r) => r.isCorrect).length;
+  const totalCount = reviews.length || (attempt as any).questionCount || 15;
+  const calculatedScore = totalCount > 0 ? Math.min(100, Math.round((correctCount / totalCount) * 100)) : (attempt.score ?? 0);
+  const earnedPoints = reviews.reduce((sum, r) => sum + (r.isCorrect ? (r.points || 5) : 0), 0);
 
   const optionLetters = ['أ', 'ب', 'ج', 'د'];
 
@@ -69,7 +79,7 @@ export const ExamReviewView: React.FC<ExamReviewViewProps> = ({
             مراجعة الإجابات والحل النموذجي
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-            {attempt.examTitle} • درجتك: {attempt.score}% ({attempt.correctAnswers} صحيحة من {(reviews || []).length})
+            {attempt.examTitle} • درجتك: {calculatedScore}% ({correctCount} صحيحة من {totalCount}) • +{earnedPoints} نقطة
           </p>
         </div>
 

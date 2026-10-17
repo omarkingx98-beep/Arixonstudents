@@ -86,6 +86,12 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // Admin Reports & Block Alerts (Created by students, reviewed by admins)
+    match /adminReports/{reportId} {
+      allow read, update, delete: if isAdmin();
+      allow create: if isAuthenticated();
+    }
+
     // Point Adjustments History (Append-Only)
     match /pointAdjustments/{adjId} {
       allow read: if isAdmin();
@@ -196,7 +202,10 @@ service cloud.firestore {
     match /exams/{examId} {
       // Students can read published exams; Admins can read both draft & published exams
       allow read: if isAuthenticated() && (
-        (resource.data.published == true && resource.data.get('status', 'published') == 'published') ||
+        (resource.data.published == true && 
+         resource.data.get('status', 'available') != 'unpublished' && 
+         resource.data.get('status', 'available') != 'archived' && 
+         resource.data.get('status', 'available') != 'draft') ||
         isAdmin()
       );
 
@@ -210,9 +219,10 @@ service cloud.firestore {
         allow create, update, delete: if isAdmin();
       }
 
-      // Protected answer keys - hidden from regular students, accessible only to admin
+      // Protected answer keys - readable by authenticated students for scoring and review, writeable only by admin
       match /answerKeys/{questionId} {
-        allow read, write: if isAdmin();
+        allow read: if isAuthenticated();
+        allow write: if isAdmin();
       }
     }
 

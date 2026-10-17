@@ -62,7 +62,11 @@ export const AdminAuditLogsView: React.FC = () => {
   };
 
   const filtered = logs.filter((l) => {
-    if (selectedTarget !== 'all' && l.targetType !== selectedTarget) return false;
+    if (selectedTarget === 'reports') {
+      if (l.action !== 'student_report' && l.action !== 'student_block') return false;
+    } else if (selectedTarget !== 'all' && l.targetType !== selectedTarget) {
+      return false;
+    }
     if (searchQuery.trim()) {
       const term = searchQuery.toLowerCase().trim();
       const matchDetails = l.details.toLowerCase().includes(term);
@@ -116,6 +120,7 @@ export const AdminAuditLogsView: React.FC = () => {
           className="px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#13192a] text-xs"
         >
           <option value="all">جميع الأنواع</option>
+          <option value="reports">🚨 بلاغات وحظر الطلاب (Reports & Blocks)</option>
           <option value="exam">الامتحانات (Exam)</option>
           <option value="question">الأسئلة (Question)</option>
           <option value="student">الطلاب والنقاط (Student)</option>

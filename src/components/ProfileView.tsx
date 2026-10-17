@@ -24,6 +24,7 @@ import {
   ShieldCheck,
   Users,
   MessageSquare,
+  Search,
 } from 'lucide-react';
 import { getFriendsList } from '../lib/friendService';
 import type { FriendItem } from '../types';
@@ -34,6 +35,7 @@ interface ProfileViewProps {
   onOpenAdmin?: () => void;
   onOpenChatWithUser?: (user: { uid: string; displayName: string; username: string; photoURL?: string; branch?: string }) => void;
   onSelectUser?: (userId: string) => void;
+  onOpenUserSearch?: () => void;
 }
 
 export const ProfileView: React.FC<ProfileViewProps> = ({ 
@@ -42,6 +44,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   onOpenAdmin,
   onOpenChatWithUser,
   onSelectUser,
+  onOpenUserSearch,
 }) => {
   const { profile } = useAuth();
   const { isAdmin, isSuperAdmin } = useAdmin();
@@ -364,9 +367,22 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
               قائمة أصدقائي ({friends.length})
             </h2>
           </div>
-          <span className="text-xs text-slate-400">
-            أصدقاؤك على أريكسون
-          </span>
+          <div className="flex items-center gap-2">
+            {onOpenUserSearch && (
+              <button
+                type="button"
+                id="profile-search-friends-btn"
+                onClick={onOpenUserSearch}
+                className="px-2.5 py-1 rounded-xl bg-blue-50 dark:bg-blue-950/60 hover:bg-blue-100 dark:hover:bg-blue-900/40 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-900/60 text-xs font-bold flex items-center gap-1 transition-colors cursor-pointer shadow-2xs"
+              >
+                <Search className="w-3.5 h-3.5" />
+                <span>بحث باليوزر</span>
+              </button>
+            )}
+            <span className="text-xs text-slate-400">
+              أصدقاؤك على أريكسون
+            </span>
+          </div>
         </div>
 
         {isLoadingFriends && (

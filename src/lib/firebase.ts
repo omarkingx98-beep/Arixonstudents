@@ -295,20 +295,44 @@ export async function logOut(): Promise<void> {
  * Check and get user profile from Firestore using Firebase Auth UID as primary key
  */
 export async function getUserProfile(uid: string): Promise<UserProfile | null> {
-  const userDocRef = doc(db, 'users', uid);
-  const userDoc = await getDoc(userDocRef);
-  if (userDoc.exists()) {
-    return userDoc.data() as UserProfile;
+  try {
+    const userDocRef = doc(db, 'users', uid);
+    const userDoc = await getDoc(userDocRef);
+    if (userDoc.exists()) {
+      const profile = userDoc.data() as UserProfile;
+      // Cache locally for offline/refresh resilience
+      try {
+        localStorage.setItem(`arixon_cached_profile_${uid}`, JSON.stringify(profile));
+      } catch {}
+      // Ensure public profile exists
+      syncPublicProfile(profile).catch(() => {});
+      return profile;
+    }
+  } catch (err) {
+    console.warn('[firebase] Error getting user profile from Firestore, checking cache:', err);
   }
+
+  // Fallback to local cache if Firestore is temporarily unreachable on page refresh
+  try {
+    const raw = localStorage.getItem(`arixon_cached_profile_${uid}`);
+    if (raw) {
+      return JSON.parse(raw) as UserProfile;
+    }
+  } catch {}
+
   return null;
 }
 
 /**
  * Check if a username is already taken by another user
+ * Queries publicProfiles which is readable by authenticated users
  */
 export async function isUsernameTaken(username: string, excludeUid?: string): Promise<boolean> {
   try {
-    const q = query(collection(db, 'users'), where('username', '==', username.trim().toLowerCase()));
+    const q = query(
+      collection(db, 'publicProfiles'), 
+      where('username', '==', username.trim().toLowerCase())
+    );
     const snapshot = await getDocs(q);
     if (snapshot.empty) return false;
     if (excludeUid) {
@@ -316,7 +340,7 @@ export async function isUsernameTaken(username: string, excludeUid?: string): Pr
     }
     return true;
   } catch (error) {
-    console.error('Error checking username:', error);
+    console.warn('Notice checking username in publicProfiles:', error);
     return false;
   }
 }
@@ -343,7 +367,12 @@ export async function createUserProfile(
   // Safety check: if user already has a profile in Firestore, preserve it completely
   const existingDoc = await getDoc(userDocRef);
   if (existingDoc.exists()) {
-    return existingDoc.data() as UserProfile;
+    const exData = existingDoc.data() as UserProfile;
+    // Ensure public profile exists as well
+    try {
+      await syncPublicProfile(exData);
+    } catch {}
+    return exData;
   }
 
   const now = new Date().toISOString();
@@ -431,6 +460,7 @@ export async function updateUserProfile(
     if (cleanUpdates.username) pubUpdates.username = cleanUpdates.username;
     if (cleanUpdates.photoURL) pubUpdates.photoURL = cleanUpdates.photoURL;
     if (cleanUpdates.branch) pubUpdates.branch = cleanUpdates.branch;
+    pubUpdates.updatedAt = new Date().toISOString();
     if (Object.keys(pubUpdates).length > 0) {
       await setDoc(pubRef, pubUpdates, { merge: true });
     }
@@ -493,8 +523,12 @@ export async function syncPublicProfile(profile: UserProfile): Promise<void> {
     photoURL: profile.photoURL || undefined,
     branch: profile.branch || 'علمي',
     totalPoints: profile.totalPoints || 0,
-    createdAt: profile.createdAt,
+    weeklyPoints: profile.weeklyPoints || 0,
+    monthlyPoints: profile.monthlyPoints || 0,
+    createdAt: profile.createdAt || new Date().toISOString(),
     examsCompleted: profile.examsCompleted || 0,
+    correctAnswers: profile.correctAnswers || 0,
+    wrongAnswers: profile.wrongAnswers || 0,
     updatedAt: new Date().toISOString(),
   };
 
@@ -507,7 +541,7 @@ export async function syncPublicProfile(profile: UserProfile): Promise<void> {
 }
 
 /**
- * Fetch public user profile safely
+ * Fetch public user profile safely without triggering permission-denied errors
  */
 export async function fetchPublicUserProfile(uid: string): Promise<any | null> {
   try {
@@ -516,21 +550,27 @@ export async function fetchPublicUserProfile(uid: string): Promise<any | null> {
     if (snap.exists()) {
       return snap.data();
     }
-    // Fallback to reading users doc
-    const uDoc = await getDoc(doc(db, 'users', uid));
-    if (uDoc.exists()) {
-      const u = uDoc.data() as UserProfile;
-      return {
-        uid: u.uid,
-        displayName: u.displayName || u.username,
-        username: u.username,
-        photoURL: u.photoURL,
-        branch: u.branch || 'علمي',
-        totalPoints: u.totalPoints || 0,
-        createdAt: u.createdAt,
-        examsCompleted: u.examsCompleted || 0,
-        age: u.showAgeInPublicProfile !== false ? u.age : undefined,
-      };
+    
+    // Only if current user is inspecting their own profile, fallback to reading users doc
+    if (auth.currentUser && auth.currentUser.uid === uid) {
+      const uDoc = await getDoc(doc(db, 'users', uid));
+      if (uDoc.exists()) {
+        const u = uDoc.data() as UserProfile;
+        const publicSafe = {
+          uid: u.uid,
+          displayName: u.displayName || u.username,
+          username: u.username,
+          photoURL: u.photoURL,
+          branch: u.branch || 'علمي',
+          totalPoints: u.totalPoints || 0,
+          createdAt: u.createdAt,
+          examsCompleted: u.examsCompleted || 0,
+          age: u.showAgeInPublicProfile !== false ? u.age : undefined,
+        };
+        // Auto-heal missing public profile
+        syncPublicProfile(u).catch(() => {});
+        return publicSafe;
+      }
     }
     return null;
   } catch (err) {
@@ -578,40 +618,56 @@ export async function touchUserActivity(uid: string): Promise<void> {
 }
 
 /**
- * Query real leaderboard from Firestore
+ * Query real leaderboard from publicProfiles collection (strictly readable by all authenticated students)
+ * Supports time periods ('all' | 'weekly' | 'monthly') and branch filtration ('all' | 'علمي' | 'أدبي')
  */
-export async function fetchLeaderboard(period: 'all' | 'weekly' | 'monthly'): Promise<LeaderboardEntry[]> {
+export async function fetchLeaderboard(
+  period: 'all' | 'weekly' | 'monthly' = 'all',
+  branchFilter: 'all' | 'علمي' | 'أدبي' = 'all'
+): Promise<LeaderboardEntry[]> {
   try {
     const pointsField = period === 'weekly' ? 'weeklyPoints' : period === 'monthly' ? 'monthlyPoints' : 'totalPoints';
-    const q = query(
-      collection(db, 'users'),
-      orderBy(pointsField, 'desc'),
-      limit(50)
-    );
-    const snapshot = await getDocs(q);
+    const pubCol = collection(db, 'publicProfiles');
     
+    let q;
+    if (branchFilter && branchFilter !== 'all') {
+      q = query(
+        pubCol,
+        where('branch', '==', branchFilter),
+        orderBy(pointsField, 'desc'),
+        limit(50)
+      );
+    } else {
+      q = query(
+        pubCol,
+        orderBy(pointsField, 'desc'),
+        limit(50)
+      );
+    }
+
+    const snapshot = await getDocs(q);
     let currentRank = 1;
     const entries: LeaderboardEntry[] = [];
     
     snapshot.forEach((docSnapshot) => {
-      const data = docSnapshot.data() as UserProfile;
-      const points = data[pointsField] || 0;
-      // Only include if user has earned points or has valid profile
-      if (points > 0) {
-        entries.push({
-          uid: data.uid,
-          username: data.username || 'مستخدم',
-          displayName: data.displayName || data.username,
-          photoURL: data.photoURL,
-          points,
-          rank: currentRank++,
-        });
-      }
+      const data = docSnapshot.data() as any;
+      const points = data[pointsField] ?? data.totalPoints ?? 0;
+      
+      // Include users with rank, points and branch info
+      entries.push({
+        uid: data.uid || docSnapshot.id,
+        username: data.username || 'طالب',
+        displayName: data.displayName || data.username || 'طالب أريكسون',
+        photoURL: data.photoURL,
+        points: Number(points) || 0,
+        rank: currentRank++,
+        branch: data.branch || 'علمي',
+      } as LeaderboardEntry & { branch?: string });
     });
 
     return entries;
   } catch (error) {
-    console.error('Error fetching leaderboard:', error);
+    console.error('Error fetching leaderboard from publicProfiles:', error);
     return [];
   }
 }

@@ -23,6 +23,7 @@ import {
   RefreshCw,
   Activity,
   ShieldCheck,
+  AlertTriangle,
 } from 'lucide-react';
 import type { AdminTab, AdminAuditLog } from '../../types';
 
@@ -440,26 +441,47 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate }) =>
             </div>
           ) : (
             <div className="divide-y divide-slate-100 dark:divide-slate-800/60">
-              {(recentActivities || []).map((log) => (
-                <div key={log.id} className="py-3 flex items-start justify-between gap-4">
-                  <div className="flex items-start gap-3 min-w-0">
-                    <div className="w-2 h-2 rounded-full bg-blue-500 mt-1.5 shrink-0" />
-                    <div className="min-w-0">
-                      <p className="text-xs font-semibold text-slate-800 dark:text-slate-200 truncate">
-                        {log.details}
-                      </p>
-                      <div className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-2">
-                        <span>بواسطة: {log.adminName || 'عمر كينج'}</span>
-                        <span>•</span>
-                        <span>{new Date(log.timestamp).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}</span>
+              {(recentActivities || []).map((log) => {
+                const isReportOrBlock = log.action === 'student_report' || log.action === 'student_block';
+                return (
+                  <div 
+                    key={log.id} 
+                    className={`py-3 px-2 rounded-xl flex items-start justify-between gap-4 transition-colors ${
+                      isReportOrBlock ? 'bg-red-50/70 dark:bg-red-950/30 border border-red-200 dark:border-red-900/40 my-1' : ''
+                    }`}
+                  >
+                    <div className="flex items-start gap-3 min-w-0">
+                      {isReportOrBlock ? (
+                        <div className="p-1 rounded-lg bg-red-600 text-white shrink-0 mt-0.5">
+                          <AlertTriangle className="w-3.5 h-3.5" />
+                        </div>
+                      ) : (
+                        <div className="w-2 h-2 rounded-full bg-blue-500 mt-1.5 shrink-0" />
+                      )}
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          {isReportOrBlock && (
+                            <span className="text-[10px] font-black px-1.5 py-0.2 rounded-md bg-red-600 text-white shrink-0">
+                              {log.action === 'student_block' ? 'حظر طالب' : 'إبلاغ عن مخالفة'}
+                            </span>
+                          )}
+                          <p className={`text-xs font-semibold truncate ${isReportOrBlock ? 'text-red-900 dark:text-red-200 font-bold' : 'text-slate-800 dark:text-slate-200'}`}>
+                            {log.details}
+                          </p>
+                        </div>
+                        <div className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-2">
+                          <span>بواسطة: {log.adminName || 'طالب'}</span>
+                          <span>•</span>
+                          <span>{new Date(log.timestamp).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}</span>
+                        </div>
                       </div>
                     </div>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 shrink-0">
+                      {new Date(log.timestamp).toLocaleDateString('ar-EG')}
+                    </span>
                   </div>
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-500 shrink-0">
-                    {new Date(log.timestamp).toLocaleDateString('ar-EG')}
-                  </span>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

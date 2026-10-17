@@ -15,7 +15,7 @@ export const FIRST_EXAM: Exam = {
   difficulty: 'medium',
   status: 'available',
   published: true,
-  allowRetake: true,
+  allowRetake: false,
   branch: 'علمي',
   createdAt: '2025-09-01T08:00:00.000Z',
   updatedAt: new Date().toISOString(),

@@ -33,7 +33,7 @@ export const AdminQuestionEditorModal: React.FC<AdminQuestionEditorModalProps> =
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const subjectNames: Record<SubjectId, string> = {
+  const subjectNames: Partial<Record<SubjectId, string>> = {
     all: 'الكل',
     physics: 'الفيزياء',
     math: 'الرياضيات',

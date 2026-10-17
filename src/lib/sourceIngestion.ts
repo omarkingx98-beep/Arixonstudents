@@ -9,7 +9,7 @@
 import type { SourceIngestionReport, SourceSectionChunk, SubjectId } from '../types';
 
 // Subject & Topic Keywords Dictionary for Ingestion Detection
-const SUBJECT_KEYWORDS: Record<SubjectId, string[]> = {
+const SUBJECT_KEYWORDS: Partial<Record<SubjectId, string[]>> = {
   all: [],
   physics: ['زخم', 'دفع', 'تصادم', 'كتلة', 'سرعة', 'طاقة حركية', 'نيوتن', 'تسارع', 'قوة', 'مجال', 'تيار', 'مقاومة', 'جهد', 'مغناطيس', 'موجات', 'شغل'],
   math: ['دالة', 'تفاضل', 'تكامل', 'مشتقة', 'مصفوفة', 'معادلة', 'مثلثية', 'لوغاريتم', 'نهايات', 'هندسة', 'احتمالات'],

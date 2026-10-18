@@ -8,6 +8,7 @@ import {
   where,
   getDocs,
   getDoc,
+  onSnapshot,
 } from 'firebase/firestore';
 import { db, sanitizeFirestoreData } from './firebase';
 import { sendAppNotification } from './notificationService';
@@ -208,4 +209,25 @@ export async function getPendingReceivedFriendRequests(userId: string): Promise<
     console.warn('[friendService] Error fetching pending requests:', err);
     return [];
   }
+}
+
+/**
+ * Subscribe to the user's pending received friend requests count in real time
+ */
+export function subscribeToPendingFriendRequests(
+  userId: string,
+  callback: (count: number) => void
+): () => void {
+  const colRef = collection(db, 'friendRequests');
+  const q = query(colRef, where('receiverId', '==', userId), where('status', '==', 'pending'));
+  return onSnapshot(
+    q,
+    (snap) => {
+      callback(snap.size);
+    },
+    (err) => {
+      console.warn('[friendService] subscribeToPendingFriendRequests error:', err);
+      callback(0);
+    }
+  );
 }

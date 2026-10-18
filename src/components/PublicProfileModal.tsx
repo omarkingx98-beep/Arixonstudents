@@ -5,22 +5,21 @@ import {
   UserPlus, 
   MessageSquare, 
   Trophy, 
-  Award, 
   BookOpen, 
   Calendar, 
   Check, 
   Clock, 
-  Loader2,
-  ShieldAlert,
-  Ban,
-  Flag,
+  Loader2, 
+  ShieldAlert, 
   AlertTriangle,
-  Send
+  Lock,
+  Flag
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useAdmin } from '../context/AdminContext';
 import { fetchPublicUserProfile } from '../lib/firebase';
 import { sendFriendRequest, getFriendshipStatus, acceptFriendRequest } from '../lib/friendService';
-import { submitStudentReportOrBlock } from '../lib/adminService';
+import { submitStudentReport } from '../lib/reportService';
 import type { PublicUserProfile } from '../types';
 
 interface PublicProfileModalProps {
@@ -35,18 +34,18 @@ export const PublicProfileModal: React.FC<PublicProfileModalProps> = ({
   onOpenChat,
 }) => {
   const { profile: myProfile } = useAuth();
+  const { isAdmin } = useAdmin();
   const [userProfile, setUserProfile] = useState<PublicUserProfile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [friendStatus, setFriendStatus] = useState<'none' | 'friends' | 'pending_sent' | 'pending_received' | 'self'>('none');
   const [isSendingRequest, setIsSendingRequest] = useState(false);
 
-  // Report & Block State
+  // Report Dialog State
   const [showReportDialog, setShowReportDialog] = useState(false);
-  const [reportActionType, setReportActionType] = useState<'report' | 'block'>('report');
-  const [reportReason, setReportReason] = useState('إساءة أو مضايقة');
-  const [reportDetails, setReportDetails] = useState('');
+  const [reportReason, setReportReason] = useState('مضايقة أو إساءة');
+  const [reportNote, setReportNote] = useState('');
   const [isSubmittingReport, setIsSubmittingReport] = useState(false);
-  const [reportSuccessMessage, setReportSuccessMessage] = useState<string | null>(null);
+  const [reportStatusMessage, setReportStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
   useEffect(() => {
     if (!targetUserId) return;
@@ -79,8 +78,11 @@ export const PublicProfileModal: React.FC<PublicProfileModalProps> = ({
 
   if (!targetUserId) return null;
 
+  const isSelf = myProfile?.uid === targetUserId || friendStatus === 'self';
+  const canMessage = friendStatus === 'friends' || isAdmin;
+
   const handleSendFriendRequest = async () => {
-    if (!myProfile || !userProfile) return;
+    if (!myProfile || !userProfile || isSelf) return;
     setIsSendingRequest(true);
     try {
       await sendFriendRequest(myProfile, {
@@ -89,7 +91,6 @@ export const PublicProfileModal: React.FC<PublicProfileModalProps> = ({
         username: userProfile.username,
       });
       setFriendStatus('pending_sent');
-      alert(`تم إرسال طلب الصداقة إلى ${userProfile.displayName} بنجاح.`);
     } catch (err: any) {
       alert(err.message || 'فشل إرسال طلب الصداقة.');
     } finally {
@@ -98,46 +99,43 @@ export const PublicProfileModal: React.FC<PublicProfileModalProps> = ({
   };
 
   const handleStartChat = () => {
-    if (!userProfile) return;
+    if (!userProfile || !canMessage) return;
     onClose();
     onOpenChat({
       uid: userProfile.uid,
       displayName: userProfile.displayName,
       username: userProfile.username,
-      photoURL: userProfile.photoURL,
-      branch: userProfile.branch,
+      photoURL: userProfile.photoURL || userProfile.avatar,
+      branch: userProfile.branch || userProfile.track,
     });
   };
 
-  const handleSubmitReport = async (e: React.FormEvent) => {
+  const handleSubmitReportForm = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!myProfile || !userProfile) return;
+    if (!myProfile || !userProfile || isSelf) return;
 
     setIsSubmittingReport(true);
+    setReportStatusMessage(null);
     try {
-      await submitStudentReportOrBlock({
+      const res = await submitStudentReport({
         reporterId: myProfile.uid,
         reporterName: myProfile.displayName || myProfile.username,
         reporterUsername: myProfile.username,
-        reportedUserId: userProfile.uid,
-        reportedUserName: userProfile.displayName || userProfile.username,
-        reportedUserUsername: userProfile.username,
-        actionType: reportActionType,
+        reportedId: userProfile.uid,
+        reportedName: userProfile.displayName || userProfile.username,
+        reportedUsername: userProfile.username,
         reason: reportReason,
-        details: reportDetails.trim(),
+        note: reportNote.trim(),
       });
 
-      setReportSuccessMessage(
-        reportActionType === 'block'
-          ? `تم تسجيل حظر الطالب ${userProfile.displayName} وتم إرسال إشعار فوري إلى إدارة المنصة.`
-          : `تم إرسال بلاغك حول الطالب ${userProfile.displayName} إلى إشعارات الإدارة للمراجعة العاجلة.`
-      );
+      setReportStatusMessage({ type: 'success', text: res.message });
       setTimeout(() => {
         setShowReportDialog(false);
-        setReportSuccessMessage(null);
+        setReportStatusMessage(null);
+        setReportNote('');
       }, 2500);
     } catch (err: any) {
-      alert('حدث خطأ أثناء إرسال البلاغ. يرجى المحاولة لاحقاً.');
+      setReportStatusMessage({ type: 'error', text: err.message || 'فشل إرسال البلاغ.' });
     } finally {
       setIsSubmittingReport(false);
     }
@@ -183,28 +181,31 @@ export const PublicProfileModal: React.FC<PublicProfileModalProps> = ({
           </div>
         ) : (
           <>
-            {/* Avatar & Identifiers */}
+            {/* Avatar & Identifiers strictly from publicProfiles safe fields */}
             <div className="flex flex-col items-center pt-2">
               <div className="relative">
                 <img
-                  src={userProfile.photoURL || 'https://api.dicebear.com/7.x/bottts-neutral/svg?seed=Arixon1'}
+                  src={userProfile.avatar || userProfile.photoURL || '/favicon-192x192.png'}
                   alt={userProfile.displayName}
                   className="w-20 h-20 rounded-3xl object-cover border-4 border-blue-500/20 shadow-md"
+                  onError={(e) => {
+                    e.currentTarget.src = '/favicon-192x192.png';
+                  }}
                 />
                 <span className="absolute -bottom-1 -right-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-600 text-white shadow-xs">
-                  {userProfile.branch || 'علمي'}
+                  {userProfile.track || userProfile.branch || 'علمي'}
                 </span>
               </div>
 
               <h3 className="text-lg font-black text-slate-900 dark:text-white mt-3">
                 {userProfile.displayName}
               </h3>
-              <span className="text-xs text-slate-400 font-mono dir-ltr">
+              <span className="text-xs text-blue-600 dark:text-blue-400 font-mono dir-ltr font-semibold">
                 @{userProfile.username}
               </span>
             </div>
 
-            {/* Badges / Stats Cards */}
+            {/* Badges / Stats Cards (public safe data only) */}
             <div className="grid grid-cols-2 gap-3 py-1">
               <div className="p-3 rounded-2xl bg-slate-50 dark:bg-[#13192a] border border-slate-200/80 dark:border-slate-800/80 flex flex-col items-center">
                 <div className="flex items-center gap-1.5 text-amber-500 text-xs font-bold mb-1">
@@ -212,7 +213,7 @@ export const PublicProfileModal: React.FC<PublicProfileModalProps> = ({
                   <span>النقاط الكلية</span>
                 </div>
                 <span className="text-lg font-black text-slate-900 dark:text-white">
-                  {(userProfile.totalPoints ?? 0).toLocaleString('ar-EG')}
+                  {((userProfile.points ?? userProfile.totalPoints) ?? 0).toLocaleString('ar-EG')}
                 </span>
               </div>
 
@@ -222,43 +223,26 @@ export const PublicProfileModal: React.FC<PublicProfileModalProps> = ({
                   <span>الفرع الدراسي</span>
                 </div>
                 <span className="text-sm font-bold text-slate-800 dark:text-slate-200">
-                  {userProfile.branch ? `فرع ${userProfile.branch}` : 'الفرع العلمي'}
+                  {userProfile.track || userProfile.branch || 'علمي'}
                 </span>
               </div>
             </div>
 
-            {/* Extra safe details */}
-            <div className="text-[11px] text-slate-400 flex items-center justify-center gap-4 border-t border-b border-slate-100 dark:border-slate-800/80 py-2.5">
-              <span className="flex items-center gap-1">
-                <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                <span>انضم عام {userProfile.createdAt ? (new Date(userProfile.createdAt).getFullYear() || 2025) : 2025}</span>
-              </span>
-              {userProfile.age && (
-                <span>• العمر: {userProfile.age} سنة</span>
-              )}
-            </div>
-
-            {/* Actions: Add Friend, Message, and Report/Block */}
-            {friendStatus !== 'self' && (
-              <div className="space-y-2.5 pt-1">
+            {/* Actions (E4): Add Friend, Message, and Report */}
+            {!isSelf && (
+              <div className="space-y-2.5 pt-2">
                 <div className="grid grid-cols-2 gap-2.5">
-                  {/* Friend Status / Add Button */}
+                  {/* 1. Add Friend Button with 3 states: إضافة / تم الإرسال / أصدقاء */}
                   {friendStatus === 'friends' ? (
-                    <button
-                      disabled
-                      className="py-2.5 px-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-900/60 font-bold text-xs flex items-center justify-center gap-1.5 shadow-2xs"
-                    >
+                    <div className="py-2.5 px-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-900/60 font-bold text-xs flex items-center justify-center gap-1.5 shadow-2xs">
                       <Check className="w-4 h-4" />
-                      <span>أصدقاء ✓</span>
-                    </button>
+                      <span>أصدقاء</span>
+                    </div>
                   ) : friendStatus === 'pending_sent' ? (
-                    <button
-                      disabled
-                      className="py-2.5 px-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-900/60 font-bold text-xs flex items-center justify-center gap-1.5 shadow-2xs"
-                    >
+                    <div className="py-2.5 px-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-900/60 font-bold text-xs flex items-center justify-center gap-1.5 shadow-2xs">
                       <Clock className="w-4 h-4" />
-                      <span>الطلب معلّق</span>
-                    </button>
+                      <span>تم الإرسال</span>
+                    </div>
                   ) : friendStatus === 'pending_received' ? (
                     <button
                       type="button"
@@ -271,7 +255,6 @@ export const PublicProfileModal: React.FC<PublicProfileModalProps> = ({
                             myProfile
                           );
                           setFriendStatus('friends');
-                          alert(`تم قبول طلب الصداقة مع ${userProfile.displayName}!`);
                         } catch (err: any) {
                           alert(err.message || 'فشل قبول الطلب');
                         }
@@ -284,6 +267,7 @@ export const PublicProfileModal: React.FC<PublicProfileModalProps> = ({
                   ) : (
                     <button
                       type="button"
+                      id="profile-add-friend-btn"
                       onClick={handleSendFriendRequest}
                       disabled={isSendingRequest}
                       className="py-2.5 px-3 rounded-xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-blue-500/20 transition-all cursor-pointer disabled:opacity-50"
@@ -297,127 +281,117 @@ export const PublicProfileModal: React.FC<PublicProfileModalProps> = ({
                     </button>
                   )}
 
-                  {/* Message Button */}
-                  <button
-                    type="button"
-                    onClick={handleStartChat}
-                    className="py-2.5 px-3 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 hover:bg-indigo-100 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-900/50 font-bold text-xs flex items-center justify-center gap-1.5 shadow-xs transition-colors cursor-pointer"
-                  >
-                    <MessageSquare className="w-3.5 h-3.5" />
-                    <span>مراسلة</span>
-                  </button>
+                  {/* 2. Message Button: Visible ONLY if friends or admin */}
+                  {canMessage ? (
+                    <button
+                      type="button"
+                      id="profile-start-chat-btn"
+                      onClick={handleStartChat}
+                      className="py-2.5 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-indigo-500/20 transition-colors cursor-pointer"
+                    >
+                      <MessageSquare className="w-3.5 h-3.5" />
+                      <span>مراسلة</span>
+                      {isAdmin && friendStatus !== 'friends' && (
+                        <span className="text-[9px] bg-white/20 px-1 rounded">أدمن</span>
+                      )}
+                    </button>
+                  ) : (
+                    <div 
+                      className="py-2.5 px-3 rounded-xl bg-slate-100 dark:bg-slate-800/60 text-slate-400 font-bold text-xs flex items-center justify-center gap-1.5 border border-slate-200/60 dark:border-slate-800"
+                      title="المراسلة متاحة للأصدقاء فقط"
+                    >
+                      <Lock className="w-3.5 h-3.5" />
+                      <span>مراسلة (للأصدقاء)</span>
+                    </div>
+                  )}
                 </div>
 
-                {/* Report or Block Toggle Button */}
+                {/* 3. Report Button */}
                 <button
                   type="button"
+                  id="profile-open-report-btn"
                   onClick={() => setShowReportDialog(!showReportDialog)}
-                  className="w-full py-2 px-3 rounded-xl bg-slate-100 dark:bg-slate-800/80 hover:bg-red-50 dark:hover:bg-red-950/30 text-slate-600 hover:text-red-600 dark:text-slate-400 dark:hover:text-red-400 border border-slate-200 dark:border-slate-800 transition-colors text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
+                  className="w-full py-2 px-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 hover:bg-red-50 dark:hover:bg-red-950/30 text-slate-500 hover:text-red-600 dark:text-slate-400 dark:hover:text-red-400 border border-slate-200 dark:border-slate-800 transition-colors text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer"
                 >
-                  <ShieldAlert className="w-3.5 h-3.5 text-red-500" />
-                  <span>إبلاغ أو حظر الطالب</span>
+                  <Flag className="w-3.5 h-3.5 text-red-500" />
+                  <span>إبلاغ عن الطالب</span>
                 </button>
               </div>
             )}
 
-            {/* In-Modal Report / Block Dialog */}
-            {showReportDialog && (
-              <form onSubmit={handleSubmitReport} className="mt-3 p-4 rounded-2xl bg-red-50/60 dark:bg-red-950/20 border border-red-200/80 dark:border-red-900/40 text-right space-y-3 animate-fadeIn">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-red-700 dark:text-red-400 flex items-center gap-1.5">
-                    <AlertTriangle className="w-4 h-4" />
-                    <span>إرسال إشعار للإدارة (إبلاغ / حظر)</span>
-                  </span>
+            {/* Report Form Dialog (E4) */}
+            {showReportDialog && !isSelf && (
+              <form 
+                onSubmit={handleSubmitReportForm}
+                className="mt-3 p-4 rounded-2xl bg-red-50/70 dark:bg-red-950/20 border border-red-200 dark:border-red-900/40 text-right space-y-3 animate-fadeIn"
+              >
+                <div className="flex items-center gap-2 text-red-700 dark:text-red-300 font-bold text-xs">
+                  <ShieldAlert className="w-4 h-4 shrink-0 text-red-500" />
+                  <span>تقديم بلاغ رسمي إلى إدارة المنصة</span>
+                </div>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  يُسمح ببلاغ واحد لكل شخص يومياً. سيتم حفظ البلاغ في لوحة الإدارة للمراجعة.
+                </p>
+
+                {reportStatusMessage && (
+                  <div className={`p-2.5 rounded-xl text-xs font-semibold ${
+                    reportStatusMessage.type === 'success'
+                      ? 'bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300'
+                      : 'bg-red-100 dark:bg-red-950/80 text-red-800 dark:text-red-300'
+                  }`}>
+                    {reportStatusMessage.text}
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    سبب الإبلاغ:
+                  </label>
+                  <select
+                    value={reportReason}
+                    onChange={(e) => setReportReason(e.target.value)}
+                    className="w-full text-xs p-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#111625] text-slate-800 dark:text-slate-200"
+                  >
+                    <option value="مضايقة أو إساءة">مضايقة أو إساءة في الرسائل</option>
+                    <option value="اسم مستخدم غير لائق">اسم مستخدم غير لائق أو مسيء</option>
+                    <option value="انتحال شخصية">انتحال شخصية طالب أو معلم</option>
+                    <option value="محاولة غش أو سلوك غير أكاديمي">محاولة غش أو سلوك غير أكاديمي</option>
+                    <option value="رسائل مزعجة أو ترويج">رسائل مزعجة (Spam) أو ترويج</option>
+                    <option value="أخرى">سبب آخر</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    ملاحظة اختيارية:
+                  </label>
+                  <textarea
+                    value={reportNote}
+                    onChange={(e) => setReportNote(e.target.value)}
+                    placeholder="اكتب تفاصيل إضافية لتوضيح المخالفة للإدارة..."
+                    rows={2}
+                    className="w-full text-xs p-2.5 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#111625] text-slate-800 dark:text-slate-200 resize-none"
+                  />
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-1">
                   <button
                     type="button"
                     onClick={() => setShowReportDialog(false)}
-                    className="text-slate-400 hover:text-slate-600 text-xs"
+                    className="px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors cursor-pointer"
                   >
                     إلغاء
                   </button>
+                  <button
+                    type="submit"
+                    id="submit-student-report-btn"
+                    disabled={isSubmittingReport}
+                    className="px-4 py-1.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-bold transition-all shadow-xs disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
+                  >
+                    {isSubmittingReport && <Loader2 className="w-3 h-3 animate-spin" />}
+                    <span>إرسال البلاغ</span>
+                  </button>
                 </div>
-
-                {reportSuccessMessage ? (
-                  <div className="p-3 rounded-xl bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-200 text-xs font-bold flex items-center gap-2">
-                    <Check className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <span>{reportSuccessMessage}</span>
-                  </div>
-                ) : (
-                  <>
-                    <div className="space-y-1">
-                      <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
-                        نوع الإجراء:
-                      </label>
-                      <div className="grid grid-cols-2 gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setReportActionType('report')}
-                          className={`py-1.5 px-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                            reportActionType === 'report'
-                              ? 'bg-red-600 text-white shadow-xs'
-                              : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
-                          }`}
-                        >
-                          إبلاغ عن مخالفة
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setReportActionType('block')}
-                          className={`py-1.5 px-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                            reportActionType === 'block'
-                              ? 'bg-slate-900 dark:bg-white text-white dark:text-slate-900 shadow-xs'
-                              : 'bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
-                          }`}
-                        >
-                          حظر الطالب
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
-                        سبب البلاغ أو الحظر:
-                      </label>
-                      <select
-                        value={reportReason}
-                        onChange={(e) => setReportReason(e.target.value)}
-                        className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs focus:outline-hidden"
-                      >
-                        <option value="إساءة أو مضايقة">إساءة أو مضايقة في الدردشة</option>
-                        <option value="لغة غير لائقة">لغة غير لائقة أو ألفاظ مسيئة</option>
-                        <option value="انتحال شخصية أو حساب وهمي">انتحال شخصية أو حساب وهمي</option>
-                        <option value="غش أو تلاعب بالنقاط">غش أو تلاعب في الامتحانات والنقاط</option>
-                        <option value="أخرى">سبب آخر</option>
-                      </select>
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
-                        تفاصيل إضافية للإدارة (اختياري):
-                      </label>
-                      <textarea
-                        rows={2}
-                        value={reportDetails}
-                        onChange={(e) => setReportDetails(e.target.value)}
-                        placeholder="اكتب توضيحاً مختصراً لمساعدة المشرفين..."
-                        className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs focus:outline-hidden"
-                      />
-                    </div>
-
-                    <button
-                      type="submit"
-                      disabled={isSubmittingReport}
-                      className="w-full py-2.5 px-4 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
-                    >
-                      {isSubmittingReport ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      ) : (
-                        <Send className="w-3.5 h-3.5" />
-                      )}
-                      <span>إرسال البلاغ فورياً للإدارة</span>
-                    </button>
-                  </>
-                )}
               </form>
             )}
           </>

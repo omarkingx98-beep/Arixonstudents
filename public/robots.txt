@@ -1,0 +1,10 @@
+User-agent: *
+Allow: /
+Allow: /*.png$
+Allow: /*.jpg$
+Allow: /*.jpeg$
+Allow: /*.ico$
+Allow: /*.svg$
+Allow: /manifest.json
+
+Sitemap: /sitemap.xml

@@ -516,12 +516,17 @@ export async function updateStudentBranch(uid: string, branch: 'علمي' | 'أ�
 export async function syncPublicProfile(profile: UserProfile): Promise<void> {
   if (!profile.uid) return;
   const pubRef = doc(db, 'publicProfiles', profile.uid);
+  const rawUsername = profile.username || 'student';
   const pubData: any = {
     uid: profile.uid,
-    displayName: profile.displayName || profile.username,
-    username: profile.username,
-    photoURL: profile.photoURL || undefined,
+    displayName: profile.displayName || rawUsername,
+    username: rawUsername,
+    usernameLower: rawUsername.toLowerCase().trim(),
+    avatar: profile.photoURL || '',
+    photoURL: profile.photoURL || '',
+    track: profile.branch || 'علمي',
     branch: profile.branch || 'علمي',
+    points: profile.totalPoints || 0,
     totalPoints: profile.totalPoints || 0,
     weeklyPoints: profile.weeklyPoints || 0,
     monthlyPoints: profile.monthlyPoints || 0,
@@ -539,6 +544,53 @@ export async function syncPublicProfile(profile: UserProfile): Promise<void> {
 
   await setDoc(pubRef, sanitizeFirestoreData(pubData), { merge: true });
 }
+
+/**
+ * Admin: One-time backfill tool to synchronize all existing users in 'users' collection 
+ * into 'publicProfiles' with usernameLower, avatar, track, and points.
+ */
+export async function backfillAllPublicProfiles(): Promise<{ total: number; success: number }> {
+  try {
+    const usersSnap = await getDocs(collection(db, 'users'));
+    let successCount = 0;
+    for (const userDoc of usersSnap.docs) {
+      try {
+        const u = userDoc.data() as UserProfile;
+        const uid = u.uid || userDoc.id;
+        const rawUsername = u.username || 'student';
+        const pubRef = doc(db, 'publicProfiles', uid);
+        const pubData = {
+          uid: uid,
+          displayName: u.displayName || rawUsername,
+          username: rawUsername,
+          usernameLower: rawUsername.toLowerCase().trim(),
+          avatar: u.photoURL || '',
+          photoURL: u.photoURL || '',
+          track: u.branch || 'علمي',
+          branch: u.branch || 'علمي',
+          points: u.totalPoints || 0,
+          totalPoints: u.totalPoints || 0,
+          weeklyPoints: u.weeklyPoints || 0,
+          monthlyPoints: u.monthlyPoints || 0,
+          examsCompleted: u.examsCompleted || 0,
+          correctAnswers: u.correctAnswers || 0,
+          wrongAnswers: u.wrongAnswers || 0,
+          createdAt: u.createdAt || new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+        await setDoc(pubRef, sanitizeFirestoreData(pubData), { merge: true });
+        successCount++;
+      } catch (docErr) {
+        console.warn('[firebase] Backfill item error:', userDoc.id, docErr);
+      }
+    }
+    return { total: usersSnap.size, success: successCount };
+  } catch (err) {
+    console.error('[firebase] Backfill batch failed:', err);
+    throw err;
+  }
+}
+
 
 /**
  * Fetch public user profile safely without triggering permission-denied errors

@@ -3,7 +3,18 @@ import { Logo } from './Logo';
 import { useTheme } from '../context/ThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { useAdmin } from '../context/AdminContext';
-import { Sun, Moon, Settings, Home, BookOpen, Trophy, User, ShieldCheck, Sparkles, Bell, Search } from 'lucide-react';
+import { 
+  Sun, 
+  Moon, 
+  Settings, 
+  Home, 
+  BookOpen, 
+  Trophy, 
+  User, 
+  ShieldCheck, 
+  Bell, 
+  Menu 
+} from 'lucide-react';
 import type { NavigationTab } from '../types';
 
 interface HeaderProps {
@@ -14,6 +25,7 @@ interface HeaderProps {
   onOpenAdmin?: () => void;
   onOpenNotifications?: () => void;
   onOpenUserSearch?: () => void;
+  onOpenSideMenu?: () => void;
   unreadNotificationsCount?: number;
 }
 
@@ -25,6 +37,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenAdmin,
   onOpenNotifications,
   onOpenUserSearch,
+  onOpenSideMenu,
   unreadNotificationsCount = 0,
 }) => {
   const { theme, toggleTheme } = useTheme();
@@ -38,15 +51,33 @@ export const Header: React.FC<HeaderProps> = ({
     { id: 'profile' as const, label: 'ملفي', icon: User },
   ];
 
+  const hasUnread = unreadNotificationsCount > 0;
+
   return (
     <header className="sticky top-0 z-30 w-full bg-white dark:bg-[#090d16] border-b border-slate-200 dark:border-slate-800 transition-colors shadow-xs">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
-        {/* Brand */}
-        <div 
-          onClick={() => onTabChange('home')} 
-          className="cursor-pointer"
-        >
-          <Logo size="md" />
+        {/* Left: ☰ Menu Trigger & Brand Logo */}
+        <div className="flex items-center gap-3">
+          {/* Hamburger Menu ☰ Button (E1) */}
+          {onOpenSideMenu && (
+            <button
+              id="side-menu-trigger-btn"
+              onClick={onOpenSideMenu}
+              aria-label="القائمة الرئيسية"
+              className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors cursor-pointer shrink-0"
+              title="القائمة ☰ (البحث والعرض التقديمي)"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+          )}
+
+          {/* Brand Logo */}
+          <div 
+            onClick={() => onTabChange('home')} 
+            className="cursor-pointer"
+          >
+            <Logo size="md" />
+          </div>
         </div>
 
         {/* Desktop Navigation Links */}
@@ -72,22 +103,8 @@ export const Header: React.FC<HeaderProps> = ({
           })}
         </nav>
 
-        {/* Right Action Icons: Theme Toggle & Settings */}
+        {/* Right Action Icons: Admin, Theme, Red Bell, Settings, Avatar */}
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-          {/* Tutorial / Platform Guide Button - hidden on small mobile to avoid crowd */}
-          {onOpenTutorial && (
-            <button
-              id="tutorial-header-btn"
-              onClick={onOpenTutorial}
-              aria-label="دليل المنصة"
-              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/40 text-xs font-bold transition-all cursor-pointer shadow-xs"
-              title="جولة في منصة أريكسون"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-blue-500" />
-              <span>دليل أريكسون</span>
-            </button>
-          )}
-
           {/* Admin Portal Shortcut Button for Authorized Admins */}
           {isAdmin && onOpenAdmin && (
             <button
@@ -117,31 +134,22 @@ export const Header: React.FC<HeaderProps> = ({
             )}
           </button>
 
-          {/* Search Students by Username */}
-          {onOpenUserSearch && (
-            <button
-              id="user-search-header-btn"
-              onClick={onOpenUserSearch}
-              aria-label="البحث عن الطلاب"
-              className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700/80 transition-colors cursor-pointer shrink-0"
-              title="البحث عن طالب باليوزر"
-            >
-              <Search className="w-4 h-4 text-blue-500" />
-            </button>
-          )}
-
-          {/* Notifications Trigger */}
+          {/* E6: Real-time Notifications Bell - Turns Red with unread messages + notifs + friend requests */}
           {onOpenNotifications && (
             <button
               id="notifications-header-btn"
               onClick={onOpenNotifications}
-              aria-label="الإشعارات"
-              className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700/80 transition-colors cursor-pointer shrink-0 relative"
-              title="الإشعارات والتنبيهات"
+              aria-label="الإشعارات والرسائل"
+              className={`p-2 rounded-xl border transition-all cursor-pointer shrink-0 relative ${
+                hasUnread
+                  ? 'border-red-400 dark:border-red-600 bg-red-600 text-white shadow-md shadow-red-500/30 animate-pulse hover:bg-red-700'
+                  : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700/80'
+              }`}
+              title={hasUnread ? `لديك ${unreadNotificationsCount} إشعار/رسالة جديدة` : 'الإشعارات والتنبيهات'}
             >
               <Bell className="w-4 h-4" />
-              {unreadNotificationsCount > 0 && (
-                <span className="absolute -top-1 -right-1 px-1.5 py-0.2 rounded-full text-[10px] font-black bg-red-600 text-white ring-2 ring-white dark:ring-[#090d16] animate-pulse">
+              {hasUnread && (
+                <span className="absolute -top-1 -right-1 px-1.5 py-0.2 rounded-full text-[10px] font-black bg-red-900 text-white ring-2 ring-white dark:ring-[#090d16]">
                   {unreadNotificationsCount > 9 ? '+9' : unreadNotificationsCount}
                 </span>
               )}
@@ -168,7 +176,7 @@ export const Header: React.FC<HeaderProps> = ({
               title="الملف الشخصي"
             >
               <img
-                src={profile.photoURL || 'https://api.dicebear.com/7.x/bottts-neutral/svg?seed=Arixon1'}
+                src={profile.photoURL || '/favicon-192x192.png'}
                 alt={profile.username}
                 className="w-7 h-7 rounded-full object-cover"
               />

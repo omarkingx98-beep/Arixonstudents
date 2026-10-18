@@ -7,7 +7,8 @@ import {
   limit,
   onSnapshot,
 } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
+import { db, backfillAllPublicProfiles } from '../../lib/firebase';
+import { fetchAllReports, type StudentReport } from '../../lib/reportService';
 import {
   Users,
   BookOpen,
@@ -61,6 +62,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate }) =>
   const [recentActivities, setRecentActivities] = useState<AdminAuditLog[]>([]);
   const [adminReports, setAdminReports] = useState<StudentReportItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isBackfilling, setIsBackfilling] = useState(false);
+
+  const handleBackfill = async () => {
+    setIsBackfilling(true);
+    try {
+      const res = await backfillAllPublicProfiles();
+      alert(`تمت مزامنة وتحديث ${res.success} ملف عام بنجاح من أصل ${res.total} طالب! أصبحت جميع الأسماء والمعرفات قابلة للبحث الفوري.`);
+    } catch (err: any) {
+      alert(err.message || 'حدث خطأ أثناء مزامنة الملفات العامة.');
+    } finally {
+      setIsBackfilling(false);
+    }
+  };
 
   const loadDashboardData = async () => {
     setIsLoading(true);
@@ -304,6 +318,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate }) =>
           >
             <Sparkles className="w-4 h-4" />
             <span>منشئ الأسئلة الذكي</span>
+          </button>
+
+          {/* E3: One-time Backfill Button */}
+          <button
+            id="admin-backfill-profiles-btn"
+            onClick={handleBackfill}
+            disabled={isBackfilling}
+            className="px-4 py-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 text-xs font-bold transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50 shadow-xs"
+            title="مزامنة وتوليد الملفات العامة لجميع الطلاب في publicProfiles للبحث السريع"
+          >
+            <Users className="w-4 h-4 text-emerald-600" />
+            <span>{isBackfilling ? 'جارٍ مزامنة الملفات...' : 'مزامنة الملفات العامة (Backfill)'}</span>
           </button>
         </div>
       </div>

@@ -65,70 +65,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
         </div>
       </div>
 
-      {/* Interactive Platform Guide Card */}
-      {onOpenTutorial && (
-        <div 
-          id="home-tutorial-guide-card"
-          className="p-4 sm:p-5 rounded-3xl border border-blue-200/80 dark:border-blue-900/60 bg-gradient-to-r from-blue-50/90 via-indigo-50/50 to-blue-50/90 dark:from-blue-950/40 dark:via-slate-900/40 dark:to-blue-950/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs"
-        >
-          <div className="flex items-center gap-3.5">
-            <div className="w-10 h-10 rounded-2xl bg-blue-600 text-white flex items-center justify-center flex-shrink-0 shadow-xs">
-              <Sparkles className="w-5 h-5" />
-            </div>
-            <div>
-              <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
-                دليل منصة أريكسون لطلبة توجيهي 2009
-              </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                تعرف على كيفية تقديم الامتحانات، حصد النقاط، كشف فخاخ التغليط، وتصدر لوحة الشرف
-              </p>
-            </div>
-          </div>
 
-          <button
-            type="button"
-            onClick={onOpenTutorial}
-            className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-xs self-end sm:self-auto cursor-pointer"
-          >
-            <span>شاهد الدليل التفاعلي</span>
-            <ArrowLeft className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      )}
-
-      {/* Quick Friend & Username Search Section */}
-      {onOpenUserSearch && (
-        <div 
-          id="home-user-search-card"
-          className="p-4 sm:p-5 rounded-3xl border border-indigo-200/80 dark:border-indigo-900/60 bg-gradient-to-r from-indigo-50/90 via-purple-50/40 to-blue-50/90 dark:from-indigo-950/40 dark:via-purple-950/20 dark:to-blue-950/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs"
-        >
-          <div className="flex items-center gap-3.5">
-            <div className="w-10 h-10 rounded-2xl bg-indigo-600 text-white flex items-center justify-center flex-shrink-0 shadow-xs">
-              <Search className="w-5 h-5" />
-            </div>
-            <div>
-              <h3 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <span>ابحث عن زملائك باليوزر وتواصل معهم</span>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300">
-                  صداقة ومراسلة
-                </span>
-              </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                ابحث عن أي طالب عبر اسم المستخدم (@username)، أرسل طلب صداقة، وابدأ محادثة فورية ومنافسة دراسية
-              </p>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={onOpenUserSearch}
-            className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-xs self-end sm:self-auto cursor-pointer"
-          >
-            <UserPlus className="w-3.5 h-3.5" />
-            <span>البحث باليوزر الآن</span>
-          </button>
-        </div>
-      )}
 
       {/* Real Compact Statistics Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">

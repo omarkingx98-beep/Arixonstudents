@@ -620,6 +620,7 @@ export interface ChatConversation {
   lastMessageAt: string;
   lastSenderId: string;
   unreadCount?: Record<string, number>;
+  unreadCounts?: Record<string, number>;
   reported?: boolean;
   reportReason?: string;
   reportedBy?: string;
@@ -643,9 +644,13 @@ export interface PublicUserProfile {
   uid: string;
   displayName: string;
   username: string;
+  usernameLower?: string;
   photoURL?: string;
+  avatar?: string;
   branch?: string;
+  track?: string;
   totalPoints: number;
+  points?: number;
   rank?: number;
   age?: number;
   createdAt: string;

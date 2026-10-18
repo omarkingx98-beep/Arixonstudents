@@ -60,6 +60,10 @@ export async function getOrCreateChatConversation(
     lastMessage: 'بدء المحادثة',
     lastMessageAt: now,
     lastSenderId: currentUser.uid,
+    unreadCount: {
+      [currentUser.uid]: 0,
+      [targetUser.uid]: 0,
+    },
     createdAt: now,
     updatedAt: now,
   };
@@ -93,6 +97,87 @@ export function subscribeToChatMessages(
 }
 
 /**
+ * Mark a conversation as read by the user: zeroes their unread counter
+ */
+export async function markChatAsRead(chatId: string, userId: string): Promise<void> {
+  if (!chatId || !userId) return;
+  try {
+    const chatRef = doc(db, 'chats', chatId);
+    await updateDoc(chatRef, {
+      [`unreadCount.${userId}`]: 0,
+      [`unreadCounts.${userId}`]: 0,
+      updatedAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.warn('[chatService] markChatAsRead warning:', err);
+  }
+}
+
+/**
+ * Subscribe to all chat conversations involving the user
+ */
+export function subscribeToUserChats(
+  userId: string,
+  callback: (chats: ChatConversation[]) => void
+): () => void {
+  const colRef = collection(db, 'chats');
+  const q = query(
+    colRef,
+    where('participants', 'array-contains', userId),
+    orderBy('updatedAt', 'desc'),
+    limit(50)
+  );
+
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const chats: ChatConversation[] = [];
+      snapshot.forEach((d) => {
+        chats.push({ ...d.data(), id: d.id } as ChatConversation);
+      });
+      callback(chats);
+    },
+    (err) => {
+      console.warn('[chatService] subscribeToUserChats error:', err);
+      callback([]);
+    }
+  );
+}
+
+/**
+ * Subscribe to the user's total unread messages count across all active conversations
+ */
+export function subscribeToUserUnreadMessageCount(
+  userId: string,
+  callback: (count: number) => void
+): () => void {
+  const colRef = collection(db, 'chats');
+  const q = query(colRef, where('participants', 'array-contains', userId));
+
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      let totalUnread = 0;
+      snapshot.forEach((d) => {
+        const data = d.data() as any;
+        const count = 
+          (data.unreadCount && typeof data.unreadCount[userId] === 'number')
+            ? data.unreadCount[userId]
+            : (data.unreadCounts && typeof data.unreadCounts[userId] === 'number')
+            ? data.unreadCounts[userId]
+            : 0;
+        totalUnread += count;
+      });
+      callback(totalUnread);
+    },
+    (err) => {
+      console.warn('[chatService] subscribeToUserUnreadMessageCount warning:', err);
+      callback(0);
+    }
+  );
+}
+
+/**
  * Send a message in a 1:1 chat
  */
 export async function sendChatMessage(params: {
@@ -111,11 +196,15 @@ export async function sendChatMessage(params: {
 
   const chatRef = doc(db, 'chats', params.chatId);
   const chatSnap = await getDoc(chatRef);
+  let existingUnreadCount = 0;
+
   if (chatSnap.exists()) {
-    const chatData = chatSnap.data() as ChatConversation;
+    const chatData = chatSnap.data() as any;
     if (chatData.blockedBy && chatData.blockedBy.includes(params.receiverId)) {
       throw new Error('لا يمكن إرسال الرسالة: تم حظرك بواسطة هذا المستخدم.');
     }
+    const unreadObj = chatData.unreadCount || chatData.unreadCounts || {};
+    existingUnreadCount = typeof unreadObj[params.receiverId] === 'number' ? unreadObj[params.receiverId] : 0;
   }
 
   const msgId = `msg_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
@@ -135,7 +224,8 @@ export async function sendChatMessage(params: {
   // 1. Write message doc
   await setDoc(doc(db, 'chats', params.chatId, 'messages', msgId), sanitizeFirestoreData(msgData));
 
-  // 2. Update conversation doc with setDoc merge so it never throws if document is being initialized
+  // 2. Update conversation doc: increments receiver's unread counter and keeps sender's at 0
+  const nextReceiverCount = existingUnreadCount + 1;
   try {
     await setDoc(chatRef, {
       id: params.chatId,
@@ -143,6 +233,14 @@ export async function sendChatMessage(params: {
       lastMessage: cleanText,
       lastMessageAt: now,
       lastSenderId: params.senderProfile.uid,
+      unreadCount: {
+        [params.senderProfile.uid]: 0,
+        [params.receiverId]: nextReceiverCount,
+      },
+      unreadCounts: {
+        [params.senderProfile.uid]: 0,
+        [params.receiverId]: nextReceiverCount,
+      },
       updatedAt: now,
     }, { merge: true });
   } catch (convErr) {

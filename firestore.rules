@@ -67,11 +67,27 @@ service cloud.firestore {
       }
     }
 
-    // Public Profiles (Limited, safe for student public display)
+    // Public Profiles (Limited safe data for student search and profile view - E3 & E4)
     match /publicProfiles/{userId} {
       allow read: if isAuthenticated();
-      allow create, update: if isOwner(userId) || isAdmin();
+      allow create, update: if isAdmin() || (
+        isOwner(userId) &&
+        request.resource.data.keys().hasOnly([
+          'uid', 'displayName', 'username', 'usernameLower', 'avatar', 'photoURL',
+          'track', 'branch', 'points', 'totalPoints', 'weeklyPoints', 'monthlyPoints',
+          'examsCompleted', 'correctAnswers', 'wrongAnswers', 'createdAt', 'updatedAt', 'age'
+        ])
+      );
       allow delete: if isAdmin();
+    }
+
+    // Reports Collection (E4: reporterId, reportedId, reason, note, createdAt, status)
+    match /reports/{reportId} {
+      allow read: if isAdmin() || (isAuthenticated() && resource.data.reporterId == request.auth.uid);
+      allow create: if isAuthenticated() && 
+        request.resource.data.reporterId == request.auth.uid && 
+        request.resource.data.reporterId != request.resource.data.reportedId;
+      allow update, delete: if isAdmin();
     }
 
     // Admin Profiles
@@ -86,7 +102,7 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
-    // Admin Reports & Block Alerts (Created by students, reviewed by admins)
+    // Admin Reports & Block Alerts (Legacy / direct alerts)
     match /adminReports/{reportId} {
       allow read, update, delete: if isAdmin();
       allow create: if isAuthenticated();
@@ -122,8 +138,7 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
-    // Notifications (In-app notifications)
-    // Notifications (In-app direct notifications)
+    // Direct in-app notifications
     match /notifications/{notifId} {
       allow read: if isAuthenticated() && (resource.data.recipientId == request.auth.uid || isAdmin());
       allow update: if isAuthenticated() && (resource.data.recipientId == request.auth.uid || isAdmin());
@@ -135,22 +150,22 @@ service cloud.firestore {
       allow delete: if isAuthenticated() && (resource.data.recipientId == request.auth.uid || isAdmin());
     }
 
-    // Broadcast Notifications (Economical mass notifications for exam publishing, pausing, and updates)
+    // Broadcast Notifications
     match /broadcasts/{broadcastId} {
-      // Authenticated students can read broadcasts targeting their educational stream
       allow read: if isAuthenticated();
-      // Only admins can create, update, or delete broadcasts; students cannot write
       allow create, update, delete: if isAdmin();
     }
 
-    // Friend Requests
+    // Friend Requests (E4 & E5)
     match /friendRequests/{reqId} {
       allow read: if isAuthenticated() && (
         resource.data.senderId == request.auth.uid ||
         resource.data.receiverId == request.auth.uid ||
         isAdmin()
       );
-      allow create: if isAuthenticated() && request.resource.data.senderId == request.auth.uid;
+      allow create: if isAuthenticated() && 
+        request.resource.data.senderId == request.auth.uid &&
+        request.resource.data.senderId != request.resource.data.receiverId;
       allow update, delete: if isAuthenticated() && (
         resource.data.senderId == request.auth.uid ||
         resource.data.receiverId == request.auth.uid ||
@@ -158,9 +173,8 @@ service cloud.firestore {
       );
     }
 
-    // Realtime 1:1 Chats
+    // Realtime 1:1 Chats & Unread Counters (E6)
     match /chats/{chatId} {
-      // Deterministic chat id `chat_uid1_uid2` enables instant verification
       allow read: if isAuthenticated() && (
         chatId.matches('.*' + request.auth.uid + '.*') ||
         (resource != null && request.auth.uid in resource.data.participants) ||
@@ -168,12 +182,13 @@ service cloud.firestore {
       );
       allow create: if isAuthenticated() && (
         chatId.matches('.*' + request.auth.uid + '.*') ||
-        request.auth.uid in request.resource.data.participants
+        request.auth.uid in request.resource.data.participants ||
+        isAdmin()
       );
       allow update: if isAuthenticated() && (
-        chatId.matches('.*' + request.auth.uid + '.*') ||
+        isAdmin() ||
         (resource != null && request.auth.uid in resource.data.participants) ||
-        isAdmin()
+        chatId.matches('.*' + request.auth.uid + '.*')
       );
       allow delete: if isAdmin();
 
@@ -181,13 +196,15 @@ service cloud.firestore {
       match /messages/{messageId} {
         allow read: if isAuthenticated() && (
           chatId.matches('.*' + request.auth.uid + '.*') ||
-          (exists(/databases/$(database)/documents/chats/$(chatId)) && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants) ||
+          (exists(/databases/$(database)/documents/chats/$(chatId)) && 
+           request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants) ||
           isAdmin()
         );
         allow create: if isAuthenticated() && 
           request.resource.data.senderId == request.auth.uid && (
             chatId.matches('.*' + request.auth.uid + '.*') ||
-            (exists(/databases/$(database)/documents/chats/$(chatId)) && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants) ||
+            (exists(/databases/$(database)/documents/chats/$(chatId)) && 
+             request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants) ||
             isAdmin()
           );
         allow update: if isAuthenticated() && (
@@ -200,7 +217,6 @@ service cloud.firestore {
 
     // Exams
     match /exams/{examId} {
-      // Students can read published exams; Admins can read both draft & published exams
       allow read: if isAuthenticated() && (
         (resource.data.published == true && 
          resource.data.get('status', 'available') != 'unpublished' && 
@@ -209,17 +225,14 @@ service cloud.firestore {
         isAdmin()
       );
 
-      // Only admins can create, update, or publish exams; students cannot write
       allow create, update: if isAdmin();
       allow delete: if isAdmin();
 
-      // Public question data
       match /questions/{questionId} {
         allow read: if isAuthenticated();
         allow create, update, delete: if isAdmin();
       }
 
-      // Protected answer keys - readable by authenticated students for scoring and review, writeable only by admin
       match /answerKeys/{questionId} {
         allow read: if isAuthenticated();
         allow write: if isAdmin();
@@ -238,22 +251,14 @@ service cloud.firestore {
 
     // Exam attempts
     match /attempts/{attemptId} {
-      // Students can read their own attempts; admins can inspect any attempt
       allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
-      
-      // Students can create an attempt for themselves
       allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
-      
-      // Students can update their attempt while in_progress (saving answers or submitting)
-      // Once status is 'submitted', attempt results are locked and only admin can adjust
       allow update: if isAuthenticated() && (
         isAdmin() ||
         (resource.data.userId == request.auth.uid && resource.data.status == 'in_progress')
       );
-        
       allow delete: if isAdmin();
 
-      // Subcollection for answers during attempt
       match /answers/{questionId} {
         allow read: if isAuthenticated() && (
           get(/databases/$(database)/documents/attempts/$(attemptId)).data.userId == request.auth.uid ||

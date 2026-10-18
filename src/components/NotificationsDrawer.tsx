@@ -1,12 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Bell, 
   X, 
   CheckCheck, 
   MessageSquare, 
   UserPlus, 
+  Users,
   Check, 
-  ShieldAlert, 
   Clock, 
   Trash2,
   Sparkles,
@@ -14,16 +14,17 @@ import {
   BookOpen,
   Pause,
   AlertCircle,
-  ExternalLink
+  ArrowLeft
 } from 'lucide-react';
 import { 
   markNotificationAsRead, 
   markAllNotificationsAsRead, 
   deleteNotification 
 } from '../lib/notificationService';
-import { acceptFriendRequest, rejectFriendRequest } from '../lib/friendService';
+import { acceptFriendRequest, rejectFriendRequest, getFriendsList } from '../lib/friendService';
+import { subscribeToUserChats } from '../lib/chatService';
 import { useAuth } from '../context/AuthContext';
-import type { AppNotification, BroadcastNotification } from '../types';
+import type { AppNotification, BroadcastNotification, FriendItem, ChatConversation } from '../types';
 
 interface NotificationsDrawerProps {
   isOpen: boolean;
@@ -31,7 +32,10 @@ interface NotificationsDrawerProps {
   notifications: AppNotification[];
   broadcasts?: BroadcastNotification[];
   lastReadBroadcastAt?: string | null;
-  onOpenChatWithUser?: (userId: string, userName: string) => void;
+  onOpenChatWithUser?: (
+    userId: string, 
+    targetDetails: { displayName: string; username: string; photoURL?: string; branch?: string }
+  ) => void;
   onOpenExam?: (examId: string) => void;
 }
 
@@ -45,8 +49,48 @@ export const NotificationsDrawer: React.FC<NotificationsDrawerProps> = ({
   onOpenExam,
 }) => {
   const { profile } = useAuth();
-  const [activeTab, setActiveTab] = useState<'broadcasts' | 'direct'>('broadcasts');
+  // E5: 3 Tabs: الإشعارات | الرسائل | الأصدقاء
+  const [activeTab, setActiveTab] = useState<'notifications' | 'messages' | 'friends'>('notifications');
   const [processingId, setProcessingId] = useState<string | null>(null);
+
+  // Messages Tab state
+  const [chats, setChats] = useState<ChatConversation[]>([]);
+  const [loadingChats, setLoadingChats] = useState(false);
+
+  // Friends Tab state
+  const [friends, setFriends] = useState<FriendItem[]>([]);
+  const [loadingFriends, setLoadingFriends] = useState(false);
+
+  // Subscribe to user chats for "الرسائل" tab
+  useEffect(() => {
+    if (!isOpen || !profile?.uid) return;
+    setLoadingChats(true);
+    const unsub = subscribeToUserChats(profile.uid, (chatList) => {
+      setChats(chatList);
+      setLoadingChats(false);
+    });
+    return () => unsub();
+  }, [isOpen, profile?.uid]);
+
+  // Load friends list for "الأصدقاء" tab
+  useEffect(() => {
+    if (!isOpen || !profile?.uid) return;
+    let isMounted = true;
+    setLoadingFriends(true);
+
+    getFriendsList(profile.uid).then((list) => {
+      if (isMounted) {
+        setFriends(list);
+        setLoadingFriends(false);
+      }
+    }).catch(() => {
+      if (isMounted) setLoadingFriends(false);
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isOpen, profile?.uid, activeTab]);
 
   if (!isOpen) return null;
 
@@ -66,13 +110,11 @@ export const NotificationsDrawer: React.FC<NotificationsDrawerProps> = ({
 
     if (notif.type === 'chat_message' && notif.senderId && onOpenChatWithUser) {
       onClose();
-      onOpenChatWithUser(notif.senderId, notif.senderName || 'الطالب');
-    }
-  };
-
-  const handleBroadcastClick = (b: BroadcastNotification) => {
-    if (b.examId && onOpenExam) {
-      onOpenExam(b.examId);
+      onOpenChatWithUser(notif.senderId, {
+        displayName: notif.senderName || 'الطالب',
+        username: notif.senderName || 'student',
+        photoURL: notif.senderPhoto,
+      });
     }
   };
 
@@ -82,6 +124,9 @@ export const NotificationsDrawer: React.FC<NotificationsDrawerProps> = ({
     try {
       await acceptFriendRequest(notif.metadata.requestId, notif.senderId, profile);
       await markNotificationAsRead(notif.id);
+      // Refresh friends list
+      const updatedFriends = await getFriendsList(profile.uid);
+      setFriends(updatedFriends);
       alert('تم قبول طلب الصداقة بنجاح! يمكنك الآن مراسلته.');
     } catch (err: any) {
       alert(err.message || 'فشل قبول طلب الصداقة.');
@@ -110,270 +155,392 @@ export const NotificationsDrawer: React.FC<NotificationsDrawerProps> = ({
     } catch {}
   };
 
-  const getBroadcastIcon = (type: string) => {
-    switch (type) {
-      case 'exam_published':
-      case 'exam_republished':
-        return <BookOpen className="w-4 h-4 text-emerald-500" />;
-      case 'exam_unpublished':
-        return <Pause className="w-4 h-4 text-amber-500" />;
-      case 'exam_updated':
-        return <Sparkles className="w-4 h-4 text-blue-500" />;
-      default:
-        return <Bell className="w-4 h-4 text-purple-500" />;
-    }
-  };
-
   const unreadDirectCount = notifications.filter((n) => !n.read).length;
-  const unreadBroadcastsCount = broadcasts.filter((b) => {
-    if (!lastReadBroadcastAt) return true;
-    return new Date(b.createdAt).getTime() > new Date(lastReadBroadcastAt).getTime();
-  }).length;
+  const unreadMessagesCount = chats.reduce((sum, c) => {
+    if (!profile?.uid) return sum;
+    const count = 
+      (c.unreadCount && typeof c.unreadCount[profile.uid] === 'number')
+        ? c.unreadCount[profile.uid]
+        : (c.unreadCounts && typeof (c as any).unreadCounts[profile.uid] === 'number')
+        ? (c as any).unreadCounts[profile.uid]
+        : 0;
+    return sum + count;
+  }, 0);
 
   return (
     <div className="fixed inset-0 z-50 flex justify-start bg-black/60 backdrop-blur-xs animate-fadeIn">
+      {/* Backdrop */}
       <div 
         onClick={onClose}
         className="absolute inset-0"
       />
 
       {/* Drawer Panel */}
-      <div className="relative w-full max-w-sm sm:max-w-md bg-white dark:bg-[#0c101c] h-full shadow-2xl flex flex-col z-10 border-l border-slate-200 dark:border-slate-800 animate-slideInRight">
-        {/* Header */}
-        <div className="p-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+      <div 
+        id="notifications-drawer-panel"
+        className="relative w-full max-w-md bg-white dark:bg-[#0c101c] h-full shadow-2xl border-l border-slate-200 dark:border-slate-800 flex flex-col z-10 overflow-hidden"
+      >
+        {/* Drawer Header */}
+        <div className="p-4 sm:p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="p-2 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400">
-              <Bell className="w-4 h-4" />
+              <Bell className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-sm font-bold text-slate-900 dark:text-white">
-                الإشعارات والتنبيهات
+              <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-white">
+                مركز التنبيهات والتواصل
               </h2>
-              <span className="text-[11px] text-slate-400">
-                منصة أريكسون للثانوية العامة 2009
-              </span>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                الإشعارات، الرسائل الفورية، وقائمة الأصدقاء
+              </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-1">
-            {activeTab === 'direct' && unreadDirectCount > 0 && (
-              <button
-                onClick={handleMarkAllRead}
-                className="p-1.5 rounded-xl text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/50 text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer"
-                title="تحديد الكل كمقروء"
-              >
-                <CheckCheck className="w-4 h-4" />
-                <span className="hidden sm:inline text-[11px]">قراءة الكل</span>
-              </button>
-            )}
+          <button
+            onClick={onClose}
+            className="p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* E5 Tabs: الإشعارات | الرسائل | الأصدقاء */}
+        <div className="p-3 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-[#111625]/40">
+          <div className="grid grid-cols-3 p-1 rounded-2xl bg-slate-200/60 dark:bg-slate-800/80 text-xs font-bold">
             <button
-              onClick={onClose}
-              className="p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              id="notif-tab-notifications"
+              onClick={() => setActiveTab('notifications')}
+              className={`py-2 px-1 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                activeTab === 'notifications'
+                  ? 'bg-white dark:bg-[#0c101c] text-blue-600 dark:text-blue-400 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+              }`}
             >
-              <X className="w-4 h-4" />
+              <Bell className="w-3.5 h-3.5" />
+              <span>الإشعارات</span>
+              {unreadDirectCount > 0 && (
+                <span className="w-4 h-4 rounded-full bg-red-600 text-white text-[10px] flex items-center justify-center font-black">
+                  {unreadDirectCount > 9 ? '+9' : unreadDirectCount}
+                </span>
+              )}
+            </button>
+
+            <button
+              id="notif-tab-messages"
+              onClick={() => setActiveTab('messages')}
+              className={`py-2 px-1 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                activeTab === 'messages'
+                  ? 'bg-white dark:bg-[#0c101c] text-indigo-600 dark:text-indigo-400 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+              }`}
+            >
+              <MessageSquare className="w-3.5 h-3.5" />
+              <span>الرسائل</span>
+              {unreadMessagesCount > 0 && (
+                <span className="w-4 h-4 rounded-full bg-red-600 text-white text-[10px] flex items-center justify-center font-black">
+                  {unreadMessagesCount > 9 ? '+9' : unreadMessagesCount}
+                </span>
+              )}
+            </button>
+
+            <button
+              id="notif-tab-friends"
+              onClick={() => setActiveTab('friends')}
+              className={`py-2 px-1 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                activeTab === 'friends'
+                  ? 'bg-white dark:bg-[#0c101c] text-emerald-600 dark:text-emerald-400 shadow-xs'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+              }`}
+            >
+              <Users className="w-3.5 h-3.5" />
+              <span>الأصدقاء</span>
+              {friends.length > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 text-[10px]">
+                  {friends.length}
+                </span>
+              )}
             </button>
           </div>
         </div>
 
-        {/* Navigation Tabs (Broadcasts vs Direct) */}
-        <div className="flex border-b border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-[#090d16] p-1.5 gap-1.5 text-xs font-bold">
-          <button
-            type="button"
-            onClick={() => setActiveTab('broadcasts')}
-            className={`flex-1 py-2 px-3 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-              activeTab === 'broadcasts'
-                ? 'bg-white dark:bg-[#13192a] text-blue-600 dark:text-blue-400 shadow-xs'
-                : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-            }`}
-          >
-            <BookOpen className="w-3.5 h-3.5" />
-            <span>إعلانات الامتحانات</span>
-            {unreadBroadcastsCount > 0 && (
-              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-red-600 text-white font-mono">
-                {unreadBroadcastsCount}
-              </span>
-            )}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setActiveTab('direct')}
-            className={`flex-1 py-2 px-3 rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-              activeTab === 'direct'
-                ? 'bg-white dark:bg-[#13192a] text-blue-600 dark:text-blue-400 shadow-xs'
-                : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-            }`}
-          >
-            <MessageSquare className="w-3.5 h-3.5" />
-            <span>الرسائل والطلبات</span>
-            {unreadDirectCount > 0 && (
-              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-blue-600 text-white font-mono">
-                {unreadDirectCount}
-              </span>
-            )}
-          </button>
-        </div>
-
-        {/* Tab 1: Broadcasts (D2 economical notifications) */}
-        {activeTab === 'broadcasts' && (
-          <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
-            {broadcasts.length === 0 ? (
-              <div className="text-center py-20 text-slate-400 space-y-2">
-                <BookOpen className="w-9 h-9 mx-auto text-slate-300 dark:text-slate-600" />
-                <p className="text-xs">لا توجد إعلانات أو امتحانات منشورة حديثاً</p>
-                <span className="text-[10px] text-slate-400">ستصلك إشعارات فورية عند نشر أو تحديث أي امتحان</span>
-              </div>
-            ) : (
-              broadcasts.map((b) => {
-                const isNew = !lastReadBroadcastAt || new Date(b.createdAt).getTime() > new Date(lastReadBroadcastAt).getTime();
-                return (
-                  <div
-                    key={b.id}
-                    onClick={() => handleBroadcastClick(b)}
-                    className={`p-3.5 rounded-2xl border transition-all cursor-pointer relative ${
-                      isNew
-                        ? 'bg-blue-50/60 dark:bg-blue-950/30 border-blue-200 dark:border-blue-900/60 shadow-xs'
-                        : 'bg-white dark:bg-[#111625] border-slate-200/80 dark:border-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-900/50'
-                    }`}
+        {/* Tab Content */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          {/* TAB 1: الإشعارات */}
+          {activeTab === 'notifications' && (
+            <>
+              {unreadDirectCount > 0 && (
+                <div className="flex justify-end pb-1">
+                  <button
+                    onClick={handleMarkAllRead}
+                    className="text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 cursor-pointer"
                   >
-                    {isNew && (
-                      <span className="w-2 h-2 rounded-full bg-blue-600 absolute top-3.5 left-3.5" />
-                    )}
+                    <CheckCheck className="w-3.5 h-3.5" />
+                    <span>تحديد الكل كمقروء</span>
+                  </button>
+                </div>
+              )}
 
-                    <div className="flex items-start gap-3">
-                      <div className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800 shrink-0 mt-0.5">
-                        {getBroadcastIcon(b.type)}
-                      </div>
+              {notifications.length === 0 && broadcasts.length === 0 ? (
+                <div className="py-20 text-center text-slate-400 text-xs space-y-2">
+                  <Bell className="w-8 h-8 mx-auto text-slate-300 dark:text-slate-700" />
+                  <p>لا توجد إشعارات جديدة حالياً.</p>
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  {notifications.map((notif) => {
+                    const isFriendReq = notif.type === 'friend_request';
+                    const isProcessing = processingId === notif.id;
 
-                      <div className="flex-1 min-w-0 space-y-1">
-                        <div className="flex items-center justify-between gap-2">
-                          <h4 className="text-xs font-bold text-slate-900 dark:text-white line-clamp-1">
-                            {b.title}
-                          </h4>
-                          <span className="text-[10px] text-slate-400 shrink-0 font-mono">
-                            {new Date(b.createdAt).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}
-                          </span>
-                        </div>
+                    return (
+                      <div
+                        key={notif.id}
+                        id={`notification-card-${notif.id}`}
+                        onClick={() => handleNotificationClick(notif)}
+                        className={`p-3.5 rounded-2xl border transition-all cursor-pointer relative text-right ${
+                          !notif.read
+                            ? 'bg-blue-50/60 dark:bg-blue-950/30 border-blue-200 dark:border-blue-900/60 shadow-xs'
+                            : 'bg-white dark:bg-[#111625] border-slate-100 dark:border-slate-800'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="flex items-start gap-3 min-w-0 flex-1">
+                            {notif.senderPhoto ? (
+                              <img
+                                src={notif.senderPhoto}
+                                alt={notif.senderName}
+                                className="w-10 h-10 rounded-xl object-cover shrink-0 border border-slate-200 dark:border-slate-700"
+                              />
+                            ) : (
+                              <div className="w-10 h-10 rounded-xl bg-blue-100 dark:bg-blue-900/40 text-blue-600 flex items-center justify-center shrink-0">
+                                {isFriendReq ? <UserPlus className="w-5 h-5" /> : <Bell className="w-5 h-5" />}
+                              </div>
+                            )}
 
-                        {b.message && (
-                          <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
-                            {b.message}
-                          </p>
-                        )}
-
-                        <div className="flex items-center gap-2 pt-1">
-                          <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400">
-                            مسار: {b.audience?.track === 'all' || b.audience?.track === 'مشترك' ? 'مشترك (علمي وأدبي)' : b.audience?.track}
-                          </span>
-                          {b.examId && (
-                            <span className="text-[10px] text-slate-400 flex items-center gap-0.5">
-                              <span>اضغط لفتح الامتحان</span>
-                              <ExternalLink className="w-2.5 h-2.5" />
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        )}
-
-        {/* Tab 2: Direct Notifications (Chat & Friends) */}
-        {activeTab === 'direct' && (
-          <div className="flex-1 overflow-y-auto p-3 space-y-2.5">
-            {notifications.length === 0 ? (
-              <div className="text-center py-20 text-slate-400 space-y-3">
-                <Bell className="w-9 h-9 mx-auto text-slate-300 dark:text-slate-600" />
-                <p className="text-xs">لا توجد رسائل أو طلبات جديدة حالياً</p>
-              </div>
-            ) : (
-              notifications.map((notif) => {
-                const isProcessing = processingId === notif.id;
-                return (
-                  <div
-                    key={notif.id}
-                    onClick={() => handleNotificationClick(notif)}
-                    className={`p-3.5 rounded-2xl border transition-all cursor-pointer relative ${
-                      !notif.read
-                        ? 'bg-blue-50/60 dark:bg-blue-950/30 border-blue-200 dark:border-blue-900/60 shadow-xs'
-                        : 'bg-white dark:bg-[#111625] border-slate-200/80 dark:border-slate-800/80 hover:bg-slate-50 dark:hover:bg-slate-900/50'
-                    }`}
-                  >
-                    {!notif.read && (
-                      <span className="w-2 h-2 rounded-full bg-blue-600 absolute top-3.5 left-3.5" />
-                    )}
-
-                    <div className="flex items-start gap-3">
-                      <div className="relative shrink-0">
-                        {notif.senderPhoto ? (
-                          <img
-                            src={notif.senderPhoto}
-                            alt=""
-                            className="w-9 h-9 rounded-xl object-cover bg-slate-100 dark:bg-slate-800"
-                          />
-                        ) : (
-                          <div className="w-9 h-9 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
-                            <Bell className="w-4 h-4 text-blue-500" />
+                            <div className="min-w-0 flex-1">
+                              <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                                <span>{notif.title}</span>
+                                {!notif.read && (
+                                  <span className="w-2 h-2 rounded-full bg-blue-600 shrink-0" />
+                                )}
+                              </h4>
+                              <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 leading-relaxed">
+                                {notif.message}
+                              </p>
+                              <span className="text-[10px] text-slate-400 mt-1.5 block">
+                                {new Date(notif.createdAt).toLocaleTimeString('ar-EG', {
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })}
+                              </span>
+                            </div>
                           </div>
-                        )}
-                      </div>
 
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-1">
-                          <h4 className="text-xs font-bold text-slate-900 dark:text-white truncate">
-                            {notif.title}
-                          </h4>
-                          <span className="text-[10px] text-slate-400 shrink-0 font-mono">
-                            {new Date(notif.createdAt).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}
-                          </span>
+                          <button
+                            onClick={(e) => handleDelete(e, notif.id)}
+                            className="text-slate-300 hover:text-red-500 p-1 rounded-lg transition-colors cursor-pointer"
+                            title="حذف الإشعار"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
 
-                        <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 leading-relaxed">
-                          {notif.message}
-                        </p>
-
-                        {/* Interactive Actions for Friend Request */}
-                        {notif.type === 'friend_request' && notif.metadata?.requestId && (
-                          <div className="flex items-center gap-2 mt-3 pt-2 border-t border-slate-200/60 dark:border-slate-800/60" onClick={(e) => e.stopPropagation()}>
+                        {/* Friend Request Accept / Reject Actions (E5) */}
+                        {isFriendReq && notif.metadata?.requestId && (
+                          <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800 flex items-center gap-2">
                             <button
-                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleAcceptFriend(notif);
+                              }}
                               disabled={isProcessing}
-                              onClick={() => handleAcceptFriend(notif)}
-                              className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold flex items-center gap-1 shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+                              className="flex-1 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-xs cursor-pointer disabled:opacity-50"
                             >
-                              {isProcessing ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                              {isProcessing ? (
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <Check className="w-3.5 h-3.5" />
+                              )}
                               <span>قبول الصداقة</span>
                             </button>
+
                             <button
-                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleRejectFriend(notif);
+                              }}
                               disabled={isProcessing}
-                              onClick={() => handleRejectFriend(notif)}
-                              className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-600 dark:text-slate-300 text-[11px] font-semibold transition-colors cursor-pointer"
+                              className="px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-red-50 dark:hover:bg-red-950/40 text-slate-600 hover:text-red-600 dark:text-slate-300 font-bold text-xs transition-colors cursor-pointer disabled:opacity-50"
                             >
-                              <span>تجاهل</span>
+                              <span>رفض</span>
                             </button>
                           </div>
                         )}
                       </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          )}
 
-                      <button
-                        type="button"
-                        onClick={(e) => handleDelete(e, notif.id)}
-                        className="text-slate-300 hover:text-red-500 dark:text-slate-600 dark:hover:text-red-400 p-1 transition-colors"
-                        title="حذف الإشعار"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+          {/* TAB 2: الرسائل (Conversations with unread counter) */}
+          {activeTab === 'messages' && (
+            <div className="space-y-2">
+              {loadingChats ? (
+                <div className="py-16 flex flex-col items-center justify-center gap-2 text-slate-400 text-xs">
+                  <Loader2 className="w-6 h-6 animate-spin text-indigo-600" />
+                  <span>جارٍ تحميل المحادثات...</span>
+                </div>
+              ) : chats.length === 0 ? (
+                <div className="py-16 text-center text-slate-400 text-xs space-y-2">
+                  <MessageSquare className="w-8 h-8 mx-auto text-slate-300 dark:text-slate-700" />
+                  <p>لا توجد محادثات نشطة بعد.</p>
+                  <p className="text-[11px] text-slate-500">
+                    أضف أصدقاءك من شاشة البحث أو قائمة الترتيب لبدء محادثات فورية.
+                  </p>
+                </div>
+              ) : (
+                chats.map((chat) => {
+                  const otherUid = chat.participants.find((u) => u !== profile?.uid) || '';
+                  const other = chat.participantDetails?.[otherUid] || {
+                    displayName: 'طالب',
+                    username: 'student',
+                    photoURL: '',
+                    branch: 'علمي',
+                  };
+
+                  const unread = 
+                    (chat.unreadCount && typeof chat.unreadCount[profile?.uid || ''] === 'number')
+                      ? chat.unreadCount[profile?.uid || '']
+                      : (chat.unreadCounts && typeof (chat as any).unreadCounts[profile?.uid || ''] === 'number')
+                      ? (chat as any).unreadCounts[profile?.uid || '']
+                      : 0;
+
+                  return (
+                    <div
+                      key={chat.id}
+                      onClick={() => {
+                        onClose();
+                        if (onOpenChatWithUser) {
+                          onOpenChatWithUser(otherUid, other);
+                        }
+                      }}
+                      className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 text-right ${
+                        unread > 0
+                          ? 'bg-indigo-50/60 dark:bg-indigo-950/30 border-indigo-200 dark:border-indigo-900/60 shadow-xs'
+                          : 'bg-white dark:bg-[#111625] border-slate-100 dark:border-slate-800 hover:border-slate-300'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                        <img
+                          src={other.photoURL || '/favicon-192x192.png'}
+                          alt={other.displayName}
+                          className="w-10 h-10 rounded-xl object-cover border border-slate-200 dark:border-slate-700 shrink-0"
+                          onError={(e) => {
+                            e.currentTarget.src = '/favicon-192x192.png';
+                          }}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate">
+                              {other.displayName}
+                            </h4>
+                            <span className="text-[10px] text-slate-400 shrink-0">
+                              {new Date(chat.lastMessageAt).toLocaleTimeString('ar-EG', {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                            {chat.lastMessage || 'بدء المحادثة'}
+                          </p>
+                        </div>
+                      </div>
+
+                      {unread > 0 && (
+                        <span className="w-5 h-5 rounded-full bg-red-600 text-white text-[10px] font-black flex items-center justify-center shrink-0 animate-pulse">
+                          {unread > 9 ? '+9' : unread}
+                        </span>
+                      )}
                     </div>
+                  );
+                })
+              )}
+            </div>
+          )}
+
+          {/* TAB 3: الأصدقاء (Friends list with instant chat click) */}
+          {activeTab === 'friends' && (
+            <div className="space-y-2">
+              {loadingFriends ? (
+                <div className="py-16 flex flex-col items-center justify-center gap-2 text-slate-400 text-xs">
+                  <Loader2 className="w-6 h-6 animate-spin text-emerald-600" />
+                  <span>جارٍ تحميل قائمة الأصدقاء...</span>
+                </div>
+              ) : friends.length === 0 ? (
+                <div className="py-16 text-center text-slate-400 text-xs space-y-2">
+                  <Users className="w-8 h-8 mx-auto text-slate-300 dark:text-slate-700" />
+                  <p>قائمة الأصدقاء فارغة حالياً.</p>
+                  <p className="text-[11px] text-slate-500">
+                    عند قبول طلبات الصداقة، سيظهر أصدقاؤك هنا ويمكنك مراسلتهم فوراً.
+                  </p>
+                </div>
+              ) : (
+                friends.map((friend) => (
+                  <div
+                    key={friend.uid}
+                    onClick={() => {
+                      onClose();
+                      if (onOpenChatWithUser) {
+                        onOpenChatWithUser(friend.uid, {
+                          displayName: friend.displayName,
+                          username: friend.username,
+                          photoURL: friend.photoURL,
+                          branch: friend.branch,
+                        });
+                      }
+                    }}
+                    className="p-3 rounded-2xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-[#111625] hover:bg-slate-50 dark:hover:bg-[#141b2d] transition-all cursor-pointer flex items-center justify-between gap-3 text-right"
+                    title="اضغط لفتح المحادثة فوراً"
+                  >
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      <img
+                        src={friend.photoURL || '/favicon-192x192.png'}
+                        alt={friend.displayName}
+                        className="w-10 h-10 rounded-xl object-cover border border-slate-200 dark:border-slate-700 shrink-0"
+                        onError={(e) => {
+                          e.currentTarget.src = '/favicon-192x192.png';
+                        }}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate">
+                            {friend.displayName}
+                          </h4>
+                          <span className="text-[10px] font-semibold px-1.5 py-0.2 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                            {friend.branch || 'علمي'}
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-blue-600 dark:text-blue-400 font-mono dir-ltr truncate text-right">
+                          @{friend.username}
+                        </p>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      className="px-3 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 text-indigo-600 dark:text-indigo-400 text-xs font-bold flex items-center gap-1.5 transition-colors shrink-0 cursor-pointer"
+                    >
+                      <MessageSquare className="w-3.5 h-3.5" />
+                      <span>مراسلة</span>
+                    </button>
                   </div>
-                );
-              })
-            )}
-          </div>
-        )}
+                ))
+              )}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

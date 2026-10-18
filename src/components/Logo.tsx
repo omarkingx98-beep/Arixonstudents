@@ -3,7 +3,7 @@ import React from 'react';
 interface LogoProps {
   className?: string;
   showTagline?: boolean;
-  size?: 'sm' | 'md' | 'lg';
+  size?: 'sm' | 'md' | 'lg' | 'xl';
 }
 
 export const Logo: React.FC<LogoProps> = ({ 
@@ -11,35 +11,33 @@ export const Logo: React.FC<LogoProps> = ({
   showTagline = false,
   size = 'md' 
 }) => {
-  const iconSize = size === 'sm' ? 'w-7 h-7' : size === 'lg' ? 'w-11 h-11' : 'w-9 h-9';
-  const textSize = size === 'sm' ? 'text-lg' : size === 'lg' ? 'text-2xl' : 'text-xl';
+  const iconSize = 
+    size === 'sm' ? 'w-7 h-7' : 
+    size === 'lg' ? 'w-11 h-11' : 
+    size === 'xl' ? 'w-16 h-16' : 
+    'w-9 h-9';
+    
+  const textSize = 
+    size === 'sm' ? 'text-lg' : 
+    size === 'lg' ? 'text-2xl' : 
+    size === 'xl' ? 'text-3xl' : 
+    'text-xl';
 
   return (
     <div className={`inline-flex items-center gap-2.5 select-none ${className}`}>
-      {/* Brand Icon: Stylized energetic Arixon geometric emblem */}
-      <div 
-        id="arixon-brand-icon"
-        className={`${iconSize} relative flex items-center justify-center rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-blue-500 shadow-md shadow-blue-500/20 text-white flex-shrink-0 transition-transform hover:scale-105`}
-      >
-        <svg 
-          viewBox="0 0 24 24" 
-          fill="none" 
-          xmlns="http://www.w3.org/2000/svg"
-          className="w-5 h-5 text-white stroke-[2.2]"
-        >
-          {/* Futuristic modern A shape with energy chevron */}
-          <path 
-            d="M12 3L4 19H8.5L12 11L15.5 19H20L12 3Z" 
-            fill="currentColor" 
-            fillOpacity="0.9"
-          />
-          <path 
-            d="M10 14.5L12 10.5L14 14.5H10Z" 
-            fill="#60A5FA" 
-          />
-          <circle cx="12" cy="7.5" r="1.5" fill="#93C5FD" />
-        </svg>
-      </div>
+      {/* Brand Icon: Single Source Official Arixon Logo Image */}
+      <img
+        src="/logo.png"
+        alt="Arixon Logo"
+        className={`${iconSize} rounded-xl object-cover shadow-sm transition-transform hover:scale-105 shrink-0 border border-slate-200/50 dark:border-slate-800/80`}
+        onError={(e) => {
+          // Graceful fallback to favicon if needed
+          const target = e.currentTarget;
+          if (target.src !== '/favicon-192x192.png') {
+            target.src = '/favicon-192x192.png';
+          }
+        }}
+      />
 
       {/* Wordmark */}
       <div className="flex flex-col">

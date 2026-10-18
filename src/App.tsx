@@ -24,12 +24,19 @@ import { Loader2, AlertTriangle, RefreshCw, ShieldAlert } from 'lucide-react';
 import { seedFirstExamIfMissing, getExamById } from './lib/examService';
 import { markTutorialAsSeen } from './lib/firebase';
 import { subscribeToNotifications } from './lib/notificationService';
+import { SideMenuDrawer } from './components/SideMenuDrawer';
 import { 
   subscribeToStudentBroadcasts, 
   getStudentNotifState, 
   updateStudentNotifState, 
   calculateUnreadBroadcasts 
 } from './lib/broadcastService';
+import { 
+  subscribeToUserUnreadMessageCount, 
+  markChatAsRead, 
+  getChatIdForUsers 
+} from './lib/chatService';
+import { subscribeToPendingFriendRequests } from './lib/friendService';
 import type { NavigationTab, ExamAttempt, AppNotification, BroadcastNotification } from './types';
 
 function MainAppShell() {
@@ -49,6 +56,13 @@ function MainAppShell() {
   const [broadcasts, setBroadcasts] = useState<BroadcastNotification[]>([]);
   const [lastReadBroadcastAt, setLastReadBroadcastAt] = useState<string | null>(null);
 
+  // E6: Realtime unread messages & pending friend requests state
+  const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
+  const [pendingFriendRequestsCount, setPendingFriendRequestsCount] = useState(0);
+
+  // E1: Side menu drawer state
+  const [isSideMenuOpen, setIsSideMenuOpen] = useState(false);
+
   // Social & Chat Modals state
   const [inspectedUserId, setInspectedUserId] = useState<string | null>(null);
   const [activeChatUser, setActiveChatUser] = useState<{
@@ -64,7 +78,7 @@ function MainAppShell() {
   const [examInitialAttempt, setExamInitialAttempt] = useState<ExamAttempt | null>(null);
   const [examInitialViewMode, setExamInitialViewMode] = useState<'list' | 'results' | 'review'>('list');
 
-  // Realtime notifications listener
+  // Realtime direct notifications listener
   useEffect(() => {
     if (status === 'authenticated' && profile?.uid) {
       const unsubscribe = subscribeToNotifications(profile.uid, (list, unread) => {
@@ -74,6 +88,34 @@ function MainAppShell() {
       return () => unsubscribe();
     }
   }, [status, profile?.uid]);
+
+  // E6: Realtime unread chat messages listener
+  useEffect(() => {
+    if (status === 'authenticated' && profile?.uid) {
+      const unsub = subscribeToUserUnreadMessageCount(profile.uid, (count) => {
+        setUnreadMessagesCount(count);
+      });
+      return () => unsub();
+    }
+  }, [status, profile?.uid]);
+
+  // E6: Realtime pending friend requests listener
+  useEffect(() => {
+    if (status === 'authenticated' && profile?.uid) {
+      const unsub = subscribeToPendingFriendRequests(profile.uid, (count) => {
+        setPendingFriendRequestsCount(count);
+      });
+      return () => unsub();
+    }
+  }, [status, profile?.uid]);
+
+  // Zero unread message counter when a conversation is open with activeChatUser
+  useEffect(() => {
+    if (activeChatUser?.uid && profile?.uid) {
+      const chatId = getChatIdForUsers(profile.uid, activeChatUser.uid);
+      markChatAsRead(chatId, profile.uid).catch(() => {});
+    }
+  }, [activeChatUser?.uid, profile?.uid]);
 
   // Realtime broadcasts listener & student notifState (D2)
   useEffect(() => {
@@ -92,8 +134,8 @@ function MainAppShell() {
     }
   }, [status, profile?.uid, profile?.branch]);
 
-  const unreadBroadcasts = calculateUnreadBroadcasts(broadcasts, lastReadBroadcastAt);
-  const totalUnreadCount = unreadNotifsCount + unreadBroadcasts;
+  // E6: Total Red Bell Counter = unread messages + unread direct notifications + pending friend requests
+  const totalUnreadCount = unreadNotifsCount + unreadMessagesCount + pendingFriendRequestsCount;
 
   const handleOpenNotifications = () => {
     setIsNotificationsOpen(true);
@@ -302,7 +344,25 @@ function MainAppShell() {
         onOpenAdmin={handleOpenAdmin}
         onOpenNotifications={handleOpenNotifications}
         onOpenUserSearch={() => setIsUserSearchOpen(true)}
+        onOpenSideMenu={() => setIsSideMenuOpen(true)}
         unreadNotificationsCount={totalUnreadCount}
+      />
+
+      {/* E1: Side Menu ☰ Drawer */}
+      <SideMenuDrawer
+        isOpen={isSideMenuOpen}
+        onClose={() => setIsSideMenuOpen(false)}
+        onNavigate={(tab) => {
+          if (tab !== 'exams') {
+            setExamInitialAttempt(null);
+            setExamInitialViewMode('list');
+          }
+          setCurrentTab(tab);
+        }}
+        onOpenTutorial={() => setIsTutorialOpen(true)}
+        onOpenUserSearch={() => setIsUserSearchOpen(true)}
+        onOpenSettings={() => setIsSettingsOpen(true)}
+        onOpenAdmin={handleOpenAdmin}
       />
 
       {/* Ticker Announcements bar immediately below Header (C2) */}

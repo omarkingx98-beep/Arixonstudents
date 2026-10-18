@@ -24,8 +24,10 @@ import {
   Activity,
   ShieldCheck,
   AlertTriangle,
+  ShieldAlert,
 } from 'lucide-react';
 import type { AdminTab, AdminAuditLog } from '../../types';
+import { fetchAdminReports, type StudentReportItem } from '../../lib/adminService';
 
 interface AdminDashboardProps {
   onNavigate: (tab: AdminTab) => void;
@@ -57,6 +59,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate }) =>
   });
 
   const [recentActivities, setRecentActivities] = useState<AdminAuditLog[]>([]);
+  const [adminReports, setAdminReports] = useState<StudentReportItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const loadDashboardData = async () => {
@@ -191,6 +194,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate }) =>
       const localLogs = JSON.parse(localStorage.getItem('arixon_admin_audit_logs') || '[]');
       setRecentActivities(localLogs.slice(0, 8));
     } finally {
+      // 5. Fetch student reports & blocks for admin notifications
+      try {
+        const reports = await fetchAdminReports();
+        setAdminReports(reports);
+      } catch {}
       setIsLoading(false);
     }
   };
@@ -199,14 +207,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate }) =>
     loadDashboardData();
 
     // Subscribe to audit logs in real-time with silent permission error handling
-    let unsubscribe = () => {};
+    let unsubscribeLogs = () => {};
+    let unsubscribeReports = () => {};
     try {
       const logsQuery = query(
         collection(db, 'adminAuditLogs'),
         orderBy('timestamp', 'desc'),
         limit(8)
       );
-      unsubscribe = onSnapshot(
+      unsubscribeLogs = onSnapshot(
         logsQuery,
         (snap) => {
           const logs: AdminAuditLog[] = [];
@@ -215,9 +224,24 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate }) =>
             setRecentActivities(logs);
           }
         },
-        (_error) => {
-          // Gracefully ignore realtime permission denial
-        }
+        (_error) => {}
+      );
+
+      const repQuery = query(
+        collection(db, 'adminReports'),
+        orderBy('createdAt', 'desc'),
+        limit(20)
+      );
+      unsubscribeReports = onSnapshot(
+        repQuery,
+        (snap) => {
+          const reps: StudentReportItem[] = [];
+          snap.forEach((d) => reps.push(d.data() as StudentReportItem));
+          if (reps.length > 0) {
+            setAdminReports(reps);
+          }
+        },
+        (_error) => {}
       );
     } catch (_err) {
       // Ignore listener error
@@ -225,7 +249,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate }) =>
 
     return () => {
       try {
-        unsubscribe();
+        unsubscribeLogs();
+        unsubscribeReports();
       } catch {}
     };
   }, []);
@@ -282,6 +307,74 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate }) =>
           </button>
         </div>
       </div>
+
+      {/* Student Reports & Blocks Immediate Alert Banner (Requirement: إشعارات الإدارة بالبلاغات والحظر) */}
+      {adminReports.length > 0 && (
+        <div 
+          id="admin-reports-alert-banner"
+          className="p-5 rounded-3xl bg-amber-500/10 border border-amber-500/30 dark:border-amber-500/20 space-y-3 animate-fadeIn"
+        >
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-2">
+              <span className="p-2 rounded-xl bg-amber-500/20 text-amber-600 dark:text-amber-400">
+                <ShieldAlert className="w-5 h-5" />
+              </span>
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <span>إشعارات الرقابة العاجلة: بلاغات وحظر الطلاب</span>
+                  <span className="px-2 py-0.5 rounded-full text-xs font-black bg-amber-500 text-white">
+                    {adminReports.length}
+                  </span>
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  تنبيهات فورية عند قيام طالب بالإبلاغ عن زميل أو حظره للمراجعة الإدارية واتخاذ الإجراء المناسب.
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={() => onNavigate('audit-logs')}
+              className="text-xs font-bold px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white transition-colors cursor-pointer"
+            >
+              عرض في سجل الرقابة
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 pt-1">
+            {adminReports.slice(0, 4).map((report) => {
+              const isBlock = report.actionType === 'block';
+              return (
+                <div
+                  key={report.id}
+                  className="p-3.5 rounded-2xl bg-white dark:bg-[#111625] border border-amber-200/60 dark:border-amber-900/40 text-xs space-y-1.5 shadow-2xs"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className={`px-2 py-0.5 rounded-md font-bold text-[10px] ${
+                      isBlock 
+                        ? 'bg-red-100 text-red-700 dark:bg-red-950/60 dark:text-red-300' 
+                        : 'bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300'
+                    }`}>
+                      {isBlock ? '🚫 حظر طالب' : '⚠️ بلاغ مخالفة'}
+                    </span>
+                    <span className="text-[10px] text-slate-400">
+                      {new Date(report.createdAt).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
+
+                  <p className="text-slate-800 dark:text-slate-200 font-medium">
+                    الطالب <strong>{report.reporterName}</strong> {isBlock ? 'قام بحظر' : 'أبلغ عن'} <strong>{report.reportedUserName}</strong>
+                  </p>
+
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/50 p-2 rounded-xl">
+                    <span className="font-semibold text-slate-700 dark:text-slate-300">السبب:</span> {report.reason}
+                    {report.details && <span className="block mt-0.5 text-slate-400">"{report.details}"</span>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Primary Key Metric Tiles */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">

@@ -382,28 +382,6 @@ export const AdminCreateExamModal: React.FC<AdminCreateExamModalProps> = ({
 
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                    المبحث الدراسي *
-                  </label>
-                  <select
-                    value={subject}
-                    onChange={(e) => setSubject(e.target.value as SubjectId)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#13192a] text-xs focus:outline-hidden focus:border-blue-500"
-                  >
-                    <option value="physics">الفيزياء</option>
-                    <option value="math">الرياضيات</option>
-                    <option value="arabic">اللغة العربية</option>
-                    <option value="chemistry">الكيمياء</option>
-                    <option value="biology">العلوم الحياتية</option>
-                    <option value="english">اللغة الإنجليزية</option>
-                    <option value="islamic">التربية الإسلامية</option>
-                    <option value="other">مبحث آخر</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
                     الدرس / الوحدة التعليمية *
                   </label>
                   <input
@@ -413,6 +391,72 @@ export const AdminCreateExamModal: React.FC<AdminCreateExamModalProps> = ({
                     placeholder="مثال: الوحدة الأولى - الدرس الثاني: التصادمات المرنة"
                     className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#13192a] text-xs focus:outline-hidden focus:border-blue-500"
                   />
+                </div>
+
+                <div className="space-y-1.5 sm:col-span-2">
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                    الفرع الأكاديمي المستهدف *
+                  </label>
+                  <select
+                    value={branch}
+                    onChange={(e) => {
+                      const newBranch = e.target.value as 'مشترك' | 'علمي' | 'أدبي';
+                      setBranch(newBranch);
+                      if (newBranch === 'أدبي' && ['physics', 'chemistry', 'biology', 'geology'].includes(subject)) {
+                        setSubject('arabic');
+                      } else if (newBranch === 'علمي' && ['history', 'geography', 'financial_culture'].includes(subject)) {
+                        setSubject('physics');
+                      } else if (newBranch === 'مشترك' && !['arabic', 'english', 'islamic', 'islamic_studies'].includes(subject)) {
+                        setSubject('arabic');
+                      }
+                    }}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#13192a] text-xs focus:outline-hidden focus:border-blue-500 font-bold"
+                  >
+                    <option value="مشترك">مشترك (المواد العامة المشتركة فقط: عربي، إنجليزي، دين)</option>
+                    <option value="علمي">الفرع العلمي فقط (8 مواد علمية)</option>
+                    <option value="أدبي">الفرع الأدبي فقط (8 مواد أدبية - ممنوع الفيزياء والعلوم)</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1.5 sm:col-span-2">
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                    المبحث الدراسي ({branch === 'أدبي' ? 'مواد الفرع الأدبي الـ 8' : branch === 'علمي' ? 'مواد الفرع العلمي الـ 8' : 'المواد المشتركة'}) *
+                  </label>
+                  <select
+                    value={subject}
+                    onChange={(e) => setSubject(e.target.value as SubjectId)}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#13192a] text-xs focus:outline-hidden focus:border-blue-500 font-semibold"
+                  >
+                    {branch === 'أدبي' ? (
+                      <>
+                        <option value="arabic">اللغة العربية (تخصص ومهارات)</option>
+                        <option value="english">اللغة الإنجليزية</option>
+                        <option value="islamic_studies">التربية الإسلامية</option>
+                        <option value="math">الرياضيات (الأدبي)</option>
+                        <option value="history">تاريخ الأردن والعرب</option>
+                        <option value="geography">الجغرافيا والدراسات البيئية</option>
+                        <option value="financial_culture">الثقافة المالية والمصرفية</option>
+                        <option value="computer">الحاسوب وتكنولوجيا المعلومات</option>
+                      </>
+                    ) : branch === 'علمي' ? (
+                      <>
+                        <option value="physics">الفيزياء</option>
+                        <option value="math">الرياضيات (العلمي)</option>
+                        <option value="chemistry">الكيمياء</option>
+                        <option value="biology">العلوم الحياتية (الأحياء)</option>
+                        <option value="geology">علوم الأرض والبيئة</option>
+                        <option value="arabic">اللغة العربية (مشترك)</option>
+                        <option value="english">اللغة الإنجليزية</option>
+                        <option value="islamic_studies">التربية الإسلامية</option>
+                      </>
+                    ) : (
+                      <>
+                        <option value="arabic">اللغة العربية (مشترك لجميع الفروع)</option>
+                        <option value="english">اللغة الإنجليزية (مشترك لجميع الفروع)</option>
+                        <option value="islamic_studies">التربية الإسلامية (مشترك لجميع الفروع)</option>
+                      </>
+                    )}
+                  </select>
                 </div>
 
                 <div className="space-y-1.5">
@@ -430,23 +474,6 @@ export const AdminCreateExamModal: React.FC<AdminCreateExamModalProps> = ({
                   </select>
                 </div>
 
-                <div className="space-y-1.5 sm:col-span-2">
-                  <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                    الفرع الأكاديمي المستهدف *
-                  </label>
-                  <select
-                    value={branch}
-                    onChange={(e) => setBranch(e.target.value as any)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#13192a] text-xs focus:outline-hidden focus:border-blue-500 font-bold"
-                  >
-                    <option value="مشترك">مشترك (يظهر للفرعين العلمي والأدبي معاً)</option>
-                    <option value="علمي">الفرع العلمي فقط</option>
-                    <option value="أدبي">الفرع الأدبي فقط</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
                     مدة الامتحان (بالدقائق) *
@@ -464,7 +491,7 @@ export const AdminCreateExamModal: React.FC<AdminCreateExamModalProps> = ({
                   </div>
                 </div>
 
-                <div className="space-y-1.5">
+                <div className="space-y-1.5 sm:col-span-2">
                   <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
                     مجموع العلامات الكلي *
                   </label>
@@ -517,18 +544,39 @@ export const AdminCreateExamModal: React.FC<AdminCreateExamModalProps> = ({
           {/* TAB 2: QUESTIONS */}
           {activeTab === 'questions' && (
             <div className="space-y-6">
-              <div className="flex items-center justify-between">
-                <div className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                  قائمة الأسئلة ({questions.length})
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                  <span>قائمة الأسئلة ({questions.length})</span>
+                  <span className="text-[11px] px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 font-bold">
+                    مجموع النقاط: {questions.reduce((sum, q) => sum + (q.points || 0), 0)} / {totalPoints}
+                  </span>
                 </div>
-                <button
-                  type="button"
-                  onClick={addBlankQuestion}
-                  className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>إضافة سؤال جديد</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (questions.length === 0) return;
+                      const base = Math.max(1, Math.floor(totalPoints / questions.length));
+                      const rem = totalPoints - (base * questions.length);
+                      setQuestions(prev => prev.map((q, i) => ({
+                        ...q,
+                        points: base + (i === 0 ? rem : 0)
+                      })));
+                    }}
+                    className="px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-[11px] font-bold text-slate-700 dark:text-slate-300 cursor-pointer"
+                    title="توزيع مجموع درجات الامتحان بالتساوي على جميع الأسئلة"
+                  >
+                    توزيع النقاط بالتساوي
+                  </button>
+                  <button
+                    type="button"
+                    onClick={addBlankQuestion}
+                    className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>إضافة سؤال جديد</span>
+                  </button>
+                </div>
               </div>
 
               {questions.map((q, qIndex) => (

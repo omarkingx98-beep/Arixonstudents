@@ -184,14 +184,24 @@ export async function getExamsList(
 
         // Literary track (أدبي): strictly exclude scientific-only subjects
         if (userBranch === 'أدبي') {
-          if (['physics', 'chemistry', 'biology', 'geology'].includes(examSub) || examBranch === 'علمي') {
+          const isScientificContent = 
+            ['physics', 'chemistry', 'biology', 'geology'].includes(examSub) || 
+            examBranch === 'علمي' ||
+            (examObj.title && (examObj.title.includes('فيزياء') || examObj.title.includes('كيمياء') || examObj.title.includes('أحياء') || examObj.title.includes('جيولوجيا') || examObj.title.includes('الزخم'))) ||
+            (examObj.lesson && (examObj.lesson.includes('فيزياء') || examObj.lesson.includes('كيمياء') || examObj.lesson.includes('أحياء') || examObj.lesson.includes('الزخم')));
+          if (isScientificContent) {
             return; // Never show Physics/Chemistry/Biology/Geology in Literary
           }
         }
 
         // Scientific track (علمي): strictly exclude literary-only subjects
         if (userBranch === 'علمي') {
-          if (['history', 'geography', 'financial_culture'].includes(examSub) || examBranch === 'أدبي') {
+          const isLiteraryContent = 
+            ['history', 'geography', 'financial_culture'].includes(examSub) || 
+            examBranch === 'أدبي' ||
+            (examObj.title && (examObj.title.includes('تاريخ') || examObj.title.includes('جغرافيا') || examObj.title.includes('مالية') || examObj.title.includes('قضايا'))) ||
+            (examObj.lesson && (examObj.lesson.includes('تاريخ') || examObj.lesson.includes('جغرافيا') || examObj.lesson.includes('مالية')));
+          if (isLiteraryContent) {
             return; // Never show History/Geography/Financial Culture in Scientific
           }
         }
@@ -261,6 +271,34 @@ export async function getExamById(examId: string): Promise<Exam | null> {
  * Fetch questions for an exam without exposing correct answers or explanations
  */
 export async function getExamQuestions(examId: string): Promise<Question[]> {
+  // First, retrieve the exam document to know its intended question count, subject, and title
+  let examObj: Exam | null = null;
+  try {
+    const examDoc = await getDoc(doc(db, 'exams', examId));
+    if (examDoc.exists()) {
+      examObj = { id: examDoc.id, ...(examDoc.data() as Omit<Exam, 'id'>) };
+    }
+  } catch (err) {
+    console.warn('Note reading exam metadata in getExamQuestions:', err);
+  }
+
+  const isArabicExam = 
+    examId === LITERARY_EXAM_ID || 
+    examId.includes('arabic') || 
+    examId.includes('lit') ||
+    examObj?.subject === 'arabic' ||
+    (examObj?.title && examObj.title.includes('عرب')) ||
+    (examObj?.subjectNameAr && examObj.subjectNameAr.includes('عرب'));
+
+  const isPhysicsExam = 
+    examId === FIRST_EXAM_ID || 
+    examId.includes('physics') ||
+    examObj?.subject === 'physics' ||
+    (examObj?.title && examObj.title.includes('فيزياء')) ||
+    (examObj?.subjectNameAr && examObj.subjectNameAr.includes('فيزياء'));
+
+  const expectedCount = examObj?.questionCount || (isArabicExam ? 15 : isPhysicsExam ? 20 : 15);
+
   try {
     const qCol = collection(db, 'exams', examId, 'questions');
     const snap = await getDocs(query(qCol, orderBy('order', 'asc')));
@@ -283,10 +321,7 @@ export async function getExamQuestions(examId: string): Promise<Question[]> {
       });
     });
 
-    // Fallback to full initial question set if questions in subcollection are incomplete or empty
-    const isArabicExam = examId === LITERARY_EXAM_ID || examId.includes('arabic') || examId.includes('lit');
-    const isPhysicsExam = examId === FIRST_EXAM_ID || examId.includes('physics');
-
+    // Fallback if questions in subcollection are incomplete (e.g. only 1 question was stored or seeded)
     if (isArabicExam && questions.length < 15) {
       return LITERARY_EXAM_QUESTIONS.map(q => ({
         id: q.id,
@@ -301,6 +336,7 @@ export async function getExamQuestions(examId: string): Promise<Question[]> {
         hint: q.hint,
       }));
     }
+
     if (isPhysicsExam && questions.length < 20) {
       return FIRST_EXAM_QUESTIONS.map(q => ({
         id: q.id,
@@ -316,12 +352,32 @@ export async function getExamQuestions(examId: string): Promise<Question[]> {
       }));
     }
 
-    return questions;
-  } catch (error) {
-    console.error('Error fetching exam questions:', error);
-    const isArabicExam = examId === LITERARY_EXAM_ID || examId.includes('arabic') || examId.includes('lit');
-    const isPhysicsExam = examId === FIRST_EXAM_ID || examId.includes('physics');
+    // If subcollection returned valid questions
+    if (questions.length >= expectedCount) {
+      return questions;
+    }
 
+    // If subcollection had fewer questions than expectedCount (e.g. only 1 question), supplement or fallback
+    if (questions.length > 0 && isArabicExam) {
+      return LITERARY_EXAM_QUESTIONS.slice(0, expectedCount).map(q => ({
+        id: q.id,
+        examId,
+        questionText: q.questionText,
+        options: q.options,
+        difficulty: q.difficulty,
+        source: q.source,
+        points: q.points,
+        order: q.order,
+        questionType: q.questionType,
+        hint: q.hint,
+      }));
+    }
+
+    if (questions.length > 0) {
+      return questions;
+    }
+
+    // Default fallback if completely empty
     if (isArabicExam) {
       return LITERARY_EXAM_QUESTIONS.map(q => ({
         id: q.id,
@@ -336,8 +392,23 @@ export async function getExamQuestions(examId: string): Promise<Question[]> {
         hint: q.hint,
       }));
     }
-    if (isPhysicsExam) {
-      return FIRST_EXAM_QUESTIONS.map(q => ({
+
+    return FIRST_EXAM_QUESTIONS.map(q => ({
+      id: q.id,
+      examId,
+      questionText: q.questionText,
+      options: q.options,
+      difficulty: q.difficulty,
+      source: q.source,
+      points: q.points,
+      order: q.order,
+      questionType: q.questionType,
+      hint: q.hint,
+    }));
+  } catch (error) {
+    console.error('Error fetching exam questions, activating fallback:', error);
+    if (isArabicExam) {
+      return LITERARY_EXAM_QUESTIONS.map(q => ({
         id: q.id,
         examId,
         questionText: q.questionText,
@@ -350,7 +421,18 @@ export async function getExamQuestions(examId: string): Promise<Question[]> {
         hint: q.hint,
       }));
     }
-    return [];
+    return FIRST_EXAM_QUESTIONS.map(q => ({
+      id: q.id,
+      examId,
+      questionText: q.questionText,
+      options: q.options,
+      difficulty: q.difficulty,
+      source: q.source,
+      points: q.points,
+      order: q.order,
+      questionType: q.questionType,
+      hint: q.hint,
+    }));
   }
 }
 

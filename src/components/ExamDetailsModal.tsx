@@ -34,9 +34,19 @@ export const ExamDetailsModal: React.FC<ExamDetailsModalProps> = ({
 
   if (!isOpen) return null;
 
-  const isCompleted = exam.userAttemptStatus === 'completed' || exam.status === 'completed';
+  const isCompleted = 
+    exam.userAttemptStatus === 'completed' || 
+    exam.status === 'completed' || 
+    exam.userScore !== undefined;
 
   const handleStart = async () => {
+    if (isCompleted) {
+      if (onViewResult && exam.userLastAttemptId) {
+        onViewResult(exam.userLastAttemptId);
+        onClose();
+      }
+      return;
+    }
     setError(null);
     try {
       await onStartExam(exam);

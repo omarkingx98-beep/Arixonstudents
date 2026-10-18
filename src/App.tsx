@@ -318,7 +318,8 @@ function MainAppShell() {
         {currentTab === 'home' && (
           <HomeDashboard 
             onNavigate={setCurrentTab} 
-            onOpenTutorial={() => setIsTutorialOpen(true)} 
+            onOpenTutorial={() => setIsTutorialOpen(true)}
+            onOpenUserSearch={() => setIsUserSearchOpen(true)}
           />
         )}
         {currentTab === 'exams' && (

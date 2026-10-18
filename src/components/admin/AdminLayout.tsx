@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { collection, query, limit, onSnapshot } from 'firebase/firestore';
+import { db } from '../../lib/firebase';
 import { useAdmin } from '../../context/AdminContext';
 import { useTheme } from '../../context/ThemeContext';
 import { useAuth } from '../../context/AuthContext';
@@ -44,6 +46,23 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
   const { theme, toggleTheme } = useTheme();
   const { signOut } = useAuth();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [pendingReportsCount, setPendingReportsCount] = useState<number>(0);
+
+  useEffect(() => {
+    let unsub = () => {};
+    try {
+      const q = query(collection(db, 'adminReports'), limit(25));
+      unsub = onSnapshot(q, (snap) => {
+        setPendingReportsCount(snap.size);
+      }, () => {});
+    } catch {}
+
+    return () => {
+      try {
+        unsub();
+      } catch {}
+    };
+  }, []);
 
   const navItems: Array<{ id: AdminTab; label: string; icon: React.FC<{ className?: string }> }> = [
     { id: 'dashboard', label: 'لوحة القيادة', icon: LayoutDashboard },
@@ -115,6 +134,11 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
               >
                 <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-white' : 'text-slate-500 dark:text-slate-400'}`} />
                 <span className="truncate">{item.label}</span>
+                {item.id === 'audit-logs' && pendingReportsCount > 0 && (
+                  <span className="mr-auto px-1.5 py-0.5 rounded-full text-[10px] font-black bg-amber-500 text-white shrink-0">
+                    {pendingReportsCount}
+                  </span>
+                )}
               </button>
             );
           })}

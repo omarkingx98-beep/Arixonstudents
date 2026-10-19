@@ -438,9 +438,15 @@ function MainAppShell() {
         broadcasts={broadcasts}
         lastReadBroadcastAt={lastReadBroadcastAt}
         onOpenExam={handleOpenExamFromBroadcast}
-        onOpenChatWithUser={(uid, name) => {
+        onOpenChatWithUser={(uid, details) => {
           setIsNotificationsOpen(false);
-          setActiveChatUser({ uid, displayName: name, username: name });
+          setActiveChatUser({
+            uid,
+            displayName: details.displayName,
+            username: details.username,
+            photoURL: details.photoURL,
+            branch: details.branch,
+          });
         }}
       />
 

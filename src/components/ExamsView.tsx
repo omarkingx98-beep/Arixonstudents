@@ -167,6 +167,29 @@ export const ExamsView: React.FC<ExamsViewProps> = ({
     }
   };
 
+  // Practice Retake Handler
+  const handleRetakeExam = async (exam: Exam) => {
+    if (!profile) return;
+    setIsStartingAttempt(true);
+    try {
+      const { attempt, questions } = await startOrResumeAttempt(
+        exam.id,
+        profile.uid,
+        profile.displayName,
+        true // isRetake
+      );
+      setCurrentExam(exam);
+      setCurrentAttempt(attempt);
+      setCurrentQuestions(questions);
+      setSelectedExamForModal(null);
+      setViewMode('active');
+    } catch (err: any) {
+      console.error('Failed to start retake:', err);
+    } finally {
+      setIsStartingAttempt(false);
+    }
+  };
+
   // Called when student finishes/submits active exam
   const handleFinishExam = async (submittedAttempt: ExamAttempt) => {
     setCurrentAttempt(submittedAttempt);
@@ -405,7 +428,7 @@ export const ExamsView: React.FC<ExamsViewProps> = ({
                           {isCompleted && (
                             <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200 flex items-center gap-1 border border-emerald-300 dark:border-emerald-800">
                               <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                              <span>تم إنجاز الامتحان (لا يمكن الإعادة)</span>
+                              <span>تم الإنجاز ({exam.userScore ?? 0}%)</span>
                             </span>
                           )}
 
@@ -450,22 +473,38 @@ export const ExamsView: React.FC<ExamsViewProps> = ({
                     <div>
                       {isCompleted ? (
                         <div className="space-y-2">
-                          {exam.userScore !== undefined && (
-                            <div className="flex items-center justify-between text-xs px-1">
-                              <span className="text-slate-500">درجتك المسجلة:</span>
-                              <span className="font-bold text-emerald-600 dark:text-emerald-400">
-                                {exam.userScore} / 100 ({exam.userScore}%)
-                              </span>
-                            </div>
-                          )}
-                          <button
-                            id={`review-exam-btn-${exam.id}`}
-                            onClick={() => handleExamCardClick(exam)}
-                            className="w-full py-2.5 px-4 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
-                          >
-                            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                            <span>تم إنجاز الامتحان - عرض النتيجة</span>
-                          </button>
+                          <div className="flex items-center justify-between text-xs px-1">
+                            <span className="text-slate-500 font-medium">النتيجة:</span>
+                            <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                              {exam.userScore !== undefined ? `${exam.userScore}% (${exam.userScore} / 100)` : 'تم الإنجاز'}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              id={`view-result-btn-${exam.id}`}
+                              onClick={() => {
+                                if (exam.userLastAttemptId) {
+                                  openSubmittedAttempt(exam.userLastAttemptId, exam);
+                                } else {
+                                  handleExamCardClick(exam);
+                                }
+                              }}
+                              className="flex-1 py-2.5 px-3 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md shadow-blue-500/20"
+                            >
+                              <CheckCircle2 className="w-4 h-4" />
+                              <span>عرض النتيجة</span>
+                            </button>
+
+                            <button
+                              id={`retake-exam-btn-${exam.id}`}
+                              onClick={() => handleRetakeExam(exam)}
+                              className="py-2.5 px-3 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                              title="إعادة حل الامتحان للتدريب (دون احتساب نقاط إضافية)"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" />
+                              <span>إعادة المحاولة</span>
+                            </button>
+                          </div>
                         </div>
                       ) : isInProgress ? (
                         <button
@@ -474,7 +513,7 @@ export const ExamsView: React.FC<ExamsViewProps> = ({
                           className="w-full py-2.5 px-4 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-amber-500/20 transition-all cursor-pointer"
                         >
                           <RotateCcw className="w-4 h-4" />
-                          <span>متابعة الامتحان (المؤقت نشط)</span>
+                          <span>استكمال</span>
                         </button>
                       ) : (
                         <button
@@ -483,7 +522,7 @@ export const ExamsView: React.FC<ExamsViewProps> = ({
                           className="w-full py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-blue-500/20 transition-all cursor-pointer"
                         >
                           <Play className="w-3.5 h-3.5 fill-current" />
-                          <span>بدء الامتحان</span>
+                          <span>ابدأ</span>
                         </button>
                       )}
                     </div>
@@ -530,6 +569,7 @@ export const ExamsView: React.FC<ExamsViewProps> = ({
           isOpen={!!selectedExamForModal}
           onClose={() => setSelectedExamForModal(null)}
           onStartExam={handleStartExamFromModal}
+          onRetakeExam={handleRetakeExam}
           onViewResult={(attemptId) => openSubmittedAttempt(attemptId, selectedExamForModal)}
           isLoading={isStartingAttempt}
         />

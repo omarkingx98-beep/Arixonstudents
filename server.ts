@@ -43,6 +43,7 @@ try {
 
 import { runTwoStageAiGeneration, runRegenerateSingleQuestion } from './server/aiPipeline';
 import { parseRawExamWithGemini } from './server/aiExamParser';
+import { gradeAndSubmitExam, autoCloseExpiredAttempts } from './server/examGrader';
 let geminiClient: GoogleGenAI | null = null;
 function getGeminiClient(): GoogleGenAI {
   if (!geminiClient) {
@@ -640,6 +641,65 @@ async function startServer() {
     } catch (err: any) {
       console.error('[AI Parse Exam] Error:', err);
       res.status(500).json({ ok: false, error: err?.message || 'تعذر تحليل نص الامتحان بواسطة الذكاء الاصطناعي.' });
+    }
+  });
+
+  /**
+   * Server-Side Exam Grading Endpoint
+   * Fully authoritative: reads answerKeys, computes accurate score, handles idempotent points,
+   * writes submitted status, correctCount, wrongCount, unansweredCount, durationUsed.
+   */
+  app.post('/api/exams/grade', async (req: Request, res: Response) => {
+    try {
+      const authUser = await verifyAuthToken(req);
+      if (!authUser || !authUser.uid) {
+        res.status(401).json({ success: false, error: 'غير مصرح بالوصول: يلزم تسجيل الدخول لتسليم الامتحان.' });
+        return;
+      }
+
+      const { attemptId, answers, durationSeconds, examId } = req.body;
+      if (!attemptId) {
+        res.status(400).json({ success: false, error: 'معرّف المحاولة (attemptId) مطلوب.' });
+        return;
+      }
+
+      console.log(`[API /api/exams/grade] Grading request received for attempt: ${attemptId}, user: ${authUser.uid}, examId: ${examId}, answers count: ${Object.keys(answers || {}).length}`);
+
+      const gradingResult = await gradeAndSubmitExam({
+        attemptId,
+        userId: authUser.uid,
+        answers: answers || {},
+        durationSeconds: durationSeconds ? Number(durationSeconds) : undefined,
+        userEmail: authUser.email,
+        idToken: req.headers.authorization?.split('Bearer ')[1]?.trim(),
+      });
+
+      res.json(gradingResult);
+    } catch (err: any) {
+      console.error('[API /api/exams/grade] Error during exam grading:', err);
+      res.status(500).json({
+        success: false,
+        error: err?.message || 'تعذر تصحيح الامتحان على الخادم. يرجى المحاولة مرة ثانية.',
+      });
+    }
+  });
+
+  /**
+   * Auto-close any expired in_progress attempts for student
+   */
+  app.post('/api/exams/auto-close-expired', async (req: Request, res: Response) => {
+    try {
+      const authUser = await verifyAuthToken(req);
+      if (!authUser || !authUser.uid) {
+        res.status(401).json({ success: false, error: 'غير مصرح بالوصول.' });
+        return;
+      }
+
+      const closed = await autoCloseExpiredAttempts(authUser.uid);
+      res.json({ success: true, closedCount: closed });
+    } catch (err: any) {
+      console.warn('[API /api/exams/auto-close-expired] Error:', err);
+      res.status(500).json({ success: false, error: err?.message });
     }
   });
 

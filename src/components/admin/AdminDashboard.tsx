@@ -24,8 +24,9 @@ import {
   RefreshCw,
   Activity,
   ShieldCheck,
-  AlertTriangle,
   ShieldAlert,
+  AlertTriangle,
+  Image as ImageIcon,
 } from 'lucide-react';
 import type { AdminTab, AdminAuditLog } from '../../types';
 import { fetchAdminReports, type StudentReportItem } from '../../lib/adminService';
@@ -646,6 +647,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate }) =>
                 <Bell className="w-4 h-4 text-amber-600" />
                 <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
                   نشر إعلان أو تعميم للطلاب
+                </span>
+              </div>
+              <span className="text-slate-400 group-hover:translate-x-[-2px] transition-transform">←</span>
+            </button>
+
+            <button
+              onClick={() => onNavigate('banners')}
+              className="w-full p-3 rounded-2xl border border-slate-200 dark:border-slate-800 hover:border-blue-300 dark:hover:border-blue-700 bg-slate-50/50 dark:bg-[#111625] flex items-center justify-between text-right transition-all cursor-pointer group"
+            >
+              <div className="flex items-center gap-3">
+                <ImageIcon className="w-4 h-4 text-blue-600" />
+                <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                  إدارة الإعلانات المصوّرة (السلايدر)
                 </span>
               </div>
               <span className="text-slate-400 group-hover:translate-x-[-2px] transition-transform">←</span>

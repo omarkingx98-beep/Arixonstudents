@@ -12,9 +12,9 @@ import {
   Compass,
   Clock,
   Play,
-  Search,
-  UserPlus
+  UserPlus,
 } from 'lucide-react';
+import { PromoCarousel } from './PromoCarousel';
 import type { NavigationTab } from '../types';
 
 interface HomeDashboardProps {
@@ -65,9 +65,8 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
         </div>
       </div>
 
-
-
-      {/* Real Compact Statistics Grid */}
+      {/* Promotional Banners Carousel (Part G) */}
+      <PromoCarousel onNavigate={onNavigate} />
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         {/* Points */}
         <div 

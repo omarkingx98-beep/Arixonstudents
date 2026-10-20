@@ -26,6 +26,7 @@ import {
   LogOut,
   ArrowRight,
   ShieldAlert,
+  Image as ImageIcon,
 } from 'lucide-react';
 import type { AdminTab } from '../../types';
 
@@ -72,6 +73,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
     { id: 'students', label: 'إدارة الطلاب', icon: Users },
     { id: 'leaderboard', label: 'المتصدرين والنقاط', icon: Trophy },
     { id: 'announcements', label: 'الإعلانات والتعميمات', icon: Bell },
+    { id: 'banners', label: 'الإعلانات المصوّرة', icon: ImageIcon },
     { id: 'challenges', label: 'التحديات التنافسية', icon: Swords },
     { id: 'analytics', label: 'التحليلات المتقدمة', icon: BarChart3 },
     { id: 'ai-builder', label: 'منشئ الأسئلة الذكي', icon: Sparkles },

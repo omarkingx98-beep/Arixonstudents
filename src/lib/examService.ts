@@ -10,7 +10,7 @@ import {
   orderBy,
   runTransaction
 } from 'firebase/firestore';
-import { db } from './firebase';
+import { db, auth } from './firebase';
 import type { 
   Exam, 
   Question, 
@@ -438,11 +438,13 @@ export async function getExamQuestions(examId: string): Promise<Question[]> {
 
 /**
  * Start or resume an exam attempt for a user
+ * Supports practice retakes with isRetake=true, auto-closes expired attempts
  */
 export async function startOrResumeAttempt(
   examId: string, 
   userId: string, 
-  userDisplayName?: string
+  userDisplayName?: string,
+  isRetake = false
 ): Promise<{ attempt: ExamAttempt; questions: Question[]; isResumed: boolean }> {
   const exam = await getExamById(examId);
   if (!exam) {
@@ -466,28 +468,40 @@ export async function startOrResumeAttempt(
     if (data.status === 'in_progress') {
       inProgressAttempt = { ...data, id: d.id };
     } else if (data.status === 'submitted') {
-      completedAttempt = { ...data, id: d.id };
+      if (!completedAttempt || new Date(data.submittedAt || 0) > new Date(completedAttempt.submittedAt || 0)) {
+        completedAttempt = { ...data, id: d.id };
+      }
     }
   });
-
-  // Strict one-time rule: Once completed, retake is strictly prohibited
-  if (completedAttempt) {
-    const questions = await getExamQuestions(examId);
-    return { attempt: completedAttempt, questions, isResumed: true };
-  }
 
   // If there is an active in_progress attempt, check whether time has expired
   if (inProgressAttempt) {
     const inProg = inProgressAttempt as ExamAttempt;
     const now = Date.now();
     const end = new Date(inProg.expectedEndAt).getTime();
-    if (now < end) {
+    if (now < end && !isRetake) {
       const questions = await getExamQuestions(examId);
       return { attempt: inProg, questions, isResumed: true };
+    } else if (now >= end) {
+      // Auto-submit expired attempt so it transitions to submitted and never hangs
+      console.log(`[ExamService] In-progress attempt ${inProg.id} has expired. Auto-submitting...`);
+      try {
+        const autoSub = await submitExamAttempt(inProg.id, userId);
+        completedAttempt = autoSub;
+        inProgressAttempt = null;
+      } catch (autoErr) {
+        console.warn('[ExamService] Auto-submit expired attempt error:', autoErr);
+      }
     }
   }
 
-  // Otherwise, create a new attempt
+  // If completed and not requesting a retake, return completed attempt
+  if (completedAttempt && !isRetake) {
+    const questions = await getExamQuestions(examId);
+    return { attempt: completedAttempt, questions, isResumed: true };
+  }
+
+  // Create new attempt (initial attempt or practice retake)
   const startedAt = new Date();
   const durationMs = (exam.durationMinutes || 20) * 60 * 1000;
   const expectedEndAt = new Date(startedAt.getTime() + durationMs);
@@ -513,13 +527,14 @@ export async function startOrResumeAttempt(
     unanswered: 0,
     durationSeconds: 0,
     lastSavedAt: startedAt.toISOString(),
+    isRetake: !!completedAttempt || isRetake,
   };
 
   const attemptDocRef = doc(db, 'attempts', attemptId);
   try {
     await setDoc(attemptDocRef, newAttempt);
-  } catch (err) {
-    console.warn('Could not save attempt to Firestore, saving to local cache:', err);
+  } catch (err: any) {
+    console.warn('Could not save attempt to Firestore, saving to local cache:', err?.message);
   }
   try {
     localStorage.setItem(`arixon_attempt_${attemptId}`, JSON.stringify(newAttempt));
@@ -530,7 +545,7 @@ export async function startOrResumeAttempt(
 }
 
 /**
- * Save user's selected answer for a question
+ * Save user's selected answer for a question with diagnostic Step B logging
  */
 export async function saveQuestionAnswer(
   attemptId: string, 
@@ -544,6 +559,8 @@ export async function saveQuestionAnswer(
     existing[questionId] = selectedAnswer;
     localStorage.setItem(localAnswersKey, JSON.stringify(existing));
   } catch {}
+
+  console.log(`[ExamSubmission] Step B: Saving answer in attempts/${attemptId}/answers/${questionId} (value: ${selectedAnswer})`);
 
   try {
     const answerRef = doc(db, 'attempts', attemptId, 'answers', questionId);
@@ -560,8 +577,9 @@ export async function saveQuestionAnswer(
     await updateDoc(attemptRef, {
       lastSavedAt: now,
     });
-  } catch (error) {
-    console.warn('Firestore answer save failed (saved locally):', error);
+    console.log(`[ExamSubmission] Step B: Successfully wrote answer to attempts/${attemptId}/answers/${questionId}`);
+  } catch (error: any) {
+    console.warn(`[ExamSubmission] Step B: Firestore answer write failed for ${questionId} (saved locally): code=${error?.code}, message=${error?.message}`);
   }
 }
 
@@ -641,253 +659,164 @@ export async function getUserExamHistory(userId: string): Promise<ExamAttempt[]>
 }
 
 /**
- * Submit and Grade Exam with server-time validation, scoring, and atomic profile points update
+ * Submit and Grade Exam with server-time validation, scoring, and atomic profile points update.
+ * Authoritative Server-Side Grading via /api/exams/grade with comprehensive diagnostic logging.
  */
 export async function submitExamAttempt(
   attemptId: string, 
   userId: string,
   answersOverride?: Record<string, number | null>
 ): Promise<ExamAttempt> {
-  // 1. Fetch attempt
-  let attempt: ExamAttempt | null = null;
-  const attemptDocRef = doc(db, 'attempts', attemptId);
-  try {
-    const attemptSnap = await getDoc(attemptDocRef);
-    if (attemptSnap.exists()) {
-      attempt = { ...(attemptSnap.data() as ExamAttempt), id: attemptSnap.id };
-    }
-  } catch {}
+  // 1. Gather all answers from state override or storage
+  const savedAnswers: Record<string, number | null> = { ...(answersOverride || await getSavedAnswersForAttempt(attemptId)) };
 
-  if (!attempt) {
-    try {
-      const raw = localStorage.getItem(`arixon_attempt_${attemptId}`);
-      if (raw) {
-        attempt = JSON.parse(raw) as ExamAttempt;
+  // (أ) Step A Diagnostic Log: Answer count in state before submit
+  console.log(`[ExamSubmission] Step A: State answers count before submit: ${Object.keys(savedAnswers).length}`, savedAnswers);
+
+  // (ب) Step B Diagnostic Log & Batch Write: Write each answer to attempts/{id}/answers
+  console.log(`[ExamSubmission] Step B: Writing all ${Object.keys(savedAnswers).length} answers to attempts/${attemptId}/answers...`);
+  for (const [qId, val] of Object.entries(savedAnswers)) {
+    if (val !== null && val !== undefined) {
+      try {
+        const answerRef = doc(db, 'attempts', attemptId, 'answers', qId);
+        const now = new Date().toISOString();
+        await setDoc(answerRef, {
+          questionId: qId,
+          selectedAnswer: val,
+          answeredAt: now,
+          updatedAt: now,
+        }, { merge: true });
+        console.log(`[ExamSubmission] Step B: Successfully saved answer for question [${qId}] = ${val}`);
+      } catch (saveErr: any) {
+        console.warn(`[ExamSubmission] Step B: Answer write warning for [${qId}]: code=${saveErr?.code}, message=${saveErr?.message}`);
       }
-    } catch {}
+    }
   }
 
-  if (!attempt) {
-    throw new Error('محاولة الامتحان غير موجودة.');
+  // (ج) Step C: Grading request to /api/exams/grade
+  console.log(`[ExamSubmission] Step C: Initiating server grading request for attempt: ${attemptId}...`);
+  
+  let idToken = '';
+  try {
+    if (auth.currentUser) {
+      idToken = await auth.currentUser.getIdToken();
+    }
+  } catch (tErr) {
+    console.warn('[ExamSubmission] Could not retrieve ID token:', tErr);
   }
 
-  if (attempt.userId !== userId) {
-    throw new Error('لا تملك صلاحية تسليم هذا الامتحان.');
+  let serverStatus = 0;
+  let serverResult: any = null;
+
+  try {
+    const res = await fetch('/api/exams/grade', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(idToken ? { 'Authorization': `Bearer ${idToken}` } : {}),
+      },
+      body: JSON.stringify({
+        attemptId,
+        answers: savedAnswers,
+      }),
+    });
+    serverStatus = res.status;
+    serverResult = await res.json();
+    console.log(`[ExamSubmission] Step C: Server grading response status: ${serverStatus}`, serverResult);
+  } catch (netErr: any) {
+    console.error(`[ExamSubmission] Step C: Network error contacting /api/exams/grade:`, netErr);
   }
 
-  // Idempotency: if already submitted, return it
-  if (attempt.status === 'submitted') {
-    return { ...attempt, id: attemptId };
+  // If server responded with error or not ok, throw real error - DO NOT return fake 0%!
+  if (!serverResult || !serverResult.success) {
+    const errMsg = serverResult?.error || 'تعذّر التسليم، حاول مرة ثانية.';
+    console.error(`[ExamSubmission] Step C: Server grading failed: ${errMsg}`);
+    throw new Error(errMsg);
   }
 
-  // 2. Fetch questions with answer keys
-  let questionsWithKeys: QuestionWithKey[] = [];
-  const isSubmissionArabic = attempt.examId === LITERARY_EXAM_ID || 
-    attempt.examId.includes('arabic') || 
-    attempt.examId.includes('lit') || 
-    (attempt.examSubject && attempt.examSubject.includes('عرب'));
-  const isSubmissionPhysics = attempt.examId === FIRST_EXAM_ID || 
-    attempt.examId.includes('physics') || 
-    (attempt.examSubject && attempt.examSubject.includes('فيزياء'));
+  const gradedAttempt = serverResult.attempt;
+  const reviews: QuestionReview[] = serverResult.reviews || [];
 
-  if (isSubmissionPhysics) {
-    questionsWithKeys = FIRST_EXAM_QUESTIONS;
-  } else if (isSubmissionArabic) {
-    questionsWithKeys = LITERARY_EXAM_QUESTIONS;
-  } else {
-    // For other exams, fetch questions from Firestore
+  // (د) Step D Diagnostic Log: Attempt status and breakdown after submission
+  console.log(`[ExamSubmission] Step D: Attempt status after submission: status=${gradedAttempt.status}, score=${gradedAttempt.score}%, correct=${gradedAttempt.correctCount}, wrong=${gradedAttempt.wrongCount}, unanswered=${gradedAttempt.unansweredCount}, pointsEarned=${gradedAttempt.pointsEarned}`);
+
+  // If requiresClientSync (e.g. dev environment without service account), sync to Firestore
+  if (serverResult.requiresClientSync) {
     try {
-      const qCol = collection(db, 'exams', attempt.examId, 'questions');
-      const qSnap = await getDocs(query(qCol, orderBy('order', 'asc')));
-      for (const d of qSnap.docs) {
-        const qData = d.data() as any;
-        let correctAnswer = qData.correctAnswer ?? 0;
-        let explanation = qData.explanation ?? '';
-        let hint = qData.hint ?? '';
-        let solutionSteps = qData.solutionSteps ?? null;
-        let distractorAnalysis = qData.distractorAnalysis ?? null;
+      const attemptDocRef = doc(db, 'attempts', attemptId);
+      await updateDoc(attemptDocRef, {
+        status: 'submitted',
+        submittedAt: gradedAttempt.submittedAt,
+        score: gradedAttempt.score,
+        correctCount: gradedAttempt.correctCount,
+        correctAnswers: gradedAttempt.correctAnswers,
+        wrongCount: gradedAttempt.wrongCount,
+        wrongAnswers: gradedAttempt.wrongAnswers,
+        unansweredCount: gradedAttempt.unansweredCount,
+        unanswered: gradedAttempt.unanswered,
+        pointsEarned: gradedAttempt.pointsEarned,
+        durationSeconds: gradedAttempt.durationSeconds,
+        durationUsed: gradedAttempt.durationUsed,
+        reviews,
+      });
 
-        try {
-          const keyDoc = await getDoc(doc(db, 'exams', attempt.examId, 'answerKeys', d.id));
-          if (keyDoc.exists()) {
-            const keyData = keyDoc.data();
-            if (keyData.correctAnswer !== undefined) correctAnswer = keyData.correctAnswer;
-            if (keyData.explanation) explanation = keyData.explanation;
-            if (keyData.hint) hint = keyData.hint;
-            if (keyData.solutionSteps) solutionSteps = keyData.solutionSteps;
-            if (keyData.distractorAnalysis) distractorAnalysis = keyData.distractorAnalysis;
+      // Update points in users collection if first completion
+      if (serverResult.isFirstCompletion && gradedAttempt.pointsEarned > 0) {
+        const userDocRef = doc(db, 'users', userId);
+        await runTransaction(db, async (transaction) => {
+          const uSnap = await transaction.get(userDocRef);
+          if (uSnap.exists()) {
+            const uData = uSnap.data() as UserProfile;
+            transaction.update(userDocRef, {
+              totalPoints: (uData.totalPoints || 0) + gradedAttempt.pointsEarned,
+              weeklyPoints: (uData.weeklyPoints || 0) + gradedAttempt.pointsEarned,
+              monthlyPoints: (uData.monthlyPoints || 0) + gradedAttempt.pointsEarned,
+              examsCompleted: (uData.examsCompleted || 0) + 1,
+              correctAnswers: (uData.correctAnswers || 0) + gradedAttempt.correctCount,
+              wrongAnswers: (uData.wrongAnswers || 0) + gradedAttempt.wrongCount,
+              updatedAt: new Date().toISOString(),
+            });
           }
-        } catch {
-          // If answerKeys reading fails, qData has fallback
-        }
-
-        questionsWithKeys.push({
-          id: d.id,
-          examId: attempt.examId,
-          order: qData.order || (questionsWithKeys.length + 1),
-          questionText: qData.questionText || '',
-          options: qData.options || [],
-          difficulty: qData.difficulty || 'medium',
-          source: qData.source || 'أريكسون',
-          points: qData.points || 5,
-          questionType: qData.questionType || 'multiple_choice',
-          correctAnswer,
-          explanation,
-          hint,
-          solutionSteps,
-          distractorAnalysis,
         });
+
+        // Sync to publicProfiles
+        const pubRef = doc(db, 'publicProfiles', userId);
+        const pubSnap = await getDoc(pubRef);
+        const curPoints = pubSnap.exists() ? (pubSnap.data().totalPoints || 0) : 0;
+        await setDoc(pubRef, {
+          totalPoints: curPoints + gradedAttempt.pointsEarned,
+          points: curPoints + gradedAttempt.pointsEarned,
+          examsCompleted: (pubSnap.exists() ? (pubSnap.data().examsCompleted || 0) : 0) + 1,
+          updatedAt: new Date().toISOString(),
+        }, { merge: true });
       }
-    } catch (err) {
-      console.error('Error fetching questions for exam submission:', err);
+    } catch (syncErr: any) {
+      console.warn('[ExamSubmission] Client sync notice:', syncErr?.message);
     }
   }
 
-  // 3. Load student answers
-  const savedAnswers = answersOverride || await getSavedAnswersForAttempt(attemptId);
-
-  // 4. Calculate score & breakdown
-  let correctCount = 0;
-  let wrongCount = 0;
-  let unansweredCount = 0;
-  let pointsEarned = 0;
-  const reviews: QuestionReview[] = [];
-
-  for (const q of questionsWithKeys) {
-    const studentAns = savedAnswers[q.id] !== undefined ? savedAnswers[q.id] : null;
-    const isUnanswered = studentAns === null;
-    const isCorrect = !isUnanswered && Number(studentAns) === Number(q.correctAnswer);
-
-    if (isCorrect) {
-      correctCount++;
-      pointsEarned += (q.points || 5);
-    } else if (isUnanswered) {
-      unansweredCount++;
-    } else {
-      wrongCount++;
-    }
-
-    reviews.push({
-      questionId: q.id,
-      questionNumber: q.order,
-      questionText: q.questionText,
-      options: q.options,
-      studentAnswer: studentAns,
-      correctAnswer: q.correctAnswer,
-      isCorrect,
-      isUnanswered,
-      explanation: q.explanation,
-      hint: q.hint,
-      solutionSteps: q.solutionSteps,
-      formulaUsed: q.formulaUsed,
-      distractorAnalysis: q.distractorAnalysis || undefined,
-      points: q.points || 5,
-      pointsEarned: isCorrect ? (q.points || 5) : 0,
-      source: q.source,
-    });
-  }
-
-  const now = new Date();
-  const startTime = new Date(attempt.startedAt).getTime();
-  const durationSeconds = Math.max(0, Math.floor((now.getTime() - startTime) / 1000));
-  const totalExamPoints = attempt.totalPoints || (questionsWithKeys.length * 5) || 100;
-  const finalScore = Math.min(100, Math.round((pointsEarned / totalExamPoints) * 100));
-
-  const submittedAttempt: ExamAttempt = {
-    ...attempt,
-    id: attemptId,
-    status: 'submitted',
-    submittedAt: now.toISOString(),
-    score: finalScore,
-    pointsEarned,
-    correctAnswers: correctCount,
-    wrongAnswers: wrongCount,
-    unanswered: unansweredCount,
-    durationSeconds,
-    lastSavedAt: now.toISOString(),
-  };
-
-  // 5. Save submitted attempt with reviews to Firestore and local cache
+  // Update localStorage cache
   try {
-    await updateDoc(attemptDocRef, {
-      status: 'submitted',
-      submittedAt: now.toISOString(),
-      score: finalScore,
-      pointsEarned,
-      correctAnswers: correctCount,
-      wrongAnswers: wrongCount,
-      unanswered: unansweredCount,
-      durationSeconds,
-      lastSavedAt: now.toISOString(),
-      reviews,
-    });
-  } catch (err) {
-    console.warn('Could not update Firestore attempt status (saved locally):', err);
-  }
-
-  try {
-    localStorage.setItem(`arixon_attempt_${attemptId}`, JSON.stringify({ ...submittedAttempt, reviews }));
+    localStorage.setItem(`arixon_attempt_${attemptId}`, JSON.stringify({ ...gradedAttempt, reviews }));
   } catch {}
 
-  // 6. Update user's profile statistics in Firestore & local cache (totalPoints, weeklyPoints, monthlyPoints)
-  try {
-    const userDocRef = doc(db, 'users', userId);
-    await runTransaction(db, async (transaction) => {
-      const uSnap = await transaction.get(userDocRef);
-      if (uSnap.exists()) {
-        const uData = uSnap.data() as UserProfile;
-        transaction.update(userDocRef, {
-          totalPoints: (uData.totalPoints || 0) + pointsEarned,
-          weeklyPoints: (uData.weeklyPoints || 0) + pointsEarned,
-          monthlyPoints: (uData.monthlyPoints || 0) + pointsEarned,
-          examsCompleted: (uData.examsCompleted || 0) + 1,
-          correctAnswers: (uData.correctAnswers || 0) + correctCount,
-          wrongAnswers: (uData.wrongAnswers || 0) + wrongCount,
-          lastActiveAt: now.toISOString(),
-          updatedAt: now.toISOString(),
-        });
-      }
-    });
-
-    // Also sync points and exams completed to public profile
-    const pubRef = doc(db, 'publicProfiles', userId);
-    const pubSnap = await getDoc(pubRef);
-    const currentPubPoints = pubSnap.exists() ? (pubSnap.data().totalPoints || 0) : 0;
-    const currentPubWeekly = pubSnap.exists() ? (pubSnap.data().weeklyPoints || 0) : 0;
-    const currentPubMonthly = pubSnap.exists() ? (pubSnap.data().monthlyPoints || 0) : 0;
-    const currentPubExams = pubSnap.exists() ? (pubSnap.data().examsCompleted || 0) : 0;
-    await setDoc(pubRef, {
-      totalPoints: currentPubPoints + pointsEarned,
-      weeklyPoints: currentPubWeekly + pointsEarned,
-      monthlyPoints: currentPubMonthly + pointsEarned,
-      examsCompleted: currentPubExams + 1,
-      correctAnswers: (pubSnap.exists() ? (pubSnap.data().correctAnswers || 0) : 0) + correctCount,
-      wrongAnswers: (pubSnap.exists() ? (pubSnap.data().wrongAnswers || 0) : 0) + wrongCount,
-      updatedAt: now.toISOString(),
-    }, { merge: true });
-  } catch (transErr) {
-    console.warn('Error updating user stats in Firestore:', transErr);
-  }
-
-  // Also update locally cached profile
+  // Also update locally cached profile points
   try {
     const cacheKey = `arixon_cached_profile_${userId}`;
     const rawProfile = localStorage.getItem(cacheKey);
-    if (rawProfile) {
+    if (rawProfile && serverResult.pointsAwarded > 0) {
       const uData = JSON.parse(rawProfile);
-      uData.totalPoints = (uData.totalPoints || 0) + pointsEarned;
-      uData.weeklyPoints = (uData.weeklyPoints || 0) + pointsEarned;
-      uData.monthlyPoints = (uData.monthlyPoints || 0) + pointsEarned;
+      uData.totalPoints = (uData.totalPoints || 0) + serverResult.pointsAwarded;
+      uData.weeklyPoints = (uData.weeklyPoints || 0) + serverResult.pointsAwarded;
+      uData.monthlyPoints = (uData.monthlyPoints || 0) + serverResult.pointsAwarded;
       uData.examsCompleted = (uData.examsCompleted || 0) + 1;
-      uData.correctAnswers = (uData.correctAnswers || 0) + correctCount;
-      uData.wrongAnswers = (uData.wrongAnswers || 0) + wrongCount;
-      uData.lastActiveAt = now.toISOString();
-      uData.updatedAt = now.toISOString();
+      uData.correctAnswers = (uData.correctAnswers || 0) + gradedAttempt.correctCount;
+      uData.wrongAnswers = (uData.wrongAnswers || 0) + gradedAttempt.wrongCount;
       localStorage.setItem(cacheKey, JSON.stringify(uData));
     }
   } catch {}
 
-  return { ...submittedAttempt, reviews } as ExamAttempt & { reviews: QuestionReview[] };
+  return { ...gradedAttempt, reviews } as ExamAttempt & { reviews: QuestionReview[] };
 }
 
 /**

@@ -6,6 +6,7 @@ import { AdminQuestionBankView } from './AdminQuestionBankView';
 import { AdminStudentsView } from './AdminStudentsView';
 import { AdminLeaderboardView } from './AdminLeaderboardView';
 import { AdminAnnouncementsView } from './AdminAnnouncementsView';
+import { AdminPromoBannersView } from './AdminPromoBannersView';
 import { AdminChallengesView } from './AdminChallengesView';
 import { AdminAnalyticsView } from './AdminAnalyticsView';
 import { AdminAiBuilderView } from './AdminAiBuilderView';
@@ -59,6 +60,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onExitAdmin }) => {
       {currentTab === 'leaderboard' && <AdminLeaderboardView />}
 
       {currentTab === 'announcements' && <AdminAnnouncementsView />}
+
+      {currentTab === 'banners' && <AdminPromoBannersView />}
 
       {currentTab === 'challenges' && <AdminChallengesView />}
 

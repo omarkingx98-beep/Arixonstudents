@@ -120,19 +120,22 @@ export const ExamActiveView: React.FC<ExamActiveViewProps> = ({
     }
   };
 
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
   // Submission handler
   const handleFinalSubmit = async (isAutoExpire = false) => {
     if (isSubmitting) return;
+    setSubmitError(null);
     setIsSubmitting(true);
     setShowSubmitModal(false);
 
     try {
       const submitted = await submitExamAttempt(attempt.id, userId, answers);
       onFinishExam(submitted);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error submitting exam:', err);
-      alert('حدث خطأ أثناء إرسال الامتحان. يرجى المحاولة مرة أخرى.');
       setIsSubmitting(false);
+      setSubmitError(err?.message || 'تعذّر التسليم، حاول مرة ثانية.');
     }
   };
 
@@ -547,6 +550,47 @@ export const ExamActiveView: React.FC<ExamActiveViewProps> = ({
             <p className="text-xs text-slate-500 dark:text-slate-400">
               يتم الآن تدقيق الإجابات وحساب النقاط وتحديث إحصائياتك في قاعدة البيانات.
             </p>
+          </div>
+        </div>
+      )}
+
+      {/* Submission Failure Modal with Retry */}
+      {submitError && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/80 animate-fadeIn">
+          <div 
+            id="submit-error-dialog"
+            className="w-full max-w-md bg-white dark:bg-slate-900 rounded-3xl border border-red-200 dark:border-red-900/60 p-6 sm:p-7 shadow-2xl space-y-5 text-center"
+          >
+            <div className="w-14 h-14 mx-auto rounded-2xl bg-red-50 dark:bg-red-950/50 border border-red-200 dark:border-red-900/50 flex items-center justify-center text-red-600 dark:text-red-400">
+              <AlertTriangle className="w-7 h-7" />
+            </div>
+
+            <div className="space-y-2">
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+                تعذّر التسليم، حاول مرة ثانية
+              </h3>
+              <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
+                {submitError}. تم الاحتفاظ بجميع إجاباتك كاملة دون فقدان أي سؤال.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                id="retry-submit-btn"
+                onClick={() => handleFinalSubmit(false)}
+                className="flex-1 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-95 text-white font-bold text-sm transition-all cursor-pointer flex items-center justify-center gap-2 shadow-lg shadow-blue-500/25"
+              >
+                <span>إعادة المحاولة</span>
+              </button>
+
+              <button
+                id="dismiss-submit-error-btn"
+                onClick={() => setSubmitError(null)}
+                className="py-3 px-5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold text-sm transition-colors cursor-pointer"
+              >
+                العودة للأسئلة
+              </button>
+            </div>
           </div>
         </div>
       )}

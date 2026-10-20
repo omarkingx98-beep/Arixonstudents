@@ -143,6 +143,11 @@ export interface ExamAttempt {
   lesson?: string;
   totalPoints?: number;
   userDisplayName?: string;
+  isRetake?: boolean;
+  correctCount?: number;
+  wrongCount?: number;
+  unansweredCount?: number;
+  durationUsed?: number;
   reviews?: QuestionReview[];
 }
 
@@ -233,7 +238,13 @@ export type AdminAuditAction =
   | 'admin_bootstrap'
   | 'student_report'
   | 'student_block'
-  | 'permission_failure';
+  | 'permission_failure'
+  | 'create_banner'
+  | 'edit_banner'
+  | 'delete_banner'
+  | 'toggle_banner'
+  | 'reorder_banners'
+  | 'update_promo_settings';
 
 export interface AdminAuditLog {
   id: string;
@@ -241,7 +252,7 @@ export interface AdminAuditLog {
   adminName: string;
   adminEmail: string;
   action: AdminAuditAction;
-  targetType: 'exam' | 'question' | 'student' | 'announcement' | 'challenge' | 'settings' | 'security' | 'template';
+  targetType: 'exam' | 'question' | 'student' | 'announcement' | 'challenge' | 'settings' | 'security' | 'template' | 'banner';
   targetId: string;
   details: string;
   timestamp: string;
@@ -343,6 +354,7 @@ export type AdminTab =
   | 'students'
   | 'leaderboard'
   | 'announcements'
+  | 'banners'
   | 'challenges'
   | 'analytics'
   | 'ai-builder'
@@ -350,6 +362,28 @@ export type AdminTab =
   | 'audit-logs'
   | 'settings'
   | 'profile';
+
+export type PromoBannerLinkType = 'none' | 'internal' | 'external';
+
+export interface PromoBanner {
+  id: string;
+  imageUrl: string;
+  alt: string;
+  linkType?: PromoBannerLinkType;
+  linkTarget?: string;
+  order: number;
+  active: boolean;
+  startAt?: string | null;
+  endAt?: string | null;
+  createdAt: string;
+  createdBy?: string;
+  updatedAt?: string;
+}
+
+export interface PromoSettings {
+  enabled: boolean;
+  intervalSeconds: number;
+}
 
 // ==========================================
 // PHASE 4: AI Exam Builder & Validation Types

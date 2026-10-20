@@ -129,7 +129,7 @@ export async function bootstrapAdminBackend(): Promise<{ success: boolean; messa
  */
 export async function recordAdminAuditLog(entry: {
   action: AdminAuditAction;
-  targetType: 'exam' | 'question' | 'student' | 'announcement' | 'challenge' | 'settings' | 'security' | 'template';
+  targetType: 'exam' | 'question' | 'student' | 'announcement' | 'challenge' | 'settings' | 'security' | 'template' | 'banner';
   targetId: string;
   details: string;
   metadata?: Record<string, any>;

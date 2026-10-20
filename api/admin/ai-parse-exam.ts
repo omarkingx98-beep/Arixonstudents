@@ -1,6 +1,6 @@
 import type { Request, Response } from 'express';
 import { GoogleGenAI } from '@google/genai';
-import { parseRawExamWithGemini } from '../../server/aiExamParser';
+import { parseRawExamWithGemini } from '../_lib/aiExamParser.js';
 
 const PRIMARY_ADMIN_EMAILS = [
   (process.env.ADMIN_PRIMARY_EMAIL || '').toLowerCase().trim(),

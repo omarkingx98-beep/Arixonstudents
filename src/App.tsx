@@ -134,8 +134,14 @@ function MainAppShell() {
     }
   }, [status, profile?.uid, profile?.branch]);
 
-  // E6: Total Red Bell Counter = unread messages + unread direct notifications + pending friend requests
-  const totalUnreadCount = unreadNotifsCount + unreadMessagesCount + pendingFriendRequestsCount;
+  // Calculate unread official broadcasts/announcements
+  const unreadBroadcastsCount = broadcasts.filter((b) => {
+    if (!lastReadBroadcastAt) return true;
+    return new Date(b.createdAt).getTime() > new Date(lastReadBroadcastAt).getTime();
+  }).length;
+
+  // Total Red Bell Counter = unread messages + unread direct notifications + pending friend requests + unread broadcasts/announcements
+  const totalUnreadCount = unreadNotifsCount + unreadMessagesCount + pendingFriendRequestsCount + unreadBroadcastsCount;
 
   const handleOpenNotifications = () => {
     setIsNotificationsOpen(true);

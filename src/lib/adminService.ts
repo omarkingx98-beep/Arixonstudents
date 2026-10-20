@@ -891,6 +891,29 @@ export async function saveAnnouncement(ann: Omit<Announcement, 'id'> & { id?: st
 
   await setDoc(docRef, cleanData, { merge: true });
 
+  // Mirror to broadcasts collection so student bell and drawer receive it immediately
+  if (ann.published) {
+    try {
+      const bRef = doc(db, 'broadcasts', id);
+      await setDoc(bRef, sanitizeFirestoreData({
+        id,
+        title: ann.title,
+        message: ann.content,
+        priority: ann.priority || 'medium',
+        audience: { track: 'all' },
+        createdAt: ann.createdAt || now,
+        createdBy: ann.createdBy || auth.currentUser?.email || 'admin',
+        updatedAt: now,
+      }), { merge: true });
+    } catch (bErr) {
+      console.warn('[saveAnnouncement] Broadcast mirror notice:', bErr);
+    }
+  } else {
+    try {
+      await deleteDoc(doc(db, 'broadcasts', id));
+    } catch {}
+  }
+
   await recordAdminAuditLog({
     action: isNew ? 'publish_announcement' : 'unpublish_announcement',
     targetType: 'announcement',
@@ -904,6 +927,10 @@ export async function saveAnnouncement(ann: Omit<Announcement, 'id'> & { id?: st
 export async function deleteAdminAnnouncement(announcementId: string, title: string): Promise<void> {
   const docRef = doc(db, 'announcements', announcementId);
   await deleteDoc(docRef);
+
+  try {
+    await deleteDoc(doc(db, 'broadcasts', announcementId));
+  } catch {}
 
   await recordAdminAuditLog({
     action: 'archive_announcement',

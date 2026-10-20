@@ -118,7 +118,7 @@ export interface Question {
   media?: string;
 }
 
-export type AttemptStatus = 'in_progress' | 'submitted' | 'expired';
+export type AttemptStatus = 'in_progress' | 'submitted' | 'expired' | 'submitted_pending';
 
 export interface ExamAttempt {
   id: string;
@@ -129,6 +129,7 @@ export interface ExamAttempt {
   expectedEndAt: string;
   submittedAt: string | null;
   status: AttemptStatus;
+  pendingReason?: string;
   score: number | null;
   percentage?: number;
   pointsEarned: number;
@@ -584,9 +585,10 @@ export interface BroadcastAudience {
 
 export interface BroadcastNotification {
   id: string;
-  type: BroadcastType;
+  type?: BroadcastType;
   title: string;
   message?: string;
+  priority?: 'low' | 'normal' | 'medium' | 'high' | 'urgent';
   examId?: string;
   examTitle?: string;
   audience: BroadcastAudience;

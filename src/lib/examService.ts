@@ -693,7 +693,7 @@ export async function submitExamAttempt(
     }
   }
 
-  // (ج) Step C: Grading request to /api/exams/grade
+  // (ج) Step C: Grading request to /api/exams/grade with 20s timeout and up to 2 auto-retries
   console.log(`[ExamSubmission] Step C: Initiating server grading request for attempt: ${attemptId}...`);
   
   let idToken = '';
@@ -707,31 +707,107 @@ export async function submitExamAttempt(
 
   let serverStatus = 0;
   let serverResult: any = null;
+  let lastError: any = null;
+  const MAX_RETRIES = 2; // Total 3 attempts (1 initial + 2 retries)
 
-  try {
-    const res = await fetch('/api/exams/grade', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(idToken ? { 'Authorization': `Bearer ${idToken}` } : {}),
-      },
-      body: JSON.stringify({
-        attemptId,
-        answers: savedAnswers,
-      }),
-    });
-    serverStatus = res.status;
-    serverResult = await res.json();
-    console.log(`[ExamSubmission] Step C: Server grading response status: ${serverStatus}`, serverResult);
-  } catch (netErr: any) {
-    console.error(`[ExamSubmission] Step C: Network error contacting /api/exams/grade:`, netErr);
+  for (let retryIndex = 0; retryIndex <= MAX_RETRIES; retryIndex++) {
+    const isRetry = retryIndex > 0;
+    if (isRetry) {
+      console.log(`[ExamSubmission] Step C: Retry attempt ${retryIndex} of ${MAX_RETRIES} for attempt: ${attemptId}...`);
+      await new Promise((resolve) => setTimeout(resolve, 1000 * retryIndex));
+    }
+
+    const abortController = new AbortController();
+    const timeoutHandle = setTimeout(() => abortController.abort(), 20000); // 20s timeout
+
+    try {
+      const res = await fetch('/api/exams/grade', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(idToken ? { 'Authorization': `Bearer ${idToken}` } : {}),
+        },
+        body: JSON.stringify({
+          attemptId,
+          answers: savedAnswers,
+        }),
+        signal: abortController.signal,
+      });
+
+      clearTimeout(timeoutHandle);
+      serverStatus = res.status;
+      serverResult = await res.json();
+      console.log(`[ExamSubmission] Step C: Server grading response status: ${serverStatus}`, serverResult);
+
+      if (serverResult && (serverResult.ok || serverResult.success)) {
+        break; // Successfully graded!
+      } else {
+        lastError = {
+          code: serverResult?.code || 'WRITE_FAILED',
+          step: serverResult?.step || 'SERVER_GRADING',
+          message: serverResult?.message || serverResult?.error || 'تعذّر التسليم، حاول مرة ثانية.',
+        };
+      }
+    } catch (netErr: any) {
+      clearTimeout(timeoutHandle);
+      const isAbort = netErr?.name === 'AbortError' || netErr?.message?.includes('aborted');
+      console.warn(`[ExamSubmission] Step C: Network ${isAbort ? 'timeout (20s)' : 'error'} on attempt ${retryIndex + 1}:`, netErr?.message);
+      lastError = {
+        code: isAbort ? 'TIMEOUT' : 'WRITE_FAILED',
+        step: 'NETWORK_REQUEST',
+        message: isAbort ? 'انتهت مهلة الاتصال بالخادم (20 ثانية).' : 'حدث خطأ في شبكة الاتصال.',
+      };
+    }
   }
 
-  // If server responded with error or not ok, throw real error - DO NOT return fake 0%!
-  if (!serverResult || !serverResult.success) {
-    const errMsg = serverResult?.error || 'تعذّر التسليم، حاول مرة ثانية.';
-    console.error(`[ExamSubmission] Step C: Server grading failed: ${errMsg}`);
-    throw new Error(errMsg);
+  // If server responded with error after all retries, engage SAFETY NET:
+  if (!serverResult || (!serverResult.ok && !serverResult.success)) {
+    console.warn(`[ExamSubmission] Step C: Server grading failed after retries. Engaging SAFETY NET (submitted_pending)...`);
+    
+    try {
+      const now = new Date().toISOString();
+      const attemptDocRef = doc(db, 'attempts', attemptId);
+      
+      // Safety Net: Save attempt status as submitted_pending with student answers directly to Firestore
+      await updateDoc(attemptDocRef, {
+        status: 'submitted_pending',
+        submittedAt: now,
+        lastSavedAt: now,
+        pendingReason: lastError?.message || 'Server grading deferred',
+        answers: savedAnswers,
+      });
+
+      const pendingAttempt: ExamAttempt = {
+        id: attemptId,
+        userId,
+        examId: '',
+        status: 'submitted_pending',
+        pendingReason: lastError?.message || 'Server grading deferred',
+        submittedAt: now,
+        expectedEndAt: now,
+        startedAt: now,
+        score: null,
+        pointsEarned: 0,
+        correctAnswers: 0,
+        wrongAnswers: 0,
+        unanswered: 0,
+        durationSeconds: 0,
+        lastSavedAt: now,
+      };
+
+      try {
+        localStorage.setItem(`arixon_attempt_${attemptId}`, JSON.stringify(pendingAttempt));
+      } catch {}
+
+      console.log(`[ExamSubmission] Step C: Safety net succeeded. Attempt marked as submitted_pending.`);
+      return pendingAttempt;
+    } catch (safetyErr: any) {
+      console.error(`[ExamSubmission] Step C: Safety net failed:`, safetyErr);
+      const err: any = new Error(lastError?.message || 'تعذّر التسليم، حاول مرة ثانية.');
+      err.code = lastError?.code || 'WRITE_FAILED';
+      err.step = lastError?.step || 'SAFETY_NET_WRITE';
+      throw err;
+    }
   }
 
   const gradedAttempt = serverResult.attempt;

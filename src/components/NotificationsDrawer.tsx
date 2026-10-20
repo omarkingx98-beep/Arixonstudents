@@ -12,8 +12,9 @@ import {
   Sparkles,
   Loader2,
   BookOpen,
-  Pause,
   AlertCircle,
+  Megaphone,
+  Radio,
   ArrowLeft
 } from 'lucide-react';
 import { 
@@ -42,14 +43,13 @@ interface NotificationsDrawerProps {
 export const NotificationsDrawer: React.FC<NotificationsDrawerProps> = ({
   isOpen,
   onClose,
-  notifications,
+  notifications = [],
   broadcasts = [],
   lastReadBroadcastAt,
   onOpenChatWithUser,
   onOpenExam,
 }) => {
   const { profile } = useAuth();
-  // E5: 3 Tabs: الإشعارات | الرسائل | الأصدقاء
   const [activeTab, setActiveTab] = useState<'notifications' | 'messages' | 'friends'>('notifications');
   const [processingId, setProcessingId] = useState<string | null>(null);
 
@@ -124,7 +124,6 @@ export const NotificationsDrawer: React.FC<NotificationsDrawerProps> = ({
     try {
       await acceptFriendRequest(notif.metadata.requestId, notif.senderId, profile);
       await markNotificationAsRead(notif.id);
-      // Refresh friends list
       const updatedFriends = await getFriendsList(profile.uid);
       setFriends(updatedFriends);
       alert('تم قبول طلب الصداقة بنجاح! يمكنك الآن مراسلته.');
@@ -156,6 +155,12 @@ export const NotificationsDrawer: React.FC<NotificationsDrawerProps> = ({
   };
 
   const unreadDirectCount = notifications.filter((n) => !n.read).length;
+  const unreadBroadcastsCount = broadcasts.filter((b) => {
+    if (!lastReadBroadcastAt) return true;
+    return new Date(b.createdAt).getTime() > new Date(lastReadBroadcastAt).getTime();
+  }).length;
+  const totalNotifsBadge = unreadDirectCount + unreadBroadcastsCount;
+
   const unreadMessagesCount = chats.reduce((sum, c) => {
     if (!profile?.uid) return sum;
     const count = 
@@ -168,22 +173,22 @@ export const NotificationsDrawer: React.FC<NotificationsDrawerProps> = ({
   }, 0);
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-start bg-black/60 backdrop-blur-xs animate-fadeIn">
-      {/* Backdrop */}
+    <div className="fixed inset-0 z-50 overflow-hidden select-none" role="dialog" aria-modal="true">
+      {/* Backdrop Overlay */}
       <div 
         onClick={onClose}
-        className="absolute inset-0"
+        className="fixed inset-0 bg-black/60 backdrop-blur-xs transition-opacity duration-300"
       />
 
-      {/* Drawer Panel */}
-      <div 
+      {/* Fixed Drawer Panel (Right side in RTL) */}
+      <aside 
         id="notifications-drawer-panel"
-        className="relative w-full max-w-md bg-white dark:bg-[#0c101c] h-full shadow-2xl border-l border-slate-200 dark:border-slate-800 flex flex-col z-10 overflow-hidden"
+        className="fixed inset-y-0 right-0 max-w-full sm:max-w-md w-full bg-white dark:bg-[#0c101c] text-slate-900 dark:text-slate-100 shadow-2xl border-l border-slate-200 dark:border-slate-800 flex flex-col z-50 overflow-hidden"
       >
         {/* Drawer Header */}
-        <div className="p-4 sm:p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="p-2 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400">
+        <div className="p-4 sm:p-5 border-b border-slate-100 dark:border-slate-800/80 flex items-center justify-between shrink-0 bg-white dark:bg-[#0c101c]">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-2xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400">
               <Bell className="w-5 h-5" />
             </div>
             <div>
@@ -191,21 +196,22 @@ export const NotificationsDrawer: React.FC<NotificationsDrawerProps> = ({
                 مركز التنبيهات والتواصل
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                الإشعارات، الرسائل الفورية، وقائمة الأصدقاء
+                التعميمات الإدارية، الإشعارات، والرسائل الفورية
               </p>
             </div>
           </div>
 
           <button
             onClick={onClose}
-            className="p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+            aria-label="إغلاق اللوحة"
+            className="p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* E5 Tabs: الإشعارات | الرسائل | الأصدقاء */}
-        <div className="p-3 border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-[#111625]/40">
+        {/* 3 Tabs: الإشعارات | الرسائل | الأصدقاء */}
+        <div className="p-3 border-b border-slate-100 dark:border-slate-800/80 bg-slate-50/70 dark:bg-[#111625]/60 shrink-0">
           <div className="grid grid-cols-3 p-1 rounded-2xl bg-slate-200/60 dark:bg-slate-800/80 text-xs font-bold">
             <button
               id="notif-tab-notifications"
@@ -213,14 +219,14 @@ export const NotificationsDrawer: React.FC<NotificationsDrawerProps> = ({
               className={`py-2 px-1 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
                 activeTab === 'notifications'
                   ? 'bg-white dark:bg-[#0c101c] text-blue-600 dark:text-blue-400 shadow-xs'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
               <Bell className="w-3.5 h-3.5" />
               <span>الإشعارات</span>
-              {unreadDirectCount > 0 && (
+              {totalNotifsBadge > 0 && (
                 <span className="w-4 h-4 rounded-full bg-red-600 text-white text-[10px] flex items-center justify-center font-black">
-                  {unreadDirectCount > 9 ? '+9' : unreadDirectCount}
+                  {totalNotifsBadge > 9 ? '+9' : totalNotifsBadge}
                 </span>
               )}
             </button>
@@ -231,7 +237,7 @@ export const NotificationsDrawer: React.FC<NotificationsDrawerProps> = ({
               className={`py-2 px-1 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
                 activeTab === 'messages'
                   ? 'bg-white dark:bg-[#0c101c] text-indigo-600 dark:text-indigo-400 shadow-xs'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
               <MessageSquare className="w-3.5 h-3.5" />
@@ -249,7 +255,7 @@ export const NotificationsDrawer: React.FC<NotificationsDrawerProps> = ({
               className={`py-2 px-1 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
                 activeTab === 'friends'
                   ? 'bg-white dark:bg-[#0c101c] text-emerald-600 dark:text-emerald-400 shadow-xs'
-                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
               }`}
             >
               <Users className="w-3.5 h-3.5" />
@@ -263,12 +269,13 @@ export const NotificationsDrawer: React.FC<NotificationsDrawerProps> = ({
           </div>
         </div>
 
-        {/* Tab Content */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        {/* Tab Content Area */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {/* TAB 1: الإشعارات */}
           {activeTab === 'notifications' && (
-            <>
-              {unreadDirectCount > 0 && (
+            <div className="space-y-4">
+              {/* Mark all as read button */}
+              {(unreadDirectCount > 0 || unreadBroadcastsCount > 0) && (
                 <div className="flex justify-end pb-1">
                   <button
                     onClick={handleMarkAllRead}
@@ -280,13 +287,84 @@ export const NotificationsDrawer: React.FC<NotificationsDrawerProps> = ({
                 </div>
               )}
 
-              {notifications.length === 0 && broadcasts.length === 0 ? (
-                <div className="py-20 text-center text-slate-400 text-xs space-y-2">
-                  <Bell className="w-8 h-8 mx-auto text-slate-300 dark:text-slate-700" />
-                  <p>لا توجد إشعارات جديدة حالياً.</p>
-                </div>
-              ) : (
+              {/* SECTION A: Official Announcements & Broadcasts */}
+              {broadcasts.length > 0 && (
                 <div className="space-y-2.5">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-amber-600 dark:text-amber-400 px-1">
+                    <Megaphone className="w-3.5 h-3.5" />
+                    <span>التعميمات والإعلانات الإدارية</span>
+                  </div>
+
+                  {broadcasts.map((b) => {
+                    const isUnread = !lastReadBroadcastAt || new Date(b.createdAt).getTime() > new Date(lastReadBroadcastAt).getTime();
+                    return (
+                      <div
+                        key={b.id}
+                        className={`p-3.5 rounded-2xl border transition-all text-right ${
+                          isUnread
+                            ? 'bg-amber-50/70 dark:bg-amber-950/30 border-amber-300 dark:border-amber-900/60 shadow-xs'
+                            : 'bg-white dark:bg-[#111625] border-slate-200/80 dark:border-slate-800'
+                        }`}
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className="p-2 rounded-xl bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400 shrink-0 mt-0.5">
+                            <Radio className="w-4 h-4" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center justify-between gap-2">
+                              <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                                <span>{b.title}</span>
+                                {isUnread && (
+                                  <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" />
+                                )}
+                              </h4>
+                              {b.priority === 'urgent' && (
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300">
+                                  عاجل
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 leading-relaxed whitespace-pre-line">
+                              {b.message}
+                            </p>
+                            <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100 dark:border-slate-800/60 text-[10px] text-slate-400">
+                              <span>
+                                {new Date(b.createdAt).toLocaleDateString('ar-EG', {
+                                  day: 'numeric',
+                                  month: 'short',
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })}
+                              </span>
+                              {b.examId && onOpenExam && (
+                                <button
+                                  onClick={() => {
+                                    onClose();
+                                    onOpenExam(b.examId!);
+                                  }}
+                                  className="text-blue-600 dark:text-blue-400 font-bold hover:underline flex items-center gap-1 cursor-pointer"
+                                >
+                                  <span>فتح الامتحان</span>
+                                  <ArrowLeft className="w-3 h-3" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* SECTION B: Direct Notifications */}
+              {notifications.length > 0 && (
+                <div className="space-y-2.5">
+                  <div className="flex items-center gap-1.5 text-xs font-bold text-slate-600 dark:text-slate-400 px-1">
+                    <Bell className="w-3.5 h-3.5" />
+                    <span>التنبيهات المباشرة</span>
+                  </div>
+
                   {notifications.map((notif) => {
                     const isFriendReq = notif.type === 'friend_request';
                     const isProcessing = processingId === notif.id;
@@ -344,7 +422,7 @@ export const NotificationsDrawer: React.FC<NotificationsDrawerProps> = ({
                           </button>
                         </div>
 
-                        {/* Friend Request Accept / Reject Actions (E5) */}
+                        {/* Friend Request Accept / Reject */}
                         {isFriendReq && notif.metadata?.requestId && (
                           <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800 flex items-center gap-2">
                             <button
@@ -380,22 +458,37 @@ export const NotificationsDrawer: React.FC<NotificationsDrawerProps> = ({
                   })}
                 </div>
               )}
-            </>
+
+              {/* Empty state when NO broadcasts and NO notifications */}
+              {notifications.length === 0 && broadcasts.length === 0 && (
+                <div className="py-24 text-center text-slate-400 text-xs space-y-3">
+                  <div className="w-14 h-14 mx-auto rounded-3xl bg-slate-100 dark:bg-slate-800/60 flex items-center justify-center text-slate-400">
+                    <Bell className="w-7 h-7" />
+                  </div>
+                  <p className="font-bold text-slate-700 dark:text-slate-300 text-sm">
+                    لا توجد إشعارات حالياً
+                  </p>
+                  <p className="text-slate-400 text-xs max-w-xs mx-auto">
+                    ستظهر هنا كافة التعميمات الرسمية ونتائج الامتحانات وطلبات الصداقة الجديدة.
+                  </p>
+                </div>
+              )}
+            </div>
           )}
 
-          {/* TAB 2: الرسائل (Conversations with unread counter) */}
+          {/* TAB 2: الرسائل */}
           {activeTab === 'messages' && (
             <div className="space-y-2">
               {loadingChats ? (
-                <div className="py-16 flex flex-col items-center justify-center gap-2 text-slate-400 text-xs">
+                <div className="py-20 flex flex-col items-center justify-center gap-2 text-slate-400 text-xs">
                   <Loader2 className="w-6 h-6 animate-spin text-indigo-600" />
                   <span>جارٍ تحميل المحادثات...</span>
                 </div>
               ) : chats.length === 0 ? (
-                <div className="py-16 text-center text-slate-400 text-xs space-y-2">
-                  <MessageSquare className="w-8 h-8 mx-auto text-slate-300 dark:text-slate-700" />
-                  <p>لا توجد محادثات نشطة بعد.</p>
-                  <p className="text-[11px] text-slate-500">
+                <div className="py-20 text-center text-slate-400 text-xs space-y-2">
+                  <MessageSquare className="w-10 h-10 mx-auto text-slate-300 dark:text-slate-700" />
+                  <p className="font-bold text-slate-700 dark:text-slate-300 text-sm">لا توجد محادثات نشطة بعد</p>
+                  <p className="text-[11px] text-slate-400 max-w-xs mx-auto">
                     أضف أصدقاءك من شاشة البحث أو قائمة الترتيب لبدء محادثات فورية.
                   </p>
                 </div>
@@ -425,7 +518,7 @@ export const NotificationsDrawer: React.FC<NotificationsDrawerProps> = ({
                           onOpenChatWithUser(otherUid, other);
                         }
                       }}
-                      className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 text-right ${
+                      className={`p-3.5 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 text-right ${
                         unread > 0
                           ? 'bg-indigo-50/60 dark:bg-indigo-950/30 border-indigo-200 dark:border-indigo-900/60 shadow-xs'
                           : 'bg-white dark:bg-[#111625] border-slate-100 dark:border-slate-800 hover:border-slate-300'
@@ -453,14 +546,14 @@ export const NotificationsDrawer: React.FC<NotificationsDrawerProps> = ({
                             </span>
                           </div>
                           <p className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
-                            {chat.lastMessage || 'بدء المحادثة'}
+                            {chat.lastMessage || 'محادثة جديدة'}
                           </p>
                         </div>
                       </div>
 
                       {unread > 0 && (
-                        <span className="w-5 h-5 rounded-full bg-red-600 text-white text-[10px] font-black flex items-center justify-center shrink-0 animate-pulse">
-                          {unread > 9 ? '+9' : unread}
+                        <span className="w-5 h-5 rounded-full bg-indigo-600 text-white text-[11px] font-black flex items-center justify-center shrink-0">
+                          {unread}
                         </span>
                       )}
                     </div>
@@ -470,41 +563,29 @@ export const NotificationsDrawer: React.FC<NotificationsDrawerProps> = ({
             </div>
           )}
 
-          {/* TAB 3: الأصدقاء (Friends list with instant chat click) */}
+          {/* TAB 3: الأصدقاء */}
           {activeTab === 'friends' && (
             <div className="space-y-2">
               {loadingFriends ? (
-                <div className="py-16 flex flex-col items-center justify-center gap-2 text-slate-400 text-xs">
+                <div className="py-20 flex flex-col items-center justify-center gap-2 text-slate-400 text-xs">
                   <Loader2 className="w-6 h-6 animate-spin text-emerald-600" />
                   <span>جارٍ تحميل قائمة الأصدقاء...</span>
                 </div>
               ) : friends.length === 0 ? (
-                <div className="py-16 text-center text-slate-400 text-xs space-y-2">
-                  <Users className="w-8 h-8 mx-auto text-slate-300 dark:text-slate-700" />
-                  <p>قائمة الأصدقاء فارغة حالياً.</p>
-                  <p className="text-[11px] text-slate-500">
-                    عند قبول طلبات الصداقة، سيظهر أصدقاؤك هنا ويمكنك مراسلتهم فوراً.
+                <div className="py-20 text-center text-slate-400 text-xs space-y-2">
+                  <Users className="w-10 h-10 mx-auto text-slate-300 dark:text-slate-700" />
+                  <p className="font-bold text-slate-700 dark:text-slate-300 text-sm">قائمة الأصدقاء فارغة</p>
+                  <p className="text-[11px] text-slate-400 max-w-xs mx-auto">
+                    ابحث عن زملاء دفعة 2009 عبر أيقونة البحث في الأعلى لإضافتهم.
                   </p>
                 </div>
               ) : (
                 friends.map((friend) => (
                   <div
                     key={friend.uid}
-                    onClick={() => {
-                      onClose();
-                      if (onOpenChatWithUser) {
-                        onOpenChatWithUser(friend.uid, {
-                          displayName: friend.displayName,
-                          username: friend.username,
-                          photoURL: friend.photoURL,
-                          branch: friend.branch,
-                        });
-                      }
-                    }}
-                    className="p-3 rounded-2xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-[#111625] hover:bg-slate-50 dark:hover:bg-[#141b2d] transition-all cursor-pointer flex items-center justify-between gap-3 text-right"
-                    title="اضغط لفتح المحادثة فوراً"
+                    className="p-3 rounded-2xl bg-white dark:bg-[#111625] border border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3 text-right"
                   >
-                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                    <div className="flex items-center gap-3 min-w-0">
                       <img
                         src={friend.photoURL || '/favicon-192x192.png'}
                         alt={friend.displayName}
@@ -513,24 +594,35 @@ export const NotificationsDrawer: React.FC<NotificationsDrawerProps> = ({
                           e.currentTarget.src = '/favicon-192x192.png';
                         }}
                       />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate">
-                            {friend.displayName}
-                          </h4>
-                          <span className="text-[10px] font-semibold px-1.5 py-0.2 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
-                            {friend.branch || 'علمي'}
-                          </span>
+                      <div className="min-w-0">
+                        <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate">
+                          {friend.displayName}
+                        </h4>
+                        <div className="flex items-center gap-1.5 text-[11px] text-slate-400">
+                          <span>@{friend.username}</span>
+                          {friend.branch && (
+                            <>
+                              <span>•</span>
+                              <span className="text-blue-500 font-semibold">{friend.branch}</span>
+                            </>
+                          )}
                         </div>
-                        <p className="text-[11px] text-blue-600 dark:text-blue-400 font-mono dir-ltr truncate text-right">
-                          @{friend.username}
-                        </p>
                       </div>
                     </div>
 
                     <button
-                      type="button"
-                      className="px-3 py-1.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 text-indigo-600 dark:text-indigo-400 text-xs font-bold flex items-center gap-1.5 transition-colors shrink-0 cursor-pointer"
+                      onClick={() => {
+                        onClose();
+                        if (onOpenChatWithUser) {
+                          onOpenChatWithUser(friend.uid, {
+                            displayName: friend.displayName,
+                            username: friend.username,
+                            photoURL: friend.photoURL,
+                            branch: friend.branch,
+                          });
+                        }
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 hover:bg-blue-100 font-bold text-xs flex items-center gap-1 cursor-pointer transition-colors shrink-0"
                     >
                       <MessageSquare className="w-3.5 h-3.5" />
                       <span>مراسلة</span>
@@ -541,7 +633,7 @@ export const NotificationsDrawer: React.FC<NotificationsDrawerProps> = ({
             </div>
           )}
         </div>
-      </div>
+      </aside>
     </div>
   );
 };

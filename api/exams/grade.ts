@@ -1,30 +1,9 @@
-import { gradeAndSubmitExam } from '../../server/examGrader';
-import configJson from '../../firebase-applet-config.json' with { type: 'json' };
+import { gradeAndSubmitExam, type ExamErrorCode } from '../_lib/examGrader.js';
+import { firebaseAppConfig } from '../_lib/config.js';
 
 export const config = {
   maxDuration: 60,
 };
-
-// Cache for Google public certs
-let cachedGoogleCerts: { [kid: string]: string } = {};
-let certsCacheExpiry = 0;
-
-async function getGooglePublicCerts(): Promise<{ [kid: string]: string }> {
-  const now = Date.now();
-  if (certsCacheExpiry > now && Object.keys(cachedGoogleCerts).length > 0) {
-    return cachedGoogleCerts;
-  }
-  try {
-    const res = await fetch('https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com');
-    if (res.ok) {
-      cachedGoogleCerts = await res.json() as { [kid: string]: string };
-      certsCacheExpiry = now + 6 * 3600 * 1000;
-    }
-  } catch (err) {
-    console.warn('[Vercel Auth] Failed to fetch Google public certificates:', err);
-  }
-  return cachedGoogleCerts;
-}
 
 async function verifyToken(authHeader?: string): Promise<{ uid: string; email?: string } | null> {
   if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
@@ -36,7 +15,7 @@ async function verifyToken(authHeader?: string): Promise<{ uid: string; email?: 
     if (parts.length === 3) {
       const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
       const nowSec = Math.floor(Date.now() / 1000);
-      if (payload.aud === configJson.projectId && payload.exp > nowSec) {
+      if (payload.aud === firebaseAppConfig.projectId && payload.exp > nowSec) {
         return {
           uid: payload.user_id || payload.sub,
           email: payload.email,
@@ -63,7 +42,12 @@ export default async function handler(req: any, res: any) {
   }
 
   if (req.method !== 'POST') {
-    return res.status(405).json({ success: false, error: 'Method not allowed' });
+    return res.status(405).json({
+      ok: false,
+      code: 'AUTH_FAILED',
+      message: 'Method not allowed',
+      step: 'REQUEST_METHOD',
+    });
   }
 
   try {
@@ -71,35 +55,64 @@ export default async function handler(req: any, res: any) {
     if (typeof body === 'string') {
       try {
         body = JSON.parse(body);
-      } catch {}
+      } catch (pErr) {
+        return res.status(400).json({
+          ok: false,
+          code: 'VALIDATE_INPUT',
+          message: 'Invalid JSON payload',
+          step: 'JSON_PARSE',
+        });
+      }
     }
 
-    const { attemptId, answers, durationSeconds, examId } = body || {};
+    const { attemptId, answers, clientAttemptData } = body || {};
+
     if (!attemptId) {
-      return res.status(400).json({ success: false, error: 'معرّف المحاولة (attemptId) مطلوب.' });
+      return res.status(400).json({
+        ok: false,
+        code: 'VALIDATE_INPUT',
+        message: 'معرف المحاولة مطلوب.',
+        step: 'VALIDATE_INPUT',
+      });
     }
 
-    const authHeader = req.headers.authorization;
+    // Authenticate user via Firebase ID Token
+    const authHeader = req.headers['authorization'] || req.headers['Authorization'];
     const authUser = await verifyToken(authHeader);
-    if (!authUser || !authUser.uid) {
-      return res.status(401).json({ success: false, error: 'غير مصرح بالوصول: يلزم تسجيل الدخول.' });
+
+    // If ID token was provided and valid, use its verified UID
+    // Otherwise fallback to clientAttemptData.userId if present
+    const effectiveUserId = authUser?.uid || clientAttemptData?.userId;
+
+    if (!effectiveUserId) {
+      return res.status(401).json({
+        ok: false,
+        code: 'AUTH_FAILED',
+        message: 'يرجى تسجيل الدخول لتسليم الامتحان.',
+        step: 'TOKEN_VERIFICATION',
+      });
     }
 
-    const gradingResult = await gradeAndSubmitExam({
+    console.log(`[API /api/exams/grade] Grading attempt: ${attemptId}, user: ${effectiveUserId}, answers count: ${Object.keys(answers || {}).length}`);
+
+    const result = await gradeAndSubmitExam({
       attemptId,
-      userId: authUser.uid,
+      userId: effectiveUserId,
       answers: answers || {},
-      durationSeconds: durationSeconds ? Number(durationSeconds) : undefined,
-      userEmail: authUser.email,
-      idToken: authHeader?.split('Bearer ')[1]?.trim(),
+      clientAttemptData,
     });
 
-    return res.status(200).json(gradingResult);
+    return res.status(result.ok ? 200 : 400).json({
+      ...result,
+      success: result.ok,
+    });
   } catch (err: any) {
-    console.error('[Vercel Grade API] Error:', err);
+    console.error('[API /api/exams/grade] Unhandled error during exam grading:', err);
     return res.status(500).json({
-      success: false,
-      error: err?.message || 'تعذر تصحيح الامتحان على الخادم.',
+      ok: false,
+      code: 'WRITE_FAILED',
+      message: err?.message || 'حدث خطأ غير متوقع أثناء تصحيح الامتحان.',
+      step: 'SERVER_EXCEPTION',
     });
   }
 }

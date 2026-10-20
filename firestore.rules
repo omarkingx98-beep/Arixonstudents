@@ -266,11 +266,20 @@ service cloud.firestore {
       allow update: if isAdmin() || (
         isAuthenticated() &&
         resource.data.userId == request.auth.uid &&
-        resource.data.status == 'in_progress' &&
-        request.resource.data.status == 'in_progress' &&
-        !request.resource.data.diff(resource.data).affectedKeys().hasAny([
-          'score', 'pointsEarned', 'correctCount', 'correctAnswers', 'wrongCount', 'wrongAnswers', 'unansweredCount', 'unanswered', 'reviews', 'status', 'submittedAt'
-        ])
+        resource.data.status == 'in_progress' && (
+          (
+            request.resource.data.status == 'in_progress' &&
+            !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+              'score', 'pointsEarned', 'correctCount', 'correctAnswers', 'wrongCount', 'wrongAnswers', 'unansweredCount', 'unanswered', 'reviews', 'status', 'submittedAt'
+            ])
+          ) ||
+          (
+            request.resource.data.status == 'submitted_pending' &&
+            !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+              'score', 'pointsEarned', 'correctCount', 'correctAnswers', 'wrongCount', 'wrongAnswers', 'unansweredCount', 'unanswered', 'reviews'
+            ])
+          )
+        )
       );
       
       allow delete: if isAdmin();
@@ -284,7 +293,8 @@ service cloud.firestore {
         allow create, update: if isAuthenticated() && (
           isAdmin() ||
           (get(/databases/$(database)/documents/attempts/$(attemptId)).data.userId == request.auth.uid &&
-           get(/databases/$(database)/documents/attempts/$(attemptId)).data.status == 'in_progress')
+           (get(/databases/$(database)/documents/attempts/$(attemptId)).data.status == 'in_progress' ||
+            get(/databases/$(database)/documents/attempts/$(attemptId)).data.status == 'submitted_pending'))
         );
         allow delete: if false;
       }

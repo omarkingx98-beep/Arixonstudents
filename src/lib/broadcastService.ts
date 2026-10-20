@@ -98,42 +98,62 @@ export function subscribeToStudentBroadcasts(
   userBranch: string | undefined,
   callback: (broadcasts: BroadcastNotification[]) => void
 ): () => void {
+  const broadcastsMap = new Map<string, BroadcastNotification>();
+  const cleanUserBranch = userBranch || 'علمي';
+
+  const notify = () => {
+    const list = Array.from(broadcastsMap.values());
+    list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    callback(list);
+  };
+
+  // 1. Listen to broadcasts
   const bCol = collection(db, 'broadcasts');
-  const q = query(bCol, orderBy('createdAt', 'desc'), limit(30));
+  const bQuery = query(bCol, orderBy('createdAt', 'desc'), limit(30));
+  const unsubB = onSnapshot(bQuery, (snap) => {
+    snap.forEach((d) => {
+      const item = { ...d.data(), id: d.id } as BroadcastNotification;
+      const track = item.audience?.track;
+      const isMatch = 
+        !track ||
+        track === 'all' ||
+        track === 'مشترك' ||
+        track === cleanUserBranch ||
+        (cleanUserBranch === 'علمي' && track === 'scientific') ||
+        (cleanUserBranch === 'أدبي' && track === 'literary');
 
-  return onSnapshot(
-    q,
-    (snapshot) => {
-      const list: BroadcastNotification[] = [];
-      const cleanUserBranch = userBranch || 'علمي';
+      if (isMatch) {
+        broadcastsMap.set(d.id, item);
+      }
+    });
+    notify();
+  }, (err) => console.warn('[broadcastService] broadcasts listener:', err));
 
-      snapshot.forEach((d) => {
-        const item = { ...d.data(), id: d.id } as BroadcastNotification;
-        const track = item.audience?.track;
+  // 2. Also listen to announcements collection where published == true
+  const aCol = collection(db, 'announcements');
+  const aQuery = query(aCol, where('published', '==', true), limit(30));
+  const unsubA = onSnapshot(aQuery, (snap) => {
+    snap.forEach((d) => {
+      const data = d.data();
+      const item: BroadcastNotification = {
+        id: d.id,
+        title: data.title || 'إعلان إداري',
+        message: data.content || data.message || '',
+        createdAt: data.publishedAt || data.createdAt || new Date().toISOString(),
+        createdBy: data.createdBy || 'الإدارة',
+        priority: data.priority || 'medium',
+        audience: { track: 'all' },
+        updatedAt: data.updatedAt || data.createdAt || new Date().toISOString(),
+      };
+      broadcastsMap.set(d.id, item);
+    });
+    notify();
+  }, (err) => console.warn('[broadcastService] announcements listener:', err));
 
-        // Check if student is in the target audience:
-        // 'all', 'مشترك' applies to everyone
-        // otherwise must match user's branch ('علمي' or 'أدبي')
-        const isMatch = 
-          !track ||
-          track === 'all' ||
-          track === 'مشترك' ||
-          track === cleanUserBranch ||
-          (cleanUserBranch === 'علمي' && track === 'scientific') ||
-          (cleanUserBranch === 'أدبي' && track === 'literary');
-
-        if (isMatch) {
-          list.push(item);
-        }
-      });
-
-      callback(list);
-    },
-    (err) => {
-      console.warn('[broadcastService] Broadcast subscription error:', err);
-      callback([]);
-    }
-  );
+  return () => {
+    unsubB();
+    unsubA();
+  };
 }
 
 /**

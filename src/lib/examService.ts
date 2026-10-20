@@ -23,7 +23,6 @@ import {
   FIRST_EXAM, 
   FIRST_EXAM_ID, 
   FIRST_EXAM_QUESTIONS,
-  type QuestionWithKey
 } from '../data/firstExamData';
 import {
   LITERARY_EXAM,
@@ -64,17 +63,6 @@ export async function seedFirstExamIfMissing(): Promise<void> {
           hint: q.hint,
         };
         await setDoc(qRef, publicQuestionData, { merge: true });
-
-        const keyRef = doc(db, 'exams', FIRST_EXAM_ID, 'answerKeys', q.id);
-        await setDoc(keyRef, {
-          id: q.id,
-          correctAnswer: q.correctAnswer,
-          explanation: q.explanation,
-          hint: q.hint,
-          solutionSteps: q.solutionSteps,
-          formulaUsed: q.formulaUsed,
-          distractorAnalysis: q.distractorAnalysis,
-        }, { merge: true });
       }
     }
 
@@ -101,19 +89,8 @@ export async function seedFirstExamIfMissing(): Promise<void> {
           source: q.source,
           points: q.points,
           questionType: q.questionType,
-          hint: q.hint,
         };
         await setDoc(qRef, publicQuestionData, { merge: true });
-
-        const keyRef = doc(db, 'exams', LITERARY_EXAM_ID, 'answerKeys', q.id);
-        await setDoc(keyRef, {
-          id: q.id,
-          correctAnswer: q.correctAnswer,
-          explanation: q.explanation,
-          hint: q.hint,
-          solutionSteps: q.solutionSteps,
-          distractorAnalysis: q.distractorAnalysis,
-        }, { merge: true });
       }
     }
   } catch (error) {
@@ -918,174 +895,7 @@ export async function getAttemptReviews(attemptId: string, userId: string): Prom
       return savedReviews;
     }
 
-    // Auto-repair: reconstruct reviews from actual exam questions and saved student answers!
-    const savedAnswers = await getSavedAnswersForAttempt(attemptId);
-    let questionsWithKeys: QuestionWithKey[] = [];
-
-    if (attemptData.examId === FIRST_EXAM_ID) {
-      questionsWithKeys = FIRST_EXAM_QUESTIONS;
-    } else if (attemptData.examId === LITERARY_EXAM_ID) {
-      questionsWithKeys = LITERARY_EXAM_QUESTIONS;
-    } else {
-      const qCol = collection(db, 'exams', attemptData.examId, 'questions');
-      const qSnap = await getDocs(query(qCol, orderBy('order', 'asc')));
-      for (const d of qSnap.docs) {
-        const qData = d.data() as any;
-        let correctAnswer = qData.correctAnswer ?? 0;
-        let explanation = qData.explanation ?? '';
-        let hint = qData.hint ?? '';
-        let solutionSteps = qData.solutionSteps ?? null;
-        let distractorAnalysis = qData.distractorAnalysis ?? null;
-        try {
-          const keyDoc = await getDoc(doc(db, 'exams', attemptData.examId, 'answerKeys', d.id));
-          if (keyDoc.exists()) {
-            const k = keyDoc.data();
-            if (k.correctAnswer !== undefined) correctAnswer = k.correctAnswer;
-            if (k.explanation) explanation = k.explanation;
-            if (k.hint) hint = k.hint;
-            if (k.solutionSteps) solutionSteps = k.solutionSteps;
-            if (k.distractorAnalysis) distractorAnalysis = k.distractorAnalysis;
-          }
-        } catch {}
-        questionsWithKeys.push({
-          id: d.id,
-          examId: attemptData.examId,
-          order: qData.order || (questionsWithKeys.length + 1),
-          questionText: qData.questionText || '',
-          options: qData.options || [],
-          difficulty: qData.difficulty || 'medium',
-          source: qData.source || 'أريكسون',
-          points: qData.points || 5,
-          questionType: qData.questionType || 'multiple_choice',
-          correctAnswer,
-          explanation,
-          hint,
-          solutionSteps,
-          distractorAnalysis,
-        });
-      }
-    }
-
-    if (questionsWithKeys.length === 0) {
-      return savedReviews;
-    }
-
-    // Reconstruct reviews
-    let correctCount = 0;
-    let wrongCount = 0;
-    let unansweredCount = 0;
-    let pointsEarned = 0;
-    const reconstructedReviews: QuestionReview[] = [];
-
-    for (const q of questionsWithKeys) {
-      const studentAns = savedAnswers[q.id] !== undefined ? savedAnswers[q.id] : null;
-      const isUnanswered = studentAns === null;
-      const isCorrect = !isUnanswered && Number(studentAns) === Number(q.correctAnswer);
-
-      if (isCorrect) {
-        correctCount++;
-        pointsEarned += (q.points || 5);
-      } else if (isUnanswered) {
-        unansweredCount++;
-      } else {
-        wrongCount++;
-      }
-
-      reconstructedReviews.push({
-        questionId: q.id,
-        questionNumber: q.order,
-        questionText: q.questionText,
-        options: q.options,
-        studentAnswer: studentAns,
-        correctAnswer: q.correctAnswer,
-        isCorrect,
-        isUnanswered,
-        explanation: q.explanation,
-        hint: q.hint,
-        solutionSteps: q.solutionSteps,
-        formulaUsed: q.formulaUsed,
-        distractorAnalysis: q.distractorAnalysis,
-        points: q.points || 5,
-        pointsEarned: isCorrect ? (q.points || 5) : 0,
-        source: q.source,
-      });
-    }
-
-    // Persist repaired reviews and score back to Firestore attempt doc
-    try {
-      const totalExamPoints = attemptData.totalPoints || (questionsWithKeys.length * 5) || 100;
-      const finalScore = Math.min(100, Math.round((pointsEarned / totalExamPoints) * 100));
-      await updateDoc(doc(db, 'attempts', attemptId), {
-        reviews: reconstructedReviews,
-        score: finalScore,
-        pointsEarned,
-        correctAnswers: correctCount,
-        wrongAnswers: wrongCount,
-        unanswered: unansweredCount,
-      });
-
-      // Credit missing points to user profile and public profile if score was previously 0
-      const pointDifference = pointsEarned - (attemptData.pointsEarned || 0);
-      if (pointDifference > 0) {
-        try {
-          const userDocRef = doc(db, 'users', userId);
-          const uSnap = await getDoc(userDocRef);
-          if (uSnap.exists()) {
-            const uData = uSnap.data() as UserProfile;
-            const newTotal = (uData.totalPoints || 0) + pointDifference;
-            const newWeekly = (uData.weeklyPoints || 0) + pointDifference;
-            const newMonthly = (uData.monthlyPoints || 0) + pointDifference;
-            await updateDoc(userDocRef, {
-              totalPoints: newTotal,
-              weeklyPoints: newWeekly,
-              monthlyPoints: newMonthly,
-              correctAnswers: (uData.correctAnswers || 0) + correctCount,
-              updatedAt: new Date().toISOString(),
-            });
-
-            // Sync to publicProfile
-            const pubRef = doc(db, 'publicProfiles', userId);
-            await setDoc(pubRef, {
-              totalPoints: newTotal,
-              weeklyPoints: newWeekly,
-              monthlyPoints: newMonthly,
-              correctAnswers: (uData.correctAnswers || 0) + correctCount,
-              updatedAt: new Date().toISOString(),
-            }, { merge: true });
-
-            // Update localStorage cached profile
-            const cacheKey = `arixon_cached_profile_${userId}`;
-            const rawProfile = localStorage.getItem(cacheKey);
-            if (rawProfile) {
-              const parsed = JSON.parse(rawProfile);
-              parsed.totalPoints = newTotal;
-              parsed.weeklyPoints = newWeekly;
-              parsed.monthlyPoints = newMonthly;
-              localStorage.setItem(cacheKey, JSON.stringify(parsed));
-            }
-          }
-        } catch (credErr) {
-          console.warn('Notice crediting repaired exam points:', credErr);
-        }
-      }
-
-      // Update attempt in localStorage cache
-      try {
-        localStorage.setItem(`arixon_attempt_${attemptId}`, JSON.stringify({
-          ...attemptData,
-          reviews: reconstructedReviews,
-          score: finalScore,
-          pointsEarned,
-          correctAnswers: correctCount,
-          wrongAnswers: wrongCount,
-          unanswered: unansweredCount,
-        }));
-      } catch {}
-    } catch (saveErr) {
-      console.warn('Notice saving repaired reviews to attempt:', saveErr);
-    }
-
-    return reconstructedReviews;
+    return savedReviews;
   } catch (error) {
     console.error('Error fetching reviews:', error);
     return [];

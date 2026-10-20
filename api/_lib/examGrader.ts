@@ -291,24 +291,26 @@ export async function gradeAndSubmitExam(params: {
     const q = questionsWithKeys[idx];
     const qOrder = q.order || (idx + 1);
 
-    // Multi-key matching ensures no answer is lost regardless of index notation
+    // Strict fixed questionId matching
     let studentAns: number | null = null;
     if (answers[q.id] !== undefined && answers[q.id] !== null) {
       studentAns = answers[q.id];
     } else if (answers[q.id.toLowerCase()] !== undefined && answers[q.id.toLowerCase()] !== null) {
       studentAns = answers[q.id.toLowerCase()];
-    } else if (answers[`q_${qOrder}`] !== undefined && answers[`q_${qOrder}`] !== null) {
-      studentAns = answers[`q_${qOrder}`];
-    } else if (answers[`lit_q${qOrder}`] !== undefined && answers[`lit_q${qOrder}`] !== null) {
-      studentAns = answers[`lit_q${qOrder}`];
-    } else if (answers[`q${qOrder}`] !== undefined && answers[`q${qOrder}`] !== null) {
-      studentAns = answers[`q${qOrder}`];
-    } else if (answers[String(qOrder)] !== undefined && answers[String(qOrder)] !== null) {
-      studentAns = answers[String(qOrder)];
-    } else if (answers[String(idx)] !== undefined && answers[String(idx)] !== null) {
-      studentAns = answers[String(idx)];
-    } else if (answers[`q_${idx}`] !== undefined && answers[`q_${idx}`] !== null) {
-      studentAns = answers[`q_${idx}`];
+    } else {
+      // Positional / index fallback: logs an explicit warning for data cleanup
+      let fallbackKey: string | null = null;
+      if (answers[`q_${qOrder}`] !== undefined && answers[`q_${qOrder}`] !== null) fallbackKey = `q_${qOrder}`;
+      else if (answers[`lit_q${qOrder}`] !== undefined && answers[`lit_q${qOrder}`] !== null) fallbackKey = `lit_q${qOrder}`;
+      else if (answers[`q${qOrder}`] !== undefined && answers[`q${qOrder}`] !== null) fallbackKey = `q${qOrder}`;
+      else if (answers[String(qOrder)] !== undefined && answers[String(qOrder)] !== null) fallbackKey = String(qOrder);
+      else if (answers[String(idx)] !== undefined && answers[String(idx)] !== null) fallbackKey = String(idx);
+      else if (answers[`q_${idx}`] !== undefined && answers[`q_${idx}`] !== null) fallbackKey = `q_${idx}`;
+
+      if (fallbackKey !== null) {
+        studentAns = answers[fallbackKey];
+        console.warn(`[ExamGrader WARNING: NON_STRICT_FALLBACK_TRIGGERED] Exam: "${examId}", Question: "${q.id}" (Order: ${qOrder}). Missing exact key "${q.id}"; matched legacy positional fallback "${fallbackKey}".`);
+      }
     }
 
     const isUnanswered = studentAns === null || studentAns === undefined;

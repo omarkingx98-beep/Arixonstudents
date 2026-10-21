@@ -647,6 +647,17 @@ export async function submitExamAttempt(
   // 1. Gather all answers from state override or storage
   const savedAnswers: Record<string, number | null> = { ...(answersOverride || await getSavedAnswersForAttempt(attemptId)) };
 
+  // Fetch current attempt document from Firestore or local cache
+  let attemptData: any = {};
+  try {
+    const attemptDoc = await getDoc(doc(db, 'attempts', attemptId));
+    if (attemptDoc.exists()) {
+      attemptData = attemptDoc.data() || {};
+    }
+  } catch (attErr) {
+    console.warn(`[ExamSubmission] Notice reading attempt document ${attemptId}:`, attErr);
+  }
+
   // (أ) Step A Diagnostic Log: Answer count in state before submit
   console.log(`[ExamSubmission] Step A: State answers count before submit: ${Object.keys(savedAnswers).length}`, savedAnswers);
 
@@ -707,6 +718,18 @@ export async function submitExamAttempt(
         body: JSON.stringify({
           attemptId,
           answers: savedAnswers,
+          clientAttemptData: {
+            ...attemptData,
+            id: attemptId,
+            examId: attemptData.examId,
+            userId,
+            startedAt: attemptData.startedAt,
+            expectedEndAt: attemptData.expectedEndAt,
+            examTitle: attemptData.examTitle,
+            totalPoints: attemptData.totalPoints,
+            isRetake: attemptData.isRetake,
+          },
+          idToken,
         }),
         signal: abortController.signal,
       });

@@ -40,6 +40,8 @@ export const FIRST_EXAM_QUESTIONS: Question[] = [
     difficulty: 'medium',
     source: 'امتحان الثانوية العامة الوزاري - فلسطين 2020',
     questionType: 'multiple_choice'
+  ,
+    hint: 'تذكر العلاقة الرياضية المباشرة بين الطاقة الحركية والزخم الخطي: K = p² / (2m). عند ثبات الكتلة m، كيف يتغير الزخم الخطي p عندما تتضاعف الطاقة الحركية K بمقدار 4 مرات؟'
   },
   {
     id: 'q2',
@@ -56,6 +58,8 @@ export const FIRST_EXAM_QUESTIONS: Question[] = [
     difficulty: 'easy',
     source: 'امتحان الثانوية العامة الوزاري - فلسطين 2019',
     questionType: 'multiple_choice'
+  ,
+    hint: 'فكر في التكامل الرياضي أو حاصل ضرب المحورين: القوة مضروبة في الزمن (F × Δt)، ما هي الكمية الفيزيائية الناتجة؟'
   },
   {
     id: 'q3',
@@ -72,6 +76,8 @@ export const FIRST_EXAM_QUESTIONS: Question[] = [
     difficulty: 'easy',
     source: 'امتحان الثانوية العامة الوزاري - 2021',
     questionType: 'multiple_choice'
+  ,
+    hint: 'الزخم كمية متجهة. بما أن الكرتين تتحركان في نفس الاتجاه، فإن الزخم الكلي للنظام هو الجمع الاتجاهي لزخم كل كرة على حدة.'
   },
   {
     id: 'q4',
@@ -88,6 +94,8 @@ export const FIRST_EXAM_QUESTIONS: Question[] = [
     difficulty: 'medium',
     source: 'امتحان الثانوية العامة الوزاري - 2018',
     questionType: 'multiple_choice'
+  ,
+    hint: 'استخدم مبرهنة (الدفع - الزخم): الدفع يساوي حاصل ضرب القوة في الزمن (F · Δt) ويساوي أيضاً حاصل ضرب الكتلة في التغير في السرعة (m · Δv).'
   },
   {
     id: 'q5',
@@ -104,6 +112,8 @@ export const FIRST_EXAM_QUESTIONS: Question[] = [
     difficulty: 'hard',
     source: 'امتحان الثانوية العامة الوزاري - 2021',
     questionType: 'multiple_choice'
+  ,
+    hint: 'انتبه إلى أن الزخم كمية متجهة. بعد نصف دورة ينعكس اتجاه السرعة المماسية تماماً ليصبح في الاتجاه المعاكس تماماً للسرعة الابتدائية.'
   },
   {
     id: 'q6',
@@ -120,6 +130,8 @@ export const FIRST_EXAM_QUESTIONS: Question[] = [
     difficulty: 'medium',
     source: 'امتحان الثانوية العامة الوزاري - 2020',
     questionType: 'multiple_choice'
+  ,
+    hint: 'الدفع I = F · Δt. إذا كان الدفع متساوياً لكلا القوتين (I₁ = I₂)، فهناك علاقة عكسية بين مقدار القوة وزمن التأثير.'
   },
   {
     id: 'q7',
@@ -136,6 +148,8 @@ export const FIRST_EXAM_QUESTIONS: Question[] = [
     difficulty: 'medium',
     source: 'امتحان الثانوية العامة الوزاري - 2019',
     questionType: 'multiple_choice'
+  ,
+    hint: 'الميل (Slope) = التغير في الصادات مقسوماً على التغير في السينات = I / Δv. تذكر القانون الذي يربط الدفع بالتغير في السرعة.'
   },
   {
     id: 'q8',
@@ -152,6 +166,8 @@ export const FIRST_EXAM_QUESTIONS: Question[] = [
     difficulty: 'easy',
     source: 'امتحان الثانوية العامة الوزاري - 2021',
     questionType: 'multiple_choice'
+  ,
+    hint: 'الميل يساوي التغير في الزخم الخطي مقسوماً على التغير في السرعة (Δp / Δv). ما هو الثابت الفيزيائي الناتج؟'
   },
   {
     id: 'q9',
@@ -168,6 +184,8 @@ export const FIRST_EXAM_QUESTIONS: Question[] = [
     difficulty: 'easy',
     source: 'امتحان الثانوية العامة الوزاري - 2018',
     questionType: 'multiple_choice'
+  ,
+    hint: 'الزخم كمية متجهة لها مقدار واتجاه. ماذا يحدث عند جمع متجهين متساويين في المقدار ومتعاكسين في الاتجاه؟'
   },
   {
     id: 'q10',
@@ -184,6 +202,8 @@ export const FIRST_EXAM_QUESTIONS: Question[] = [
     difficulty: 'medium',
     source: 'امتحان الثانوية العامة الوزاري - 2020',
     questionType: 'multiple_choice'
+  ,
+    hint: 'العلاقة بين الطاقة الحركية والزخم: K = p² / (2m). بما أن الكتلتين متساويتان، فإن الطاقة الحركية تتناسب طردياً مع مربع الزخم الخطي.'
   },
   {
     id: 'q11',
@@ -200,6 +220,8 @@ export const FIRST_EXAM_QUESTIONS: Question[] = [
     difficulty: 'easy',
     source: 'امتحان الثانوية العامة الوزاري - 2017',
     questionType: 'multiple_choice'
+  ,
+    hint: 'تذكر نص مبرهنة (الدفع - الزخم الخطي) الشهيرة: دفع القوة المحصلة = ...؟'
   },
   {
     id: 'q12',
@@ -216,6 +238,8 @@ export const FIRST_EXAM_QUESTIONS: Question[] = [
     difficulty: 'medium',
     source: 'امتحان الثانوية العامة الوزاري - 2019',
     questionType: 'multiple_choice'
+  ,
+    hint: 'النظام المكون من (الرجل + الولد) هو نظام معزول لا تؤثر عليه قوى خارجية أفقية على السطح الجليدي. ماذا ينص مبدأ حفظ الزخم الخطي للنظام ككل؟'
   },
   {
     id: 'q13',
@@ -232,6 +256,8 @@ export const FIRST_EXAM_QUESTIONS: Question[] = [
     difficulty: 'hard',
     source: 'امتحان الثانوية العامة الوزاري - 2021',
     questionType: 'multiple_choice'
+  ,
+    hint: 'انتبه جيداً لترتيب النسبة المطلوبة (P2 : P1). تذكر أن الزخم يتناسب طردياً مع جذر الطاقة الحركية: p = √(2mK).'
   },
   {
     id: 'q14',
@@ -248,6 +274,8 @@ export const FIRST_EXAM_QUESTIONS: Question[] = [
     difficulty: 'easy',
     source: 'امتحان الثانوية العامة الوزاري - 2018',
     questionType: 'multiple_choice'
+  ,
+    hint: 'وفق قانون نيوتن الثاني: متوسط القوة المؤثرة يساوي المعدل الزمني للتغير في الزخم الخطي: F_avg = Δp / Δt (أي ميل منحنى p-t).'
   },
   {
     id: 'q15',
@@ -264,6 +292,8 @@ export const FIRST_EXAM_QUESTIONS: Question[] = [
     difficulty: 'medium',
     source: 'امتحان الثانوية العامة الوزاري - 2020',
     questionType: 'multiple_choice'
+  ,
+    hint: 'احسب التغير المطلوب في الزخم أولاً: Δp = m · (v₂ - v₁)، ثم طبق قانون الدفع والزخم F · Δt = Δp لحساب الزمن Δt.'
   },
   {
     id: 'q16',
@@ -280,6 +310,8 @@ export const FIRST_EXAM_QUESTIONS: Question[] = [
     difficulty: 'medium',
     source: 'امتحان الثانوية العامة الوزاري - 2017',
     questionType: 'multiple_choice'
+  ,
+    hint: 'النظام (المدفع والقذيفة) كان ساكناً قبل الإطلاق. طبق قانون حفظ الزخم الخطي: الزخم الابتدائي الكلي = الزخم النهائي الكلي = 0.'
   },
   {
     id: 'q17',
@@ -296,6 +328,8 @@ export const FIRST_EXAM_QUESTIONS: Question[] = [
     difficulty: 'easy',
     source: 'امتحان الثانوية العامة الوزاري - 2019',
     questionType: 'multiple_choice'
+  ,
+    hint: 'الكتلتان تتحركان في الاتجاه نفسه. احسب زخم كل كتلة على حدة ثم اجمعهما جبرياً.'
   },
   {
     id: 'q18',
@@ -312,6 +346,8 @@ export const FIRST_EXAM_QUESTIONS: Question[] = [
     difficulty: 'medium',
     source: 'امتحان الثانوية العامة الوزاري - 2021',
     questionType: 'multiple_choice'
+  ,
+    hint: 'العلاقة بين الطاقة الحركية والزخم بثبوت الكتلة: K تتناسب طردياً مع مربع الزخم (K ∝ p²). ما هو مربع المعامل 3؟'
   },
   {
     id: 'q19',
@@ -328,6 +364,8 @@ export const FIRST_EXAM_QUESTIONS: Question[] = [
     difficulty: 'hard',
     source: 'امتحان الثانوية العامة الوزاري - 2020',
     questionType: 'multiple_choice'
+  ,
+    hint: 'انتبه بشدة للإشارات والاتجاهات! السرعة قبل الاصطدام موجبة (+4)، وبعد الارتداد المعاكس سالبة (-4). التغير هو: Δv = v_final - v_initial.'
   },
   {
     id: 'q20',
@@ -344,5 +382,7 @@ export const FIRST_EXAM_QUESTIONS: Question[] = [
     difficulty: 'medium',
     source: 'امتحان الثانوية العامة الوزاري - 2021',
     questionType: 'multiple_choice'
+  ,
+    hint: 'صيغة الزخم بدلالة طاقة الحركة: p = √(2mK). عندما تتضاعف K مرتين، بمقدار كم يتضاعف الزخم p؟'
   }
 ];

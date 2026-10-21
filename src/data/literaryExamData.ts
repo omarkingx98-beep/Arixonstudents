@@ -39,6 +39,8 @@ export const LITERARY_EXAM_QUESTIONS: Question[] = [
     difficulty: 'easy',
     source: 'امتحان الثانوية العامة الوزاري - مهارات اتصال',
     questionType: 'multiple_choice'
+  ,
+    hint: 'هل يمكن استبدال حرف الجر بكلمة (بعض) في المعنى السياقي؟'
   },
   {
     id: 'lit_q2',
@@ -55,6 +57,8 @@ export const LITERARY_EXAM_QUESTIONS: Question[] = [
     difficulty: 'medium',
     source: 'قواعد التوجيهي الوزاري 2009',
     questionType: 'multiple_choice'
+  ,
+    hint: 'الاسم النكرة المنصوب بعد أفعال المدح والذم (نعم وبئس) عندما يكون الفاعل ضميراً مستتراً.'
   },
   {
     id: 'lit_q3',
@@ -71,6 +75,8 @@ export const LITERARY_EXAM_QUESTIONS: Question[] = [
     difficulty: 'easy',
     source: 'أسئلة الصرف الوزارية',
     questionType: 'multiple_choice'
+  ,
+    hint: 'الأفعال الخماسية المبدوءة بتاء زائدة على وزن تفاعَلَ يأتي مصدرها بضم ما قبل الآخر.'
   },
   {
     id: 'lit_q4',
@@ -87,6 +93,8 @@ export const LITERARY_EXAM_QUESTIONS: Question[] = [
     difficulty: 'medium',
     source: 'قواعد التوجيهي - التوابع',
     questionType: 'multiple_choice'
+  ,
+    hint: 'هل الخُلق جزء مادي حقيقي من أجزاء الطالب أم صفة معنوية يشتمل عليها؟'
   },
   {
     id: 'lit_q5',
@@ -103,6 +111,8 @@ export const LITERARY_EXAM_QUESTIONS: Question[] = [
     difficulty: 'medium',
     source: 'العروض والقافية - التوجيهي الوزاري',
     questionType: 'multiple_choice'
+  ,
+    hint: 'مفتاح البحر: كَمُلَ الجمالُ من البحورِ الكاملُ ... مُتَفاعِلُنْ مُتَفاعِلُنْ مُتَفاعِلُنْ.'
   },
   {
     id: 'lit_q6',
@@ -119,6 +129,8 @@ export const LITERARY_EXAM_QUESTIONS: Question[] = [
     difficulty: 'easy',
     source: 'قواعد التوجيهي - أسلوب التعجب',
     questionType: 'multiple_choice'
+  ,
+    hint: 'التعجب القياسي له صيغتان معروفتان: (ما أفْعَلَ!) و(أفْعِلْ بِه!).'
   },
   {
     id: 'lit_q7',
@@ -135,6 +147,8 @@ export const LITERARY_EXAM_QUESTIONS: Question[] = [
     difficulty: 'medium',
     source: 'الصرف الوزاري - اسم الفاعل والمفعول',
     questionType: 'multiple_choice'
+  ,
+    hint: 'الفعل الأجوف الواوي أو اليائي: نأتي بالمضارع (يبيع) ونستبدل حرف المضارعة ميماً مفتوحة.'
   },
   {
     id: 'lit_q8',
@@ -151,6 +165,8 @@ export const LITERARY_EXAM_QUESTIONS: Question[] = [
     difficulty: 'easy',
     source: 'قواعد النحو الوزارية',
     questionType: 'multiple_choice'
+  ,
+    hint: 'ما هو أثر الحرف الناسخ (أنّ) على المبتدأ؟'
   },
   {
     id: 'lit_q9',
@@ -167,6 +183,8 @@ export const LITERARY_EXAM_QUESTIONS: Question[] = [
     difficulty: 'medium',
     source: 'البلاغة العربية والنقد الأدبي',
     questionType: 'multiple_choice'
+  ,
+    hint: 'عندما يتطابق تركيبان في تضاد أكثر من معنى على الترتيب (حاربوا × سالموا / أذلوا × أعزوا / عزيزاً × ذليلاً).'
   },
   {
     id: 'lit_q10',
@@ -183,6 +201,8 @@ export const LITERARY_EXAM_QUESTIONS: Question[] = [
     difficulty: 'easy',
     source: 'الإملاء والترقيم الوزاري',
     questionType: 'multiple_choice'
+  ,
+    hint: 'عدّ حروف الفعل (ا - هـ - ت - د - ى) ولاحظ الحرف الذي يسبق الألف الأخيرة.'
   },
   {
     id: 'lit_q11',
@@ -199,6 +219,8 @@ export const LITERARY_EXAM_QUESTIONS: Question[] = [
     difficulty: 'easy',
     source: 'قواعد النحو الوزارية 2009',
     questionType: 'multiple_choice'
+  ,
+    hint: 'الأداة (لا) هنا تفيد طلب الكف عن الفعل (نهي).'
   },
   {
     id: 'lit_q12',
@@ -215,6 +237,8 @@ export const LITERARY_EXAM_QUESTIONS: Question[] = [
     difficulty: 'medium',
     source: 'النحو والصرف - أسلوب النداء',
     questionType: 'multiple_choice'
+  ,
+    hint: 'المنادى منون واتصل به ما يتمم معناه (مفعول به لاسم الفاعل).'
   },
   {
     id: 'lit_q13',
@@ -231,6 +255,8 @@ export const LITERARY_EXAM_QUESTIONS: Question[] = [
     difficulty: 'hard',
     source: 'الصرف - الإبدال والإعلال',
     questionType: 'multiple_choice'
+  ,
+    hint: 'الإبدال في وزن افتعل إذا كانت فاء الفعل صاداً أو ضاداً أو طاء أو ظاء قُلبت تاؤه طاءً.'
   },
   {
     id: 'lit_q14',
@@ -247,6 +273,8 @@ export const LITERARY_EXAM_QUESTIONS: Question[] = [
     difficulty: 'medium',
     source: 'الميزان الصرفي الوزاري',
     questionType: 'multiple_choice'
+  ,
+    hint: 'الفعل الماضي المجرد هو (وَقَفَ) على وزن (فَعَلَ)، ما الحرف المحذوف في الأمر (قِفْ)؟'
   },
   {
     id: 'lit_q15',
@@ -263,6 +291,8 @@ export const LITERARY_EXAM_QUESTIONS: Question[] = [
     difficulty: 'easy',
     source: 'قواعد التوجيهي - كم الاستفهامية والخبرية',
     questionType: 'multiple_choice'
+  ,
+    hint: 'تمييزها مفرد منصوب وجاءت في سياق السؤال والاستعلام مع علامة الاستفهام.'
   },
   {
     id: 'lit_q16',
@@ -279,6 +309,8 @@ export const LITERARY_EXAM_QUESTIONS: Question[] = [
     difficulty: 'medium',
     source: 'العروض الوزاري التوجيهي',
     questionType: 'multiple_choice'
+  ,
+    hint: 'وزنه: فَعُولُنْ مَفَاعِيلُنْ فَعُولُنْ مَفَاعِلُنْ.'
   },
   {
     id: 'lit_q17',
@@ -295,6 +327,8 @@ export const LITERARY_EXAM_QUESTIONS: Question[] = [
     difficulty: 'easy',
     source: 'الصرف - المصادر الصريحة',
     questionType: 'multiple_choice'
+  ,
+    hint: 'الخماسي المبدوء بتاء زائدة يأتي مصدره على وزن ماضيه مع ضم ما قبل الآخر.'
   },
   {
     id: 'lit_q18',
@@ -311,6 +345,8 @@ export const LITERARY_EXAM_QUESTIONS: Question[] = [
     difficulty: 'medium',
     source: 'قواعد النحو - أسلوب الاستثناء',
     questionType: 'multiple_choice'
+  ,
+    hint: 'المستثنى منه مذكور (الواو في فعلوه) والجملة مسبوقة بأداة نفي (ما).'
   },
   {
     id: 'lit_q19',
@@ -327,6 +363,8 @@ export const LITERARY_EXAM_QUESTIONS: Question[] = [
     difficulty: 'medium',
     source: 'قواعد التوجيهي - أسلوب المدح والذم',
     questionType: 'multiple_choice'
+  ,
+    hint: 'الاسم النكرة المنصوب بعد فعلي المدح والذم (نعم وبئس) يفسر الفاعل المستتر ويعرب تمييزاً.'
   },
   {
     id: 'lit_q20',
@@ -343,5 +381,7 @@ export const LITERARY_EXAM_QUESTIONS: Question[] = [
     difficulty: 'medium',
     source: 'البلاغة العربية - المعاني البلاغية للأمر',
     questionType: 'multiple_choice'
+  ,
+    hint: 'الأمر صادر من الشاعر إلى صاحبيه ورفيقيه المتساويين معه في المنزلة والقدر.'
   }
 ];

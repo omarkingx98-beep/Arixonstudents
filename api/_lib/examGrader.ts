@@ -8,6 +8,7 @@ import {
   LITERARY_EXAM_QUESTIONS, 
   type QuestionWithKey 
 } from './examData.js';
+import { getRestDoc, getRestCollection, patchRestDoc } from './firestoreRest.js';
 
 export type ExamErrorCode =
   | 'SUCCESS'
@@ -136,6 +137,7 @@ export async function gradeAndSubmitExam(params: {
   console.log(`[ExamGrader] Step 1 [${currentStep}]: Starting grading for attempt: ${attemptId}, user: ${userId}, answers count: ${Object.keys(answers).length}`);
 
   if (!attemptId || !userId) {
+    console.error(`[ExamGrader 400 ERROR] code=AUTH_FAILED, message="معرف المحاولة أو معرف المستخدم مفقود", examId="${params.clientAttemptData?.examId || 'unknown'}", attemptId="${attemptId || 'missing'}", uid="${userId || 'missing'}", step="${currentStep}"`);
     return {
       ok: false,
       code: 'AUTH_FAILED',
@@ -146,11 +148,11 @@ export async function gradeAndSubmitExam(params: {
 
   const { db, hasServiceAccount } = getAdminFirestore();
 
-  // 1. Retrieve Attempt Document
+  // 1. Retrieve Attempt Document (via Admin SDK, REST API, or Client Payload)
   currentStep = 'FETCH_ATTEMPT';
   let attemptData: any = params.clientAttemptData || null;
 
-  if (hasServiceAccount && db) {
+  if (!attemptData && hasServiceAccount && db) {
     try {
       const attemptDoc = await withTimeout(
         db.collection('attempts').doc(attemptId).get(),
@@ -165,8 +167,38 @@ export async function gradeAndSubmitExam(params: {
     }
   }
 
+  // REST API fallback for attempt retrieval if Admin SDK is unconfigured
+  if (!attemptData && params.idToken) {
+    try {
+      const restDoc = await getRestDoc(`attempts/${attemptId}`, params.idToken);
+      if (restDoc) {
+        attemptData = restDoc;
+      }
+    } catch (restErr: any) {
+      console.warn(`[ExamGrader] Notice REST fetch for attempt ${attemptId}:`, restErr?.message);
+    }
+  }
+
+  // Auto-infer examId and attempt metadata from attemptId string format: att_{uid}_{examId}_{timestamp}
+  if (!attemptData && attemptId.startsWith('att_')) {
+    const parts = attemptId.split('_');
+    // format: att, [uid_prefix], [exam], [id_parts...], [timestamp]
+    if (parts.length >= 4) {
+      const inferredExamId = parts.slice(2, -1).join('_');
+      console.log(`[ExamGrader] Auto-inferred attempt metadata from ID: examId=${inferredExamId}, user=${userId}`);
+      attemptData = {
+        id: attemptId,
+        examId: inferredExamId,
+        userId,
+        status: 'in_progress',
+        startedAt: new Date(Date.now() - 600000).toISOString(),
+        expectedEndAt: new Date(Date.now() + 600000).toISOString(),
+      };
+    }
+  }
+
   if (!attemptData) {
-    // If not in Firestore and no clientAttemptData passed, we cannot proceed
+    console.error(`[ExamGrader 400 ERROR] code=ATTEMPT_NOT_FOUND, message="تعذر العثور على وثيقة المحاولة في قاعدة البيانات", examId="unknown", attemptId="${attemptId}", uid="${userId}", step="${currentStep}"`);
     return {
       ok: false,
       code: 'ATTEMPT_NOT_FOUND',
@@ -178,7 +210,7 @@ export async function gradeAndSubmitExam(params: {
   // 2. Ownership Check
   currentStep = 'OWNERSHIP_CHECK';
   if (attemptData.userId && attemptData.userId !== userId) {
-    console.error(`[ExamGrader] Ownership mismatch: attempt user ${attemptData.userId} vs request user ${userId}`);
+    console.error(`[ExamGrader 400 ERROR] code=AUTH_FAILED, message="غير مصرح لك بتسليم هذه المحاولة", examId="${attemptData.examId || 'unknown'}", attemptId="${attemptId}", uid="${userId}", step="${currentStep}"`);
     return {
       ok: false,
       code: 'AUTH_FAILED',
@@ -209,10 +241,11 @@ export async function gradeAndSubmitExam(params: {
   const examSubject = attemptData.examSubject || '';
   let questionsWithKeys: QuestionWithKey[] = [];
 
-  if (hasServiceAccount && db) {
+  // 4a. Fetch from Admin Firestore SDK
+  if (hasServiceAccount && db && examId) {
     try {
       const qSnap = await withTimeout(
-        db.collection('exams').doc(examId).collection('questions').orderBy('order', 'asc').get(),
+        db.collection('exams').doc(examId).collection('questions').get(),
         4000,
         'FETCH_QUESTIONS'
       );
@@ -230,20 +263,24 @@ export async function gradeAndSubmitExam(params: {
           }
         });
 
-        qSnap.docs.forEach((qDoc) => {
+        const sortedDocs = [...qSnap.docs].sort((a, b) => (a.data().order || 0) - (b.data().order || 0));
+
+        sortedDocs.forEach((qDoc, idx) => {
           const qData = qDoc.data();
           const keyData = keysMap.get(qDoc.id) || {};
+          const ansKey = keyData.correctAnswer !== undefined ? keyData.correctAnswer : (qData.correctAnswer !== undefined ? qData.correctAnswer : 0);
+
           questionsWithKeys.push({
             id: qDoc.id,
             examId,
-            order: qData.order || (questionsWithKeys.length + 1),
+            order: qData.order || (idx + 1),
             questionText: qData.questionText || '',
             options: qData.options || [],
             difficulty: qData.difficulty || 'medium',
             source: qData.source || 'أريكسون',
             points: qData.points || 5,
             questionType: qData.questionType || 'multiple_choice',
-            correctAnswer: keyData.correctAnswer !== undefined ? keyData.correctAnswer : (qData.correctAnswer ?? 0),
+            correctAnswer: ansKey,
             explanation: keyData.explanation || qData.explanation || '',
             hint: keyData.hint || qData.hint || '',
             solutionSteps: keyData.solutionSteps || qData.solutionSteps || null,
@@ -256,7 +293,40 @@ export async function gradeAndSubmitExam(params: {
     }
   }
 
-  // Fallback to verified ministerial banks
+  // 4b. REST API fallback for questions if Admin SDK unconfigured or returned empty
+  if (questionsWithKeys.length === 0 && examId) {
+    try {
+      const restDocs = await getRestCollection(`exams/${examId}/questions`, params.idToken);
+      if (restDocs.length > 0) {
+        restDocs.sort((a, b) => (a.data.order || 0) - (b.data.order || 0));
+        for (let idx = 0; idx < restDocs.length; idx++) {
+          const qItem = restDocs[idx];
+          const qData = qItem.data;
+          const ansKey = qData.correctAnswer !== undefined ? qData.correctAnswer : 0;
+          questionsWithKeys.push({
+            id: qItem.id,
+            examId,
+            order: qData.order || (idx + 1),
+            questionText: qData.questionText || '',
+            options: qData.options || [],
+            difficulty: qData.difficulty || 'medium',
+            source: qData.source || 'أريكسون',
+            points: qData.points || 5,
+            questionType: qData.questionType || 'multiple_choice',
+            correctAnswer: ansKey,
+            explanation: qData.explanation || '',
+            hint: qData.hint || '',
+            solutionSteps: qData.solutionSteps || null,
+            distractorAnalysis: qData.distractorAnalysis || null,
+          });
+        }
+      }
+    } catch (restQErr: any) {
+      console.warn(`[ExamGrader] Notice REST fetch for questions of exam ${examId}:`, restQErr?.message);
+    }
+  }
+
+  // 4c. Built-in verified ministerial banks for Physics and Arabic
   if (questionsWithKeys.length === 0) {
     const isArabic = examId === LITERARY_EXAM_ID || examId.includes('arabic') || examSubject.includes('عرب');
     const isPhysics = examId === FIRST_EXAM_ID || examId.includes('physics') || examSubject.includes('فيزياء');
@@ -265,12 +335,11 @@ export async function gradeAndSubmitExam(params: {
       questionsWithKeys = FIRST_EXAM_QUESTIONS;
     } else if (isArabic) {
       questionsWithKeys = LITERARY_EXAM_QUESTIONS;
-    } else {
-      questionsWithKeys = LITERARY_EXAM_QUESTIONS;
     }
   }
 
   if (questionsWithKeys.length === 0) {
+    console.error(`[ExamGrader 400 ERROR] code=ANSWER_KEYS_MISSING, message="تعذر العثور على أسئلة ومفاتيح إجابة هذا الامتحان", examId="${examId}", attemptId="${attemptId}", uid="${userId}", step="${currentStep}"`);
     return {
       ok: false,
       code: 'ANSWER_KEYS_MISSING',
@@ -413,6 +482,18 @@ export async function gradeAndSubmitExam(params: {
               updatedAt: nowIso,
               lastActiveAt: nowIso,
             });
+
+            // Sync publicProfiles directly from the server
+            const pubRef = db.collection('publicProfiles').doc(userId);
+            transaction.set(pubRef, {
+              uid: userId,
+              totalPoints: currentTotal + pointsAwarded,
+              points: currentTotal + pointsAwarded,
+              examsCompleted: currentExams + (isFirstCompletion ? 1 : 0),
+              correctAnswers: currentCorrect + correctCount,
+              wrongAnswers: currentWrong + wrongCount,
+              updatedAt: nowIso,
+            }, { merge: true });
           }
 
           transaction.set(attemptRef, updatedAttempt, { merge: true });
@@ -423,6 +504,30 @@ export async function gradeAndSubmitExam(params: {
       writeSucceeded = true;
     } catch (writeErr: any) {
       console.warn(`[ExamGrader] Firestore transaction warning at ${currentStep}:`, writeErr?.message);
+    }
+  }
+
+  // REST fallback to update attempt if Admin SDK is unavailable
+  if (!writeSucceeded && params.idToken) {
+    try {
+      const patchOk = await patchRestDoc(`attempts/${attemptId}`, {
+        status: 'submitted',
+        submittedAt: nowIso,
+        score: scorePercent,
+        correctCount,
+        wrongCount,
+        unansweredCount,
+        durationUsed,
+        pointsEarned: pointsAwarded,
+        answers,
+        reviews,
+      }, params.idToken);
+      if (patchOk) {
+        writeSucceeded = true;
+        console.log(`[ExamGrader] Attempt ${attemptId} successfully updated via authenticated REST API.`);
+      }
+    } catch (restPatchErr: any) {
+      console.warn('[ExamGrader] REST patch error for attempt:', restPatchErr?.message);
     }
   }
 

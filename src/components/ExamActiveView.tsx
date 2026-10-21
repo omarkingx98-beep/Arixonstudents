@@ -19,6 +19,7 @@ import {
   AlertTriangle,
   Lightbulb
 } from 'lucide-react';
+import { useAdmin } from '../context/AdminContext';
 
 interface ExamActiveViewProps {
   exam: Exam;
@@ -120,12 +121,15 @@ export const ExamActiveView: React.FC<ExamActiveViewProps> = ({
     }
   };
 
+  const { isAdmin } = useAdmin();
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitDiagnostic, setSubmitDiagnostic] = useState<{ code: string; step: string } | null>(null);
 
   // Submission handler
   const handleFinalSubmit = async (isAutoExpire = false) => {
     if (isSubmitting) return;
     setSubmitError(null);
+    setSubmitDiagnostic(null);
     setIsSubmitting(true);
     setShowSubmitModal(false);
 
@@ -136,6 +140,10 @@ export const ExamActiveView: React.FC<ExamActiveViewProps> = ({
       console.error('Error submitting exam:', err);
       setIsSubmitting(false);
       setSubmitError(err?.message || 'تعذّر التسليم، حاول مرة ثانية.');
+      setSubmitDiagnostic({
+        code: err?.code || 'UNKNOWN',
+        step: err?.step || 'UNKNOWN',
+      });
     }
   };
 
@@ -572,6 +580,12 @@ export const ExamActiveView: React.FC<ExamActiveViewProps> = ({
               <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
                 {submitError}. تم الاحتفاظ بجميع إجاباتك كاملة دون فقدان أي سؤال.
               </p>
+
+              {isAdmin && submitDiagnostic && (
+                <div className="p-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[11px] font-mono text-slate-700 dark:text-slate-300 text-left dir-ltr select-all">
+                  [ADMIN DIAG] Code: {submitDiagnostic.code} | Step: {submitDiagnostic.step}
+                </div>
+              )}
             </div>
 
             <div className="flex items-center gap-3 pt-2">

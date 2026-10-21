@@ -29,6 +29,7 @@ import type {
   AiGenerationJob,
   ExamTemplate,
   GenerationMode,
+  ExamAttempt,
 } from '../types';
 
 export const PRIMARY_ADMIN_EMAIL = 'omarkingx99@gmail.com';
@@ -1418,5 +1419,209 @@ export async function fetchAdminReports(): Promise<StudentReportItem[]> {
   } catch {
     return [];
   }
+}
+
+/**
+ * Check exam readiness before publishing (Part H & I)
+ * Verifies answerKeys, question text, option count, and validity of correctAnswer
+ */
+export async function checkExamReadiness(examId: string): Promise<{
+  ready: boolean;
+  errors: string[];
+  warnings: string[];
+  totalQuestions: number;
+  validCount: number;
+}> {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  try {
+    const examDoc = await getDoc(doc(db, 'exams', examId));
+    if (!examDoc.exists()) {
+      return { ready: false, errors: ['وثيقة الامتحان غير موجودة.'], warnings: [], totalQuestions: 0, validCount: 0 };
+    }
+
+    const qCol = collection(db, 'exams', examId, 'questions');
+    const qSnap = await getDocs(qCol);
+
+    if (qSnap.empty) {
+      return { ready: false, errors: ['الامتحان لا يحتوي على أي أسئلة.'], warnings: [], totalQuestions: 0, validCount: 0 };
+    }
+
+    const keyCol = collection(db, 'exams', examId, 'answerKeys');
+    const keySnap = await getDocs(keyCol);
+    const keysMap = new Map<string, any>();
+    keySnap.forEach((d) => keysMap.set(d.id, d.data()));
+
+    let validCount = 0;
+    qSnap.docs.forEach((d, idx) => {
+      const q = d.data();
+      const qNum = q.order || (idx + 1);
+      const keyData = keysMap.get(d.id);
+
+      if (!q.questionText || !q.questionText.trim()) {
+        errors.push(`السؤال #${qNum} (${d.id}): نص السؤال فارغ.`);
+      }
+
+      if (!Array.isArray(q.options) || q.options.length < 2) {
+        errors.push(`السؤال #${qNum} (${d.id}): عدد الخيارات أقل من 2.`);
+      }
+
+      const answer = keyData?.correctAnswer !== undefined ? keyData.correctAnswer : q.correctAnswer;
+      if (answer === undefined || answer === null || typeof answer !== 'number') {
+        errors.push(`السؤال #${qNum} (${d.id}): الإجابة النموذجية مفقودة أو غير محددة.`);
+      } else if (Array.isArray(q.options) && (answer < 0 || answer >= q.options.length)) {
+        errors.push(`السؤال #${qNum} (${d.id}): مؤشر الإجابة (${answer}) غير موجود ضمن خيارات السؤال (${q.options.length} خيارات).`);
+      } else {
+        validCount++;
+      }
+
+      if (!keyData && q.correctAnswer !== undefined) {
+        warnings.push(`السؤال #${qNum} (${d.id}): مفتاح الإجابة مخزن بالسؤال فقط وغير منسوخ لمجموعة answerKeys.`);
+      }
+    });
+
+    return {
+      ready: errors.length === 0,
+      errors,
+      warnings,
+      totalQuestions: qSnap.size,
+      validCount,
+    };
+  } catch (err: any) {
+    return {
+      ready: false,
+      errors: [`حدث خطأ أثناء فحص جاهزية الامتحان: ${err.message}`],
+      warnings: [],
+      totalQuestions: 0,
+      validCount: 0,
+    };
+  }
+}
+
+/**
+ * Repair and synchronize answerKeys subcollection for an exam or all exams (Part H & I)
+ */
+export async function repairExamAnswerKeys(targetExamId?: string): Promise<{
+  repairedExamsCount: number;
+  repairedKeysCount: number;
+  affectedExams: string[];
+}> {
+  let repairedExamsCount = 0;
+  let repairedKeysCount = 0;
+  const affectedExams: string[] = [];
+
+  try {
+    const examIds: string[] = [];
+    if (targetExamId) {
+      examIds.push(targetExamId);
+    } else {
+      const snap = await getDocs(collection(db, 'exams'));
+      snap.forEach((d) => examIds.push(d.id));
+    }
+
+    for (const examId of examIds) {
+      let examRepaired = false;
+      const qCol = collection(db, 'exams', examId, 'questions');
+      const qSnap = await getDocs(qCol);
+
+      for (const qDoc of qSnap.docs) {
+        const qData = qDoc.data();
+        const keyRef = doc(db, 'exams', examId, 'answerKeys', qDoc.id);
+        const keySnap = await getDoc(keyRef);
+
+        if (!keySnap.exists() && qData.correctAnswer !== undefined) {
+          await setDoc(keyRef, {
+            id: qDoc.id,
+            correctAnswer: qData.correctAnswer,
+            explanation: qData.explanation || '',
+            hint: qData.hint || null,
+            solutionSteps: qData.solutionSteps || null,
+            distractorAnalysis: qData.distractorAnalysis || null,
+            updatedAt: new Date().toISOString(),
+          }, { merge: true });
+          repairedKeysCount++;
+          examRepaired = true;
+        }
+      }
+
+      if (examRepaired) {
+        repairedExamsCount++;
+        affectedExams.push(examId);
+      }
+    }
+  } catch (err) {
+    console.warn('[adminService] Error in repairExamAnswerKeys:', err);
+  }
+
+  return { repairedExamsCount, repairedKeysCount, affectedExams };
+}
+
+/**
+ * Admin action: Re-grade pending and stuck exam attempts (submitted_pending / in_progress)
+ */
+export async function regradePendingAttempts(): Promise<{
+  regradedCount: number;
+  errors: string[];
+}> {
+  let regradedCount = 0;
+  const errors: string[] = [];
+
+  try {
+    const attemptsCol = collection(db, 'attempts');
+    const snap = await getDocs(attemptsCol);
+    const now = Date.now();
+
+    for (const aDoc of snap.docs) {
+      const att = aDoc.data() as ExamAttempt;
+      const isPending = att.status === 'submitted_pending';
+      const isStuckInProgress = att.status === 'in_progress' && att.expectedEndAt && now > new Date(att.expectedEndAt).getTime() + 60000;
+
+      if (isPending || isStuckInProgress) {
+        try {
+          let token = '';
+          if (auth.currentUser) {
+            token = await auth.currentUser.getIdToken();
+          }
+
+          // Fetch student answers
+          const ansCol = collection(db, 'attempts', aDoc.id, 'answers');
+          const ansSnap = await getDocs(ansCol);
+          const studentAnswers: Record<string, number | null> = {};
+          ansSnap.forEach((ad) => {
+            const data = ad.data();
+            studentAnswers[ad.id] = data.selectedAnswer !== undefined ? data.selectedAnswer : (data.selectedOptionIndex !== undefined ? data.selectedOptionIndex : null);
+          });
+
+          const res = await fetch('/api/exams/grade', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+            },
+            body: JSON.stringify({
+              attemptId: aDoc.id,
+              answers: Object.keys(studentAnswers).length > 0 ? studentAnswers : ((att as any).answers || {}),
+              clientAttemptData: att,
+              idToken: token,
+            }),
+          });
+
+          const resData = await res.json();
+          if (resData.ok || resData.success) {
+            regradedCount++;
+          } else {
+            errors.push(`المحاولة ${aDoc.id}: ${resData.message || resData.code}`);
+          }
+        } catch (itemErr: any) {
+          errors.push(`المحاولة ${aDoc.id}: ${itemErr.message}`);
+        }
+      }
+    }
+  } catch (err: any) {
+    errors.push(`فشل جلب المحاولات: ${err.message}`);
+  }
+
+  return { regradedCount, errors };
 }
 

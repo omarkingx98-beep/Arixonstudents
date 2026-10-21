@@ -70,12 +70,13 @@ export default async function handler(req: any, res: any) {
     const rawExamId = clientAttemptData?.examId || (attemptId ? (attemptId.split('_').slice(2, -1).join('_') || 'unknown') : 'unknown');
 
     if (!attemptId) {
-      console.error(`[API /api/exams/grade 400] code=VALIDATE_INPUT, message="معرف المحاولة مطلوب", examId="${rawExamId}", attemptId="missing", uid="unknown", step="VALIDATE_INPUT"`);
+      console.error(`[API /api/exams/grade 400] code=VALIDATE_INPUT, message="معرف المحاولة مطلوب", step="VALIDATE_INPUT", examId="${rawExamId}", attemptId="missing", uid="unknown", line="api/exams/grade.ts:74"`);
       return res.status(400).json({
         ok: false,
         code: 'VALIDATE_INPUT',
         message: 'معرف المحاولة مطلوب.',
         step: 'VALIDATE_INPUT',
+        line: 'api/exams/grade.ts:74',
       });
     }
 
@@ -89,12 +90,13 @@ export default async function handler(req: any, res: any) {
     const effectiveUserId = authUser?.uid || clientAttemptData?.userId;
 
     if (!effectiveUserId) {
-      console.error(`[API /api/exams/grade 401] code=AUTH_FAILED, message="يرجى تسجيل الدخول لتسليم الامتحان", examId="${rawExamId}", attemptId="${attemptId}", uid="unauthenticated", step="TOKEN_VERIFICATION"`);
+      console.error(`[API /api/exams/grade 401] code=AUTH_FAILED, message="يرجى تسجيل الدخول لتسليم الامتحان", step="TOKEN_VERIFICATION", examId="${rawExamId}", attemptId="${attemptId}", uid="unauthenticated", line="api/exams/grade.ts:93"`);
       return res.status(401).json({
         ok: false,
         code: 'AUTH_FAILED',
         message: 'يرجى تسجيل الدخول لتسليم الامتحان.',
         step: 'TOKEN_VERIFICATION',
+        line: 'api/exams/grade.ts:93',
       });
     }
 
@@ -110,12 +112,20 @@ export default async function handler(req: any, res: any) {
 
     if (!result.ok) {
       const finalExamId = result.attempt?.examId || rawExamId;
-      console.error(`[API /api/exams/grade 400] code=${result.code}, message="${result.message}", examId="${finalExamId}", attemptId="${attemptId}", uid="${effectiveUserId}", step="${result.step}"`);
-      return res.status(400).json({
+      const status = result.code === 'AUTH_FAILED' ? 401 
+        : result.code === 'ATTEMPT_NOT_FOUND' ? 404 
+        : result.code === 'ANSWER_KEYS_MISSING' ? 404
+        : (result.code === 'NO_ADMIN_CREDENTIALS' || result.code === 'FIRESTORE_ERROR' || result.code === 'WRITE_FAILED') ? 500
+        : result.code === 'TIMEOUT' ? 504
+        : 400;
+
+      console.error(`[API /api/exams/grade ${status}] code=${result.code}, message="${result.message}", step="${result.step}", examId="${finalExamId}", attemptId="${attemptId}", uid="${effectiveUserId}", line="${result.line || 'api/_lib/examGrader.ts'}"`);
+      return res.status(status).json({
         ok: false,
         code: result.code,
         message: result.message,
         step: result.step,
+        line: result.line || 'api/_lib/examGrader.ts',
       });
     }
 
@@ -124,12 +134,14 @@ export default async function handler(req: any, res: any) {
       success: true,
     });
   } catch (err: any) {
-    console.error(`[API /api/exams/grade 500] code=WRITE_FAILED, message="${err?.message || 'Server Exception'}", examId="unknown", attemptId="unknown", uid="unknown", step="SERVER_EXCEPTION"`, err);
+    console.error(`[API /api/exams/grade 500] code=FIRESTORE_ERROR, message="${err?.message || 'Server Exception'}", step="SERVER_EXCEPTION", examId="unknown", attemptId="unknown", uid="unknown", line="api/exams/grade.ts"`, err?.stack || err);
     return res.status(500).json({
       ok: false,
-      code: 'WRITE_FAILED',
+      code: 'FIRESTORE_ERROR',
       message: err?.message || 'حدث خطأ غير متوقع أثناء تصحيح الامتحان.',
       step: 'SERVER_EXCEPTION',
+      line: 'api/exams/grade.ts',
+      stack: process.env.NODE_ENV !== 'production' ? err?.stack : undefined,
     });
   }
 }

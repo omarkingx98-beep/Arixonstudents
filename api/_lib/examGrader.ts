@@ -13,10 +13,12 @@ import { getRestDoc, getRestCollection, patchRestDoc } from './firestoreRest.js'
 export type ExamErrorCode =
   | 'SUCCESS'
   | 'AUTH_FAILED'
+  | 'VALIDATE_INPUT'
   | 'NO_ADMIN_CREDENTIALS'
   | 'ATTEMPT_NOT_FOUND'
   | 'ALREADY_SUBMITTED'
   | 'ANSWER_KEYS_MISSING'
+  | 'FIRESTORE_ERROR'
   | 'WRITE_FAILED'
   | 'TIMEOUT';
 
@@ -25,6 +27,7 @@ export interface GradeResult {
   code: ExamErrorCode;
   message: string;
   step: string;
+  line?: string;
   attempt?: any;
   reviews?: any[];
   pointsAwarded?: number;
@@ -134,95 +137,111 @@ export async function gradeAndSubmitExam(params: {
   const { attemptId, userId, answers = {}, durationSeconds } = params;
   let currentStep = 'VALIDATE_INPUT';
 
-  console.log(`[ExamGrader] Step 1 [${currentStep}]: Starting grading for attempt: ${attemptId}, user: ${userId}, answers count: ${Object.keys(answers).length}`);
+  try {
+    console.log(`[ExamGrader] Step 1 [${currentStep}]: Starting grading for attempt: ${attemptId}, user: ${userId}, answers count: ${Object.keys(answers).length}`);
 
-  if (!attemptId || !userId) {
-    console.error(`[ExamGrader 400 ERROR] code=AUTH_FAILED, message="معرف المحاولة أو معرف المستخدم مفقود", examId="${params.clientAttemptData?.examId || 'unknown'}", attemptId="${attemptId || 'missing'}", uid="${userId || 'missing'}", step="${currentStep}"`);
-    return {
-      ok: false,
-      code: 'AUTH_FAILED',
-      message: 'معرف المحاولة أو معرف المستخدم مفقود.',
-      step: currentStep,
-    };
-  }
-
-  const { db, hasServiceAccount } = getAdminFirestore();
-
-  // 1. Retrieve Attempt Document (via Admin SDK, REST API, or Client Payload)
-  currentStep = 'FETCH_ATTEMPT';
-  let attemptData: any = params.clientAttemptData || null;
-
-  if (!attemptData && hasServiceAccount && db) {
-    try {
-      const attemptDoc = await withTimeout(
-        db.collection('attempts').doc(attemptId).get(),
-        4000,
-        'FETCH_ATTEMPT'
-      );
-      if (attemptDoc.exists) {
-        attemptData = attemptDoc.data();
-      }
-    } catch (err: any) {
-      console.warn(`[ExamGrader] Notice reading attempt from Firestore at step ${currentStep}:`, err?.message);
-    }
-  }
-
-  // REST API fallback for attempt retrieval if Admin SDK is unconfigured
-  if (!attemptData && params.idToken) {
-    try {
-      const restDoc = await getRestDoc(`attempts/${attemptId}`, params.idToken);
-      if (restDoc) {
-        attemptData = restDoc;
-      }
-    } catch (restErr: any) {
-      console.warn(`[ExamGrader] Notice REST fetch for attempt ${attemptId}:`, restErr?.message);
-    }
-  }
-
-  // Auto-infer examId and attempt metadata from attemptId string format: att_{uid}_{examId}_{timestamp}
-  if (!attemptData && attemptId.startsWith('att_')) {
-    const parts = attemptId.split('_');
-    // format: att, [uid_prefix], [exam], [id_parts...], [timestamp]
-    if (parts.length >= 4) {
-      const inferredExamId = parts.slice(2, -1).join('_');
-      console.log(`[ExamGrader] Auto-inferred attempt metadata from ID: examId=${inferredExamId}, user=${userId}`);
-      attemptData = {
-        id: attemptId,
-        examId: inferredExamId,
-        userId,
-        status: 'in_progress',
-        startedAt: new Date(Date.now() - 600000).toISOString(),
-        expectedEndAt: new Date(Date.now() + 600000).toISOString(),
+    if (!attemptId || !userId) {
+      console.error(`[ExamGrader 400 ERROR] code=AUTH_FAILED, message="معرف المحاولة أو معرف المستخدم مفقود", step="${currentStep}", examId="${params.clientAttemptData?.examId || 'unknown'}", attemptId="${attemptId || 'missing'}", uid="${userId || 'missing'}", line="api/_lib/examGrader.ts:145"`);
+      return {
+        ok: false,
+        code: 'AUTH_FAILED',
+        message: 'معرف المحاولة أو معرف المستخدم مفقود.',
+        step: currentStep,
+        line: 'api/_lib/examGrader.ts:145',
       };
     }
-  }
 
-  if (!attemptData) {
-    console.error(`[ExamGrader 400 ERROR] code=ATTEMPT_NOT_FOUND, message="تعذر العثور على وثيقة المحاولة في قاعدة البيانات", examId="unknown", attemptId="${attemptId}", uid="${userId}", step="${currentStep}"`);
-    return {
-      ok: false,
-      code: 'ATTEMPT_NOT_FOUND',
-      message: 'تعذر العثور على وثيقة المحاولة في قاعدة البيانات.',
-      step: currentStep,
-    };
-  }
+    const { db, hasServiceAccount } = getAdminFirestore();
 
-  // 2. Ownership Check
-  currentStep = 'OWNERSHIP_CHECK';
-  if (attemptData.userId && attemptData.userId !== userId) {
-    console.error(`[ExamGrader 400 ERROR] code=AUTH_FAILED, message="غير مصرح لك بتسليم هذه المحاولة", examId="${attemptData.examId || 'unknown'}", attemptId="${attemptId}", uid="${userId}", step="${currentStep}"`);
-    return {
-      ok: false,
-      code: 'AUTH_FAILED',
-      message: 'غير مصرح لك بتسليم هذه المحاولة.',
-      step: currentStep,
-    };
-  }
+    // 1. Retrieve Attempt Document (via Admin SDK, REST API, or Client Payload)
+    currentStep = 'FETCH_ATTEMPT';
+    let attemptData: any = params.clientAttemptData || null;
 
-  // 3. Idempotency Check: if already submitted, return existing result without duplicate points
-  currentStep = 'IDEMPOTENCY_CHECK';
-  if (attemptData.status === 'submitted') {
-    console.log(`[ExamGrader] Attempt ${attemptId} is already submitted. Returning existing result (idempotent).`);
+    if (!attemptData && hasServiceAccount && db) {
+      try {
+        const attemptDoc = await withTimeout(
+          db.collection('attempts').doc(attemptId).get(),
+          4000,
+          'FETCH_ATTEMPT'
+        );
+        if (attemptDoc.exists) {
+          attemptData = attemptDoc.data();
+        }
+      } catch (err: any) {
+        console.warn(`[ExamGrader] Notice reading attempt from Firestore at step ${currentStep}:`, err?.message);
+      }
+    }
+
+    // REST API fallback for attempt retrieval if Admin SDK is unconfigured
+    if (!attemptData && params.idToken) {
+      try {
+        const restDoc = await getRestDoc(`attempts/${attemptId}`, params.idToken);
+        if (restDoc) {
+          attemptData = restDoc;
+        }
+      } catch (restErr: any) {
+        console.warn(`[ExamGrader] Notice REST fetch for attempt ${attemptId}:`, restErr?.message);
+      }
+    }
+
+    // Auto-infer examId and attempt metadata from attemptId string format: att_{uid}_{examId}_{timestamp}
+    if (!attemptData && attemptId.startsWith('att_')) {
+      const parts = attemptId.split('_');
+      // format: att, [uid_prefix], [exam], [id_parts...], [timestamp]
+      if (parts.length >= 4) {
+        const inferredExamId = parts.slice(2, -1).join('_');
+        console.log(`[ExamGrader] Auto-inferred attempt metadata from ID: examId=${inferredExamId}, user=${userId}`);
+        attemptData = {
+          id: attemptId,
+          examId: inferredExamId,
+          userId,
+          status: 'in_progress',
+          startedAt: new Date(Date.now() - 600000).toISOString(),
+          expectedEndAt: new Date(Date.now() + 600000).toISOString(),
+        };
+      }
+    }
+
+    // If attemptData was supplied but is missing examId or userId, auto-fill from attemptId/params
+    if (attemptData && !attemptData.examId && attemptId.startsWith('att_')) {
+      const parts = attemptId.split('_');
+      if (parts.length >= 4) {
+        attemptData.examId = parts.slice(2, -1).join('_');
+        console.log(`[ExamGrader] Auto-filled missing attemptData.examId from attemptId: ${attemptData.examId}`);
+      }
+    }
+    if (attemptData && !attemptData.userId) {
+      attemptData.userId = userId;
+    }
+
+    if (!attemptData) {
+      console.error(`[ExamGrader 404 ERROR] code=ATTEMPT_NOT_FOUND, message="تعذر العثور على وثيقة المحاولة في قاعدة البيانات", step="${currentStep}", examId="unknown", attemptId="${attemptId}", uid="${userId}", line="api/_lib/examGrader.ts:215"`);
+      return {
+        ok: false,
+        code: 'ATTEMPT_NOT_FOUND',
+        message: 'تعذر العثور على وثيقة المحاولة في قاعدة البيانات.',
+        step: currentStep,
+        line: 'api/_lib/examGrader.ts:215',
+      };
+    }
+
+    // 2. Ownership Check
+    currentStep = 'OWNERSHIP_CHECK';
+    if (attemptData.userId && attemptData.userId !== userId) {
+      console.error(`[ExamGrader 401 ERROR] code=AUTH_FAILED, message="غير مصرح لك بتسليم هذه المحاولة", step="${currentStep}", examId="${attemptData.examId || 'unknown'}", attemptId="${attemptId}", uid="${userId}", line="api/_lib/examGrader.ts:228"`);
+      return {
+        ok: false,
+        code: 'AUTH_FAILED',
+        message: 'غير مصرح لك بتسليم هذه المحاولة.',
+        step: currentStep,
+        line: 'api/_lib/examGrader.ts:228',
+      };
+    }
+
+    // 3. Idempotency Check: if already submitted, return existing result without duplicate points
+    currentStep = 'IDEMPOTENCY_CHECK';
+    if (attemptData.status === 'submitted') {
+      console.log(`[ExamGrader] Attempt ${attemptId} is already submitted. Returning existing result (idempotent).`);
     return {
       ok: true,
       code: 'ALREADY_SUBMITTED',
@@ -339,12 +358,15 @@ export async function gradeAndSubmitExam(params: {
   }
 
   if (questionsWithKeys.length === 0) {
-    console.error(`[ExamGrader 400 ERROR] code=ANSWER_KEYS_MISSING, message="تعذر العثور على أسئلة ومفاتيح إجابة هذا الامتحان", examId="${examId}", attemptId="${attemptId}", uid="${userId}", step="${currentStep}"`);
+    const errCode: ExamErrorCode = 'ANSWER_KEYS_MISSING';
+    const errMsg = 'تعذر العثور على أسئلة ومفاتيح إجابة هذا الامتحان.';
+    console.error(`[ExamGrader 404 ERROR] code=${errCode}, message="${errMsg}", step="${currentStep}", examId="${examId}", attemptId="${attemptId}", uid="${userId}", line="api/_lib/examGrader.ts:365"`);
     return {
       ok: false,
-      code: 'ANSWER_KEYS_MISSING',
-      message: 'تعذر العثور على أسئلة ومفاتيح إجابة هذا الامتحان.',
+      code: errCode,
+      message: errMsg,
       step: currentStep,
+      line: 'api/_lib/examGrader.ts:365',
     };
   }
 
@@ -534,17 +556,27 @@ export async function gradeAndSubmitExam(params: {
   const elapsed = Date.now() - startTime;
   console.log(`[ExamGrader] Grading completed in ${elapsed}ms: score=${scorePercent}%, correct=${correctCount}, wrong=${wrongCount}, unanswered=${unansweredCount}, points=${pointsAwarded}, serverWrite=${writeSucceeded}`);
 
-  return {
-    ok: true,
-    code: 'SUCCESS',
-    message: 'تم تصحيح وتسليم الامتحان بنجاح.',
-    step: currentStep,
-    attempt: updatedAttempt,
-    reviews,
-    pointsAwarded,
-    isFirstCompletion,
-    requiresClientSync: !writeSucceeded,
-  };
+    return {
+      ok: true,
+      code: 'SUCCESS',
+      message: 'تم تصحيح وتسليم الامتحان بنجاح.',
+      step: currentStep,
+      attempt: updatedAttempt,
+      reviews,
+      pointsAwarded,
+      isFirstCompletion,
+      requiresClientSync: !writeSucceeded,
+    };
+  } catch (unexpectedErr: any) {
+    console.error(`[ExamGrader 500 ERROR] code=FIRESTORE_ERROR, message="${unexpectedErr?.message || 'Internal Grader Error'}", step="${currentStep}", examId="${params.clientAttemptData?.examId || 'unknown'}", attemptId="${attemptId}", uid="${userId}", line="api/_lib/examGrader.ts:575"`, unexpectedErr?.stack || unexpectedErr);
+    return {
+      ok: false,
+      code: 'FIRESTORE_ERROR',
+      message: unexpectedErr?.message || 'حدث خطأ داخلي في نظام التصحيح.',
+      step: currentStep,
+      line: 'api/_lib/examGrader.ts:575',
+    };
+  }
 }
 
 /**

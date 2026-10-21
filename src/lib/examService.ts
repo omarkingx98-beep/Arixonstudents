@@ -745,6 +745,7 @@ export async function submitExamAttempt(
         lastError = {
           code: serverResult?.code || 'WRITE_FAILED',
           step: serverResult?.step || 'SERVER_GRADING',
+          line: serverResult?.line,
           message: serverResult?.message || serverResult?.error || 'تعذّر التسليم، حاول مرة ثانية.',
         };
       }
@@ -806,6 +807,7 @@ export async function submitExamAttempt(
       const err: any = new Error(lastError?.message || 'تعذّر التسليم، حاول مرة ثانية.');
       err.code = lastError?.code || 'WRITE_FAILED';
       err.step = lastError?.step || 'SAFETY_NET_WRITE';
+      err.line = lastError?.line;
       throw err;
     }
   }

@@ -123,7 +123,7 @@ export const ExamActiveView: React.FC<ExamActiveViewProps> = ({
 
   const { isAdmin } = useAdmin();
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [submitDiagnostic, setSubmitDiagnostic] = useState<{ code: string; step: string } | null>(null);
+  const [submitDiagnostic, setSubmitDiagnostic] = useState<{ code: string; step: string; line?: string } | null>(null);
 
   // Submission handler
   const handleFinalSubmit = async (isAutoExpire = false) => {
@@ -143,6 +143,7 @@ export const ExamActiveView: React.FC<ExamActiveViewProps> = ({
       setSubmitDiagnostic({
         code: err?.code || 'UNKNOWN',
         step: err?.step || 'UNKNOWN',
+        line: err?.line || err?.stack?.split('\n')?.[1]?.trim() || undefined,
       });
     }
   };
@@ -582,8 +583,21 @@ export const ExamActiveView: React.FC<ExamActiveViewProps> = ({
               </p>
 
               {isAdmin && submitDiagnostic && (
-                <div className="p-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[11px] font-mono text-slate-700 dark:text-slate-300 text-left dir-ltr select-all">
-                  [ADMIN DIAG] Code: {submitDiagnostic.code} | Step: {submitDiagnostic.step}
+                <div className="p-3 rounded-2xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[11px] font-mono text-slate-700 dark:text-slate-300 text-left dir-ltr select-all space-y-1">
+                  <div className="text-[10px] uppercase font-bold tracking-wider text-red-600 dark:text-red-400">
+                    Admin Diagnostic View
+                  </div>
+                  <div>
+                    Failed Step: <span className="font-bold text-slate-900 dark:text-white bg-red-100 dark:bg-red-950/60 px-1 py-0.5 rounded">{submitDiagnostic.step}</span>
+                  </div>
+                  <div>
+                    Error Code: <span className="font-bold text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-950/60 px-1 py-0.5 rounded">{submitDiagnostic.code}</span>
+                  </div>
+                  {submitDiagnostic.line && (
+                    <div className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
+                      Code Line: {submitDiagnostic.line}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

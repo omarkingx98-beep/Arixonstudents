@@ -212,6 +212,52 @@ export const ExamReviewView: React.FC<ExamReviewViewProps> = ({
                   {q.questionText}
                 </h3>
 
+                {/* Explicit Answers Summary Banner (Option Text Comparison) */}
+                {(() => {
+                  const studentText = q.studentAnswerText || (q.studentAnswer !== null && q.studentAnswer !== undefined && q.options ? q.options[q.studentAnswer] : null);
+                  const correctText = q.correctAnswerText || (q.correctAnswer !== null && q.correctAnswer !== undefined && q.options ? q.options[q.correctAnswer] : null);
+
+                  return (
+                    <div className="mb-4 p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-800 space-y-2.5">
+                      <div className="flex items-start gap-2.5 text-xs sm:text-sm">
+                        <span className="font-bold text-slate-500 dark:text-slate-400 flex-shrink-0 min-w-[110px]">
+                          إجابتك المسجلة:
+                        </span>
+                        <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                          {isCorrect ? (
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                          ) : isUnanswered ? (
+                            <HelpCircle className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                          ) : (
+                            <XCircle className="w-4 h-4 text-rose-600 flex-shrink-0" />
+                          )}
+                          <span className={`font-bold ${
+                            isCorrect 
+                              ? 'text-emerald-700 dark:text-emerald-300' 
+                              : isUnanswered 
+                              ? 'text-slate-500 dark:text-slate-400 italic' 
+                              : 'text-rose-700 dark:text-rose-300'
+                          }`}>
+                            {studentText || (isUnanswered ? 'لم تقم بتحديد إجابة' : 'إجابة غير محددة')}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-start gap-2.5 text-xs sm:text-sm pt-2.5 border-t border-slate-200/70 dark:border-slate-700/60">
+                        <span className="font-bold text-slate-500 dark:text-slate-400 flex-shrink-0 min-w-[110px]">
+                          الإجابة النموذجية:
+                        </span>
+                        <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                          <span className="font-bold text-emerald-700 dark:text-emerald-300">
+                            {correctText || 'غير محددة'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 {/* Options Review */}
                 <div className="space-y-2.5 mb-5">
                   {q.options.map((option, idx) => {

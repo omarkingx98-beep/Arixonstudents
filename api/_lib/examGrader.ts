@@ -18,6 +18,7 @@ export type ExamErrorCode =
   | 'ATTEMPT_NOT_FOUND'
   | 'ALREADY_SUBMITTED'
   | 'ANSWER_KEYS_MISSING'
+  | 'ANSWER_KEYS_UNAVAILABLE'
   | 'FIRESTORE_ERROR'
   | 'WRITE_FAILED'
   | 'TIMEOUT';
@@ -153,6 +154,19 @@ export async function gradeAndSubmitExam(params: {
 
     const { db, hasServiceAccount } = getAdminFirestore();
 
+    const isAdminUser = Boolean(
+      params.userEmail && [
+        'omar88x99@gmail.com',
+        'omarkingx99@gmail.com',
+        'omarkingx98@gmail.com'
+      ].includes(params.userEmail.toLowerCase().trim())
+    );
+
+    const credentialSource: 'service_account' | 'user_token' | 'none' = 
+      hasServiceAccount ? 'service_account' : (isAdminUser && params.idToken ? 'user_token' : 'none');
+
+    console.log(`[ExamGrader] credentialSource: ${credentialSource}, attempt: ${attemptId}, uid: ${userId}`);
+
     // 1. Retrieve Attempt Document (via Admin SDK, REST API, or Client Payload)
     currentStep = 'FETCH_ATTEMPT';
     let attemptData: any = params.clientAttemptData || null;
@@ -257,7 +271,6 @@ export async function gradeAndSubmitExam(params: {
   // 4. Retrieve Questions & Answer Keys
   currentStep = 'FETCH_QUESTIONS_AND_KEYS';
   const examId = attemptData.examId || '';
-  const examSubject = attemptData.examSubject || '';
   let questionsWithKeys: QuestionWithKey[] = [];
 
   // 4a. Fetch from Admin Firestore SDK
@@ -270,7 +283,6 @@ export async function gradeAndSubmitExam(params: {
       );
 
       if (!qSnap.empty) {
-        // Read answerKeys in parallel with a single Promise.all
         const keyPromises = qSnap.docs.map((doc) =>
           db.collection('exams').doc(examId).collection('answerKeys').doc(doc.id).get().catch(() => null)
         );
@@ -283,11 +295,22 @@ export async function gradeAndSubmitExam(params: {
         });
 
         const sortedDocs = [...qSnap.docs].sort((a, b) => (a.data().order || 0) - (b.data().order || 0));
+        let anyKeyMissing = false;
 
-        sortedDocs.forEach((qDoc, idx) => {
+        for (let idx = 0; idx < sortedDocs.length; idx++) {
+          const qDoc = sortedDocs[idx];
           const qData = qDoc.data();
-          const keyData = keysMap.get(qDoc.id) || {};
-          const ansKey = keyData.correctAnswer !== undefined ? keyData.correctAnswer : (qData.correctAnswer !== undefined ? qData.correctAnswer : 0);
+          const keyData = keysMap.get(qDoc.id);
+
+          const ansKey = keyData?.correctAnswer !== undefined 
+            ? keyData.correctAnswer 
+            : (qData.correctAnswer !== undefined ? qData.correctAnswer : undefined);
+
+          if (ansKey === undefined) {
+            console.error(`[ExamGrader] Missing answer key for question: ${qDoc.id} in exam: ${examId}`);
+            anyKeyMissing = true;
+            break;
+          }
 
           questionsWithKeys.push({
             id: qDoc.id,
@@ -300,24 +323,27 @@ export async function gradeAndSubmitExam(params: {
             points: qData.points || 5,
             questionType: qData.questionType || 'multiple_choice',
             correctAnswer: ansKey,
-            explanation: keyData.explanation || qData.explanation || '',
-            hint: keyData.hint || qData.hint || '',
-            solutionSteps: keyData.solutionSteps || qData.solutionSteps || null,
-            distractorAnalysis: keyData.distractorAnalysis || qData.distractorAnalysis || null,
+            explanation: keyData?.explanation || qData.explanation || '',
+            hint: keyData?.hint || qData.hint || '',
+            solutionSteps: keyData?.solutionSteps || qData.solutionSteps || null,
+            distractorAnalysis: keyData?.distractorAnalysis || qData.distractorAnalysis || null,
           });
-        });
+        }
+
+        if (anyKeyMissing) {
+          questionsWithKeys = [];
+        }
       }
     } catch (err: any) {
       console.warn(`[ExamGrader] Notice reading Firestore questions at step ${currentStep}:`, err?.message);
     }
   }
 
-  // 4b. REST API fallback for questions if Admin SDK unconfigured or returned empty
-  if (questionsWithKeys.length === 0 && examId) {
+  // 4b. REST API fallback ONLY if Admin token is available (never with regular student token for answerKeys)
+  if (questionsWithKeys.length === 0 && examId && credentialSource === 'user_token') {
     try {
       const restDocs = await getRestCollection(`exams/${examId}/questions`, params.idToken);
       if (restDocs.length > 0) {
-        // Also fetch answerKeys subcollection if available via REST
         const restKeysMap = new Map<string, any>();
         try {
           const restKeyDocs = await getRestCollection(`exams/${examId}/answerKeys`, params.idToken);
@@ -325,13 +351,20 @@ export async function gradeAndSubmitExam(params: {
         } catch (_) {}
 
         restDocs.sort((a, b) => (a.data.order || 0) - (b.data.order || 0));
+        let anyKeyMissing = false;
+
         for (let idx = 0; idx < restDocs.length; idx++) {
           const qItem = restDocs[idx];
           const qData = qItem.data;
-          const keyData = restKeysMap.get(qItem.id) || {};
-          const ansKey = keyData.correctAnswer !== undefined 
+          const keyData = restKeysMap.get(qItem.id);
+          const ansKey = keyData?.correctAnswer !== undefined 
             ? keyData.correctAnswer 
-            : (qData.correctAnswer !== undefined ? qData.correctAnswer : 0);
+            : (qData.correctAnswer !== undefined ? qData.correctAnswer : undefined);
+
+          if (ansKey === undefined) {
+            anyKeyMissing = true;
+            break;
+          }
 
           questionsWithKeys.push({
             id: qItem.id,
@@ -344,11 +377,15 @@ export async function gradeAndSubmitExam(params: {
             points: qData.points || 5,
             questionType: qData.questionType || 'multiple_choice',
             correctAnswer: ansKey,
-            explanation: keyData.explanation || qData.explanation || '',
-            hint: keyData.hint || qData.hint || '',
-            solutionSteps: keyData.solutionSteps || qData.solutionSteps || null,
-            distractorAnalysis: keyData.distractorAnalysis || qData.distractorAnalysis || null,
+            explanation: keyData?.explanation || qData.explanation || '',
+            hint: keyData?.hint || qData.hint || '',
+            solutionSteps: keyData?.solutionSteps || qData.solutionSteps || null,
+            distractorAnalysis: keyData?.distractorAnalysis || qData.distractorAnalysis || null,
           });
+        }
+
+        if (anyKeyMissing) {
+          questionsWithKeys = [];
         }
       }
     } catch (restQErr: any) {
@@ -357,10 +394,10 @@ export async function gradeAndSubmitExam(params: {
   }
 
   // 4c. Built-in verified ministerial banks ONLY for official ministerial exams (strict ID match)
-  if (questionsWithKeys.length === 0) {
-    const isMinisterialPhysics = examId === FIRST_EXAM_ID || examId === 'exam_physics_tw2009_01';
-    const isMinisterialArabic = examId === LITERARY_EXAM_ID || examId === 'exam_arabic_tw2009_01';
+  const isMinisterialPhysics = examId === FIRST_EXAM_ID || examId === 'exam_physics_tw2009_01';
+  const isMinisterialArabic = examId === LITERARY_EXAM_ID || examId === 'exam_arabic_tw2009_01';
 
+  if (questionsWithKeys.length === 0 && (isMinisterialPhysics || isMinisterialArabic)) {
     if (isMinisterialPhysics) {
       questionsWithKeys = FIRST_EXAM_QUESTIONS;
     } else if (isMinisterialArabic) {
@@ -368,20 +405,35 @@ export async function gradeAndSubmitExam(params: {
     }
   }
 
+  // If questionsWithKeys is still empty -> return ANSWER_KEYS_UNAVAILABLE
   if (questionsWithKeys.length === 0) {
-    const errCode: ExamErrorCode = 'ANSWER_KEYS_MISSING';
-    const errMsg = 'تعذر العثور على أسئلة ومفاتيح إجابة هذا الامتحان.';
-    console.error(`[ExamGrader 404 ERROR] code=${errCode}, message="${errMsg}", step="${currentStep}", examId="${examId}", attemptId="${attemptId}", uid="${userId}", line="api/_lib/examGrader.ts:365"`);
+    const errCode: ExamErrorCode = 'ANSWER_KEYS_UNAVAILABLE';
+    const errMsg = 'مفاتيح إجابة هذا الامتحان غير متوفرة أو تعذّر الوصول إليها بصلاحيات الخادم.';
+    console.error(`[ExamGrader 500 ERROR] code=${errCode}, message="${errMsg}", step="${currentStep}", examId="${examId}", attemptId="${attemptId}", uid="${userId}", credentialSource="${credentialSource}", line="api/_lib/examGrader.ts:380"`);
+
+    // Safety net: mark attempt as submitted_pending with 0 points
+    if (attemptId && (hasServiceAccount || params.idToken)) {
+      try {
+        await patchRestDoc(`attempts/${attemptId}`, {
+          status: 'submitted_pending',
+          pendingReason: 'ANSWER_KEYS_UNAVAILABLE',
+          submittedAt: new Date().toISOString(),
+          score: null,
+          pointsEarned: 0,
+        }, params.idToken);
+      } catch (_) {}
+    }
+
     return {
       ok: false,
       code: errCode,
       message: errMsg,
       step: currentStep,
-      line: 'api/_lib/examGrader.ts:365',
+      line: 'api/_lib/examGrader.ts:380',
     };
   }
 
-  // 5. Grade with Multi-Key Matching
+  // 5. Grade with Option-ID Invariant Matching
   currentStep = 'GRADE_QUESTIONS';
   let correctCount = 0;
   let wrongCount = 0;
@@ -392,31 +444,64 @@ export async function gradeAndSubmitExam(params: {
   for (let idx = 0; idx < questionsWithKeys.length; idx++) {
     const q = questionsWithKeys[idx];
     const qOrder = q.order || (idx + 1);
+    const options = q.options || [];
 
-    // Strict fixed questionId matching
-    let studentAns: number | null = null;
+    // Resolve canonical correct option
+    let correctIdx = 0;
+    const rawCorrect = (q as any).correctAnswer;
+    if (typeof rawCorrect === 'number') {
+      correctIdx = rawCorrect;
+    } else if (typeof rawCorrect === 'string' && /^opt_\d+$/i.test(rawCorrect)) {
+      correctIdx = parseInt(rawCorrect.replace(/^opt_/i, ''), 10);
+    } else if (typeof rawCorrect === 'string') {
+      const found = options.findIndex((o) => o.trim() === rawCorrect.trim());
+      correctIdx = found !== -1 ? found : 0;
+    }
+    const correctOptionId = `opt_${correctIdx}`;
+    const correctAnswerText = (correctIdx >= 0 && correctIdx < options.length) ? options[correctIdx] : '';
+
+    // Student answer matching
+    let studentAns: any = null;
     if (answers[q.id] !== undefined && answers[q.id] !== null) {
       studentAns = answers[q.id];
     } else if (answers[q.id.toLowerCase()] !== undefined && answers[q.id.toLowerCase()] !== null) {
       studentAns = answers[q.id.toLowerCase()];
-    } else {
-      // Positional / index fallback: logs an explicit warning for data cleanup
-      let fallbackKey: string | null = null;
-      if (answers[`q_${qOrder}`] !== undefined && answers[`q_${qOrder}`] !== null) fallbackKey = `q_${qOrder}`;
-      else if (answers[`lit_q${qOrder}`] !== undefined && answers[`lit_q${qOrder}`] !== null) fallbackKey = `lit_q${qOrder}`;
-      else if (answers[`q${qOrder}`] !== undefined && answers[`q${qOrder}`] !== null) fallbackKey = `q${qOrder}`;
-      else if (answers[String(qOrder)] !== undefined && answers[String(qOrder)] !== null) fallbackKey = String(qOrder);
-      else if (answers[String(idx)] !== undefined && answers[String(idx)] !== null) fallbackKey = String(idx);
-      else if (answers[`q_${idx}`] !== undefined && answers[`q_${idx}`] !== null) fallbackKey = `q_${idx}`;
+    }
 
-      if (fallbackKey !== null) {
-        studentAns = answers[fallbackKey];
-        console.warn(`[ExamGrader WARNING: NON_STRICT_FALLBACK_TRIGGERED] Exam: "${examId}", Question: "${q.id}" (Order: ${qOrder}). Missing exact key "${q.id}"; matched legacy positional fallback "${fallbackKey}".`);
+    let studentOptionId: string | null = null;
+    let studentOptionIdx: number | null = null;
+    let studentAnswerText: string | null = null;
+
+    if (studentAns !== null && studentAns !== undefined) {
+      if (typeof studentAns === 'string') {
+        if (/^opt_\d+$/i.test(studentAns)) {
+          studentOptionIdx = parseInt(studentAns.replace(/^opt_/i, ''), 10);
+          studentOptionId = `opt_${studentOptionIdx}`;
+          studentAnswerText = options[studentOptionIdx] || null;
+        } else {
+          const textIdx = options.findIndex((o) => o.trim() === studentAns.trim());
+          if (textIdx !== -1) {
+            studentOptionIdx = textIdx;
+            studentOptionId = `opt_${textIdx}`;
+            studentAnswerText = options[textIdx];
+          } else {
+            const num = parseInt(studentAns, 10);
+            if (!isNaN(num) && num >= 0 && num < options.length) {
+              studentOptionIdx = num;
+              studentOptionId = `opt_${num}`;
+              studentAnswerText = options[num];
+            }
+          }
+        }
+      } else if (typeof studentAns === 'number' && studentAns >= 0 && studentAns < options.length) {
+        studentOptionIdx = studentAns;
+        studentOptionId = `opt_${studentAns}`;
+        studentAnswerText = options[studentAns];
       }
     }
 
-    const isUnanswered = studentAns === null || studentAns === undefined;
-    const isCorrect = !isUnanswered && Number(studentAns) === Number(q.correctAnswer);
+    const isUnanswered = studentOptionId === null;
+    const isCorrect = !isUnanswered && studentOptionId === correctOptionId;
 
     if (isCorrect) {
       correctCount++;
@@ -432,8 +517,12 @@ export async function gradeAndSubmitExam(params: {
       questionNumber: qOrder,
       questionText: q.questionText,
       options: q.options,
-      studentAnswer: studentAns,
-      correctAnswer: q.correctAnswer,
+      studentAnswer: studentOptionIdx,
+      studentOptionId,
+      studentAnswerText,
+      correctAnswer: correctIdx,
+      correctOptionId,
+      correctAnswerText,
       isCorrect,
       isUnanswered,
       explanation: q.explanation || '',
@@ -442,6 +531,8 @@ export async function gradeAndSubmitExam(params: {
       formulaUsed: q.formulaUsed || null,
       distractorAnalysis: q.distractorAnalysis || null,
       points: q.points || 5,
+      pointsEarned: isCorrect ? (q.points || 5) : 0,
+      source: q.source || 'أريكسون',
     });
   }
 

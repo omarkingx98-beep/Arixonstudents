@@ -31,6 +31,14 @@ import type {
   GenerationMode,
   ExamAttempt,
 } from '../types';
+import { 
+  FIRST_EXAM_ID, 
+  FIRST_EXAM_QUESTIONS,
+} from '../data/firstExamData';
+import {
+  LITERARY_EXAM_ID,
+  LITERARY_EXAM_QUESTIONS,
+} from '../data/literaryExamData';
 
 export const PRIMARY_ADMIN_EMAIL = 'omarkingx99@gmail.com';
 export const PRIMARY_ADMIN_EMAILS = [
@@ -1623,5 +1631,407 @@ export async function regradePendingAttempts(): Promise<{
   }
 
   return { regradedCount, errors };
+}
+
+export const SURAH_YUSUF_EXAM_ID = 'exam_1792050086667_12ri';
+
+export const SURAH_YUSUF_CORRECT_KEYS: Record<string, { correctAnswer: number; explanation?: string }> = {
+  'q_exam_1792050086667_12ri_1': { correctAnswer: 2, explanation: 'العبرة المستفادة هي أن الشدة يتبعها الفرج وأن الصبر عاقبته خير.' },
+  'q_exam_1792050086667_12ri_2': { correctAnswer: 1, explanation: 'رأى يوسف عليه السلام أحد عشر كوكباً والشمس والقمر له ساجدين.' },
+  'q_exam_1792050086667_12ri_3': { correctAnswer: 2, explanation: 'المقصود بالسجود في الرؤيا إخوته الأحد عشر ووالداه يعقوب وأمه.' },
+  'q_exam_1792050086667_12ri_4': { correctAnswer: 1, explanation: 'خاف يعقوب عليه السلام أن يحسدوه ويكيدوا له كيداً.' },
+  'q_exam_1792050086667_12ri_5': { correctAnswer: 0, explanation: 'يرتع أي يأكل ويتنزه ويلهو في المرعى.' },
+  'q_exam_1792050086667_12ri_6': { correctAnswer: 1, explanation: 'عصبة تعني جماعة من الرجال يجمعهم العدد والقوة والتعاضد.' },
+  'q_exam_1792050086667_12ri_7': { correctAnswer: 2, explanation: 'اقتراح أحدهم إلقاؤه في غيابة الجب ليلتقطه بعض السيارة.' },
+  'q_exam_1792050086667_12ri_8': { correctAnswer: 2, explanation: 'السيارة هم قافلة من المسافرين المارين بالبئر.' },
+  'q_exam_1792050086667_12ri_9': { correctAnswer: 2, explanation: 'دم كذب أي دم ملطخ مصطنع لتأييد رواية باطلة وغير صادقة.' },
+  'q_exam_1792050086667_12ri_10': { correctAnswer: 0, explanation: 'الزيادة في غلّقت على وزن فعّل تفيد المبالغة في الإحكام والتكثير.' },
+  'q_exam_1792050086667_12ri_11': { correctAnswer: 1, explanation: 'هيت لك اسم فعل بمعنى تعال وأقبل إليّ وتهيأت لك.' },
+  'q_exam_1792050086667_12ri_12': { correctAnswer: 2, explanation: 'معاذ الله تفيد الالتجاء والاعتصام بالله والاستعاذة به من المعصية.' },
+  'q_exam_1792050086667_12ri_13': { correctAnswer: 1, explanation: 'يشير إلى سيده العزيز الذي أكرم مثواه في بيته.' },
+  'q_exam_1792050086667_12ri_14': { correctAnswer: 2, explanation: 'استبقا الباب أي تسابقا إليه، يوسف محاولاً الخروج وهي ممسكة به.' },
+  'q_exam_1792050086667_12ri_15': { correctAnswer: 1, explanation: 'قدت قميصه من دبر أي شقته ومزقته من الخلف أثناء محاولته الهرب.' },
+  'q_exam_1792050086667_12ri_16': { correctAnswer: 0, explanation: 'دليل صدق يوسف أن القميص كان مقدوداً من دبر (من الخلف).' },
+  'q_exam_1792050086667_12ri_17': { correctAnswer: 0, explanation: 'أعرض عن هذا أي اترك الحديث عنه واكتم الأمر ولا تخض فيه.' },
+  'q_exam_1792050086667_12ri_18': { correctAnswer: 2, explanation: 'لولا حرف امتناع لوجود، وهو أسلوب شرط غير جازم.' },
+  'q_exam_1792050086667_12ri_19': { correctAnswer: 2, explanation: 'كوكباً تمييز مفرد منصوب بعد العدد المركب أحد عشر.' },
+  'q_exam_1792050086667_12ri_20': { correctAnswer: 1, explanation: 'القيم البارزة هي العفة ومراقبة الله والالتجاء إليه وحسن الوفاء.' },
+};
+
+/**
+ * Fixes the corrupted/defaulted answer keys for Surah Yusuf exam in both questions and answerKeys collections
+ */
+export async function fixYusufExamAnswerKeys(): Promise<{ updatedQuestions: number; updatedKeys: number }> {
+  let updatedQuestions = 0;
+  let updatedKeys = 0;
+
+  for (const [qId, keyInfo] of Object.entries(SURAH_YUSUF_CORRECT_KEYS)) {
+    try {
+      const qRef = doc(db, 'exams', SURAH_YUSUF_EXAM_ID, 'questions', qId);
+      await updateDoc(qRef, {
+        correctAnswer: keyInfo.correctAnswer,
+        explanation: keyInfo.explanation || '',
+      });
+      updatedQuestions++;
+    } catch (e: any) {
+      console.warn(`[adminService] Notice updating question ${qId}:`, e.message);
+    }
+
+    try {
+      const kRef = doc(db, 'exams', SURAH_YUSUF_EXAM_ID, 'answerKeys', qId);
+      await setDoc(kRef, {
+        questionId: qId,
+        correctAnswer: keyInfo.correctAnswer,
+        explanation: keyInfo.explanation || '',
+        updatedAt: new Date().toISOString(),
+      }, { merge: true });
+      updatedKeys++;
+    } catch (e: any) {
+      console.warn(`[adminService] Notice updating answerKey ${qId}:`, e.message);
+    }
+  }
+
+  return { updatedQuestions, updatedKeys };
+}
+
+export interface RegradeAttemptResult {
+  success: boolean;
+  attemptId: string;
+  examId: string;
+  userId: string;
+  previousScore: number | null;
+  newScore: number;
+  previousPoints: number;
+  newPoints: number;
+  deltaPoints: number;
+  correctCount: number;
+  wrongCount: number;
+  unansweredCount: number;
+  totalQuestions: number;
+}
+
+/**
+ * Admin action: Re-grade a single exam attempt from scratch using exact answer keys and option-invariant matching.
+ * Idempotently adjusts student points delta on users and publicProfiles.
+ */
+export async function regradeSingleAttempt(attemptId: string): Promise<RegradeAttemptResult> {
+  const attemptRef = doc(db, 'attempts', attemptId);
+  const attemptSnap = await getDoc(attemptRef);
+  if (!attemptSnap.exists()) {
+    throw new Error(`تعذر العثور على وثيقة المحاولة ${attemptId}.`);
+  }
+
+  const attemptData = attemptSnap.data() as ExamAttempt;
+  let examId = attemptData.examId;
+  if (!examId && attemptId.startsWith('att_')) {
+    const parts = attemptId.split('_');
+    if (parts.length >= 4) {
+      examId = parts.slice(2, -1).join('_');
+    }
+  }
+  if (!examId) {
+    throw new Error(`معرف الامتحان غير معروف للمحاولة ${attemptId}.`);
+  }
+
+  // 1. Fetch questions and canonical answer keys
+  let questionsWithKeys: any[] = [];
+
+  if (examId === FIRST_EXAM_ID || examId === 'exam_physics_tw2009_01') {
+    questionsWithKeys = FIRST_EXAM_QUESTIONS;
+  } else if (examId === LITERARY_EXAM_ID || examId === 'exam_arabic_tw2009_01') {
+    questionsWithKeys = LITERARY_EXAM_QUESTIONS;
+  } else {
+    // Fetch from Firestore
+    const qSnap = await getDocs(collection(db, 'exams', examId, 'questions'));
+    const kSnap = await getDocs(collection(db, 'exams', examId, 'answerKeys')).catch(() => null);
+    const keysMap = new Map<string, any>();
+    if (kSnap) {
+      kSnap.docs.forEach(kd => keysMap.set(kd.id, kd.data()));
+    }
+
+    const sortedDocs = [...qSnap.docs].sort((a, b) => (a.data().order || 0) - (b.data().order || 0));
+    for (let idx = 0; idx < sortedDocs.length; idx++) {
+      const qDoc = sortedDocs[idx];
+      const qd = qDoc.data();
+      const kd = keysMap.get(qDoc.id);
+
+      // Check Surah Yusuf override if applicable
+      const yusufOverride = examId === SURAH_YUSUF_EXAM_ID ? SURAH_YUSUF_CORRECT_KEYS[qDoc.id] : undefined;
+
+      const ansKey = yusufOverride !== undefined 
+        ? yusufOverride.correctAnswer 
+        : (kd?.correctAnswer !== undefined ? kd.correctAnswer : (qd.correctAnswer !== undefined ? qd.correctAnswer : 0));
+
+      const expl = yusufOverride?.explanation || kd?.explanation || qd.explanation || '';
+
+      questionsWithKeys.push({
+        id: qDoc.id,
+        examId,
+        order: qd.order || (idx + 1),
+        questionText: qd.questionText || '',
+        options: qd.options || [],
+        points: qd.points || 5,
+        correctAnswer: ansKey,
+        explanation: expl,
+        hint: kd?.hint || qd.hint || '',
+        solutionSteps: kd?.solutionSteps || qd.solutionSteps || null,
+        distractorAnalysis: kd?.distractorAnalysis || qd.distractorAnalysis || null,
+      });
+    }
+  }
+
+  if (questionsWithKeys.length === 0) {
+    throw new Error(`لا توجد أسئلة متوفرة للامتحان ${examId}.`);
+  }
+
+  // 2. Fetch student answers
+  let answers: Record<string, any> = (attemptData as any).answers || {};
+  try {
+    const ansCol = collection(db, 'attempts', attemptId, 'answers');
+    const ansSnap = await getDocs(ansCol);
+    if (!ansSnap.empty) {
+      ansSnap.docs.forEach(ad => {
+        const d = ad.data();
+        answers[ad.id] = d.selectedAnswer !== undefined ? d.selectedAnswer : (d.selectedOptionIndex !== undefined ? d.selectedOptionIndex : null);
+      });
+    }
+  } catch (_) {}
+
+  // Fallback to existing reviews if answers object empty
+  if (Object.keys(answers).length === 0 && (attemptData as any).reviews?.length) {
+    (attemptData as any).reviews.forEach((r: any) => {
+      if (r.questionId && r.studentAnswer !== undefined) {
+        answers[r.questionId] = r.studentOptionId || r.studentAnswer;
+      }
+    });
+  }
+
+  // 3. Grade using Option-Invariant matching
+  let correctCount = 0;
+  let wrongCount = 0;
+  let unansweredCount = 0;
+  let pointsCalculated = 0;
+  const reviews: any[] = [];
+
+  for (let idx = 0; idx < questionsWithKeys.length; idx++) {
+    const q = questionsWithKeys[idx];
+    const qOrder = q.order || (idx + 1);
+    const options = q.options || [];
+
+    let correctIdx = 0;
+    if (typeof q.correctAnswer === 'number') {
+      correctIdx = q.correctAnswer;
+    } else if (typeof q.correctAnswer === 'string' && /^opt_\d+$/i.test(q.correctAnswer)) {
+      correctIdx = parseInt(q.correctAnswer.replace(/^opt_/i, ''), 10);
+    } else if (typeof q.correctAnswer === 'string') {
+      const found = options.findIndex((o: string) => o.trim() === String(q.correctAnswer).trim());
+      correctIdx = found !== -1 ? found : 0;
+    }
+    const correctOptionId = `opt_${correctIdx}`;
+    const correctAnswerText = (correctIdx >= 0 && correctIdx < options.length) ? options[correctIdx] : '';
+
+    let studentAns = answers[q.id] ?? answers[q.id.toLowerCase()] ?? null;
+    let studentOptionId: string | null = null;
+    let studentOptionIdx: number | null = null;
+    let studentAnswerText: string | null = null;
+
+    if (studentAns !== null && studentAns !== undefined) {
+      if (typeof studentAns === 'string') {
+        if (/^opt_\d+$/i.test(studentAns)) {
+          studentOptionIdx = parseInt(studentAns.replace(/^opt_/i, ''), 10);
+          studentOptionId = `opt_${studentOptionIdx}`;
+          studentAnswerText = options[studentOptionIdx] || null;
+        } else {
+          const textIdx = options.findIndex((o: string) => o.trim() === studentAns.trim());
+          if (textIdx !== -1) {
+            studentOptionIdx = textIdx;
+            studentOptionId = `opt_${textIdx}`;
+            studentAnswerText = options[textIdx];
+          } else {
+            const num = parseInt(studentAns, 10);
+            if (!isNaN(num) && num >= 0 && num < options.length) {
+              studentOptionIdx = num;
+              studentOptionId = `opt_${num}`;
+              studentAnswerText = options[num];
+            }
+          }
+        }
+      } else if (typeof studentAns === 'number' && studentAns >= 0 && studentAns < options.length) {
+        studentOptionIdx = studentAns;
+        studentOptionId = `opt_${studentAns}`;
+        studentAnswerText = options[studentAns];
+      }
+    }
+
+    const isUnanswered = studentOptionId === null;
+    const isCorrect = !isUnanswered && studentOptionId === correctOptionId;
+
+    if (isCorrect) {
+      correctCount++;
+      pointsCalculated += (q.points || 5);
+    } else if (isUnanswered) {
+      unansweredCount++;
+    } else {
+      wrongCount++;
+    }
+
+    reviews.push({
+      questionId: q.id,
+      questionNumber: qOrder,
+      questionText: q.questionText,
+      options: q.options,
+      studentAnswer: studentOptionIdx,
+      studentOptionId,
+      studentAnswerText,
+      correctAnswer: correctIdx,
+      correctOptionId,
+      correctAnswerText,
+      isCorrect,
+      isUnanswered,
+      explanation: q.explanation || '',
+      hint: q.hint || '',
+      solutionSteps: q.solutionSteps || null,
+      distractorAnalysis: q.distractorAnalysis || null,
+      points: q.points || 5,
+      pointsEarned: isCorrect ? (q.points || 5) : 0,
+      source: q.source || 'أريكسون',
+    });
+  }
+
+  const totalQuestions = questionsWithKeys.length;
+  const newScore = totalQuestions > 0 ? Math.round((correctCount / totalQuestions) * 100) : 0;
+  const isRetake = Boolean(attemptData.isRetake);
+  const newPointsEarned = isRetake ? 0 : pointsCalculated;
+  const previousPointsEarned = attemptData.pointsEarned || 0;
+  const deltaPoints = newPointsEarned - previousPointsEarned;
+
+  // 4. Idempotently update student points if deltaPoints !== 0
+  const studentUid = attemptData.userId;
+  if (studentUid && deltaPoints !== 0) {
+    try {
+      const userDocRef = doc(db, 'users', studentUid);
+      await runTransaction(db, async (txn) => {
+        const uSnap = await txn.get(userDocRef);
+        if (uSnap.exists()) {
+          const uData = uSnap.data() as UserProfile;
+          const currentTotal = uData.totalPoints || 0;
+          const updatedTotal = Math.max(0, currentTotal + deltaPoints);
+          txn.update(userDocRef, {
+            totalPoints: updatedTotal,
+            weeklyPoints: Math.max(0, (uData.weeklyPoints || 0) + deltaPoints),
+            monthlyPoints: Math.max(0, (uData.monthlyPoints || 0) + deltaPoints),
+            updatedAt: new Date().toISOString(),
+          });
+        }
+      });
+    } catch (uErr: any) {
+      console.warn(`[adminService] Notice updating user points for ${studentUid}:`, uErr.message);
+    }
+
+    try {
+      const pubDocRef = doc(db, 'publicProfiles', studentUid);
+      await runTransaction(db, async (txn) => {
+        const pSnap = await txn.get(pubDocRef);
+        if (pSnap.exists()) {
+          const pData = pSnap.data();
+          const currentPts = pData.points || 0;
+          txn.update(pubDocRef, {
+            points: Math.max(0, currentPts + deltaPoints),
+            updatedAt: new Date().toISOString(),
+          });
+        }
+      });
+    } catch (pErr: any) {
+      console.warn(`[adminService] Notice updating public profile for ${studentUid}:`, pErr.message);
+    }
+  }
+
+  // 5. Update attempt doc
+  const nowIso = new Date().toISOString();
+  await updateDoc(attemptRef, {
+    score: newScore,
+    percentage: newScore,
+    correctAnswers: correctCount,
+    correctCount,
+    wrongAnswers: wrongCount,
+    wrongCount,
+    unanswered: unansweredCount,
+    unansweredCount,
+    pointsEarned: newPointsEarned,
+    answers,
+    reviews,
+    regradedAt: nowIso,
+    regradedBy: auth.currentUser?.email || 'admin',
+    status: 'submitted',
+  });
+
+  return {
+    success: true,
+    attemptId,
+    examId,
+    userId: studentUid,
+    previousScore: attemptData.score,
+    newScore,
+    previousPoints: previousPointsEarned,
+    newPoints: newPointsEarned,
+    deltaPoints,
+    correctCount,
+    wrongCount,
+    unansweredCount,
+    totalQuestions,
+  };
+}
+
+/**
+ * Admin action: Re-grade ALL exam attempts (or all attempts for a given examId)
+ */
+export async function regradeAllExamAttempts(examId?: string): Promise<{
+  totalProcessed: number;
+  succeeded: number;
+  failed: number;
+  totalPointsAdjusted: number;
+  results: RegradeAttemptResult[];
+  errors: string[];
+}> {
+  const results: RegradeAttemptResult[] = [];
+  const errors: string[] = [];
+  let totalPointsAdjusted = 0;
+
+  try {
+    const attemptsCol = collection(db, 'attempts');
+    let q;
+    if (examId) {
+      q = query(attemptsCol, where('examId', '==', examId));
+    } else {
+      q = query(attemptsCol);
+    }
+
+    const snap = await getDocs(q);
+    const candidateDocs = snap.docs.filter(d => {
+      const status = (d.data() as any)?.status;
+      return status === 'submitted' || status === 'submitted_pending' || status === 'in_progress';
+    });
+
+    for (const aDoc of candidateDocs) {
+      try {
+        const res = await regradeSingleAttempt(aDoc.id);
+        results.push(res);
+        totalPointsAdjusted += res.deltaPoints;
+      } catch (err: any) {
+        errors.push(`المحاولة ${aDoc.id}: ${err.message}`);
+      }
+    }
+  } catch (colErr: any) {
+    errors.push(`فشل جلب قائمة المحاولات: ${colErr.message}`);
+  }
+
+  return {
+    totalProcessed: results.length + errors.length,
+    succeeded: results.length,
+    failed: errors.length,
+    totalPointsAdjusted,
+    results,
+    errors,
+  };
 }
 

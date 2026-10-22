@@ -105,6 +105,7 @@ export default async function handler(req: any, res: any) {
     const result = await gradeAndSubmitExam({
       attemptId,
       userId: effectiveUserId,
+      userEmail: authUser?.email,
       answers: answers || {},
       clientAttemptData,
       idToken: rawToken,
@@ -115,6 +116,7 @@ export default async function handler(req: any, res: any) {
       const status = result.code === 'AUTH_FAILED' ? 401 
         : result.code === 'ATTEMPT_NOT_FOUND' ? 404 
         : result.code === 'ANSWER_KEYS_MISSING' ? 404
+        : result.code === 'ANSWER_KEYS_UNAVAILABLE' ? 503
         : (result.code === 'NO_ADMIN_CREDENTIALS' || result.code === 'FIRESTORE_ERROR' || result.code === 'WRITE_FAILED') ? 500
         : result.code === 'TIMEOUT' ? 504
         : 400;

@@ -165,7 +165,11 @@ export interface QuestionReview {
   questionText: string;
   options: string[];
   studentAnswer: number | null;
+  studentOptionId?: string | null;
+  studentAnswerText?: string | null;
   correctAnswer: number;
+  correctOptionId?: string;
+  correctAnswerText?: string;
   isCorrect: boolean;
   isUnanswered: boolean;
   explanation: string;

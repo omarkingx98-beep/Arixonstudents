@@ -259,22 +259,13 @@ export async function getExamQuestions(examId: string): Promise<Question[]> {
     console.warn('Note reading exam metadata in getExamQuestions:', err);
   }
 
-  const isArabicExam = 
+  const isMinisterialArabic = 
     examId === LITERARY_EXAM_ID || 
-    examId.includes('arabic') || 
-    examId.includes('lit') ||
-    examObj?.subject === 'arabic' ||
-    (examObj?.title && examObj.title.includes('عرب')) ||
-    (examObj?.subjectNameAr && examObj.subjectNameAr.includes('عرب'));
+    examId === 'exam_arabic_tw2009_01';
 
-  const isPhysicsExam = 
+  const isMinisterialPhysics = 
     examId === FIRST_EXAM_ID || 
-    examId.includes('physics') ||
-    examObj?.subject === 'physics' ||
-    (examObj?.title && examObj.title.includes('فيزياء')) ||
-    (examObj?.subjectNameAr && examObj.subjectNameAr.includes('فيزياء'));
-
-  const expectedCount = examObj?.questionCount || (isArabicExam ? 15 : isPhysicsExam ? 20 : 15);
+    examId === 'exam_physics_tw2009_01';
 
   try {
     const qCol = collection(db, 'exams', examId, 'questions');
@@ -298,8 +289,13 @@ export async function getExamQuestions(examId: string): Promise<Question[]> {
       });
     });
 
-    // Fallback if questions in subcollection are incomplete (e.g. only 1 question was stored or seeded)
-    if (isArabicExam && questions.length < 15) {
+    // If subcollection returned questions, ALWAYS return them intact
+    if (questions.length > 0) {
+      return questions;
+    }
+
+    // Fallback ONLY for the official ministerial exams if Firestore subcollection is empty
+    if (isMinisterialArabic) {
       return LITERARY_EXAM_QUESTIONS.map(q => ({
         id: q.id,
         examId,
@@ -314,7 +310,7 @@ export async function getExamQuestions(examId: string): Promise<Question[]> {
       }));
     }
 
-    if (isPhysicsExam && questions.length < 20) {
+    if (isMinisterialPhysics) {
       return FIRST_EXAM_QUESTIONS.map(q => ({
         id: q.id,
         examId,
@@ -329,62 +325,10 @@ export async function getExamQuestions(examId: string): Promise<Question[]> {
       }));
     }
 
-    // If subcollection returned valid questions
-    if (questions.length >= expectedCount) {
-      return questions;
-    }
-
-    // If subcollection had fewer questions than expectedCount (e.g. only 1 question), supplement or fallback
-    if (questions.length > 0 && isArabicExam) {
-      return LITERARY_EXAM_QUESTIONS.slice(0, expectedCount).map(q => ({
-        id: q.id,
-        examId,
-        questionText: q.questionText,
-        options: q.options,
-        difficulty: q.difficulty,
-        source: q.source,
-        points: q.points,
-        order: q.order,
-        questionType: q.questionType,
-        hint: q.hint,
-      }));
-    }
-
-    if (questions.length > 0) {
-      return questions;
-    }
-
-    // Default fallback if completely empty
-    if (isArabicExam) {
-      return LITERARY_EXAM_QUESTIONS.map(q => ({
-        id: q.id,
-        examId,
-        questionText: q.questionText,
-        options: q.options,
-        difficulty: q.difficulty,
-        source: q.source,
-        points: q.points,
-        order: q.order,
-        questionType: q.questionType,
-        hint: q.hint,
-      }));
-    }
-
-    return FIRST_EXAM_QUESTIONS.map(q => ({
-      id: q.id,
-      examId,
-      questionText: q.questionText,
-      options: q.options,
-      difficulty: q.difficulty,
-      source: q.source,
-      points: q.points,
-      order: q.order,
-      questionType: q.questionType,
-      hint: q.hint,
-    }));
+    return [];
   } catch (error) {
-    console.error('Error fetching exam questions, activating fallback:', error);
-    if (isArabicExam) {
+    console.error('Error fetching exam questions:', error);
+    if (isMinisterialArabic) {
       return LITERARY_EXAM_QUESTIONS.map(q => ({
         id: q.id,
         examId,
@@ -398,18 +342,21 @@ export async function getExamQuestions(examId: string): Promise<Question[]> {
         hint: q.hint,
       }));
     }
-    return FIRST_EXAM_QUESTIONS.map(q => ({
-      id: q.id,
-      examId,
-      questionText: q.questionText,
-      options: q.options,
-      difficulty: q.difficulty,
-      source: q.source,
-      points: q.points,
-      order: q.order,
-      questionType: q.questionType,
-      hint: q.hint,
-    }));
+    if (isMinisterialPhysics) {
+      return FIRST_EXAM_QUESTIONS.map(q => ({
+        id: q.id,
+        examId,
+        questionText: q.questionText,
+        options: q.options,
+        difficulty: q.difficulty,
+        source: q.source,
+        points: q.points,
+        order: q.order,
+        questionType: q.questionType,
+        hint: q.hint,
+      }));
+    }
+    return [];
   }
 }
 
@@ -661,10 +608,11 @@ export async function submitExamAttempt(
   // (أ) Step A Diagnostic Log: Answer count in state before submit
   console.log(`[ExamSubmission] Step A: State answers count before submit: ${Object.keys(savedAnswers).length}`, savedAnswers);
 
-  // (ب) Step B Diagnostic Log & Batch Write: Write each answer to attempts/{id}/answers
-  console.log(`[ExamSubmission] Step B: Writing all ${Object.keys(savedAnswers).length} answers to attempts/${attemptId}/answers...`);
-  for (const [qId, val] of Object.entries(savedAnswers)) {
-    if (val !== null && val !== undefined) {
+  // (ب) Step B Diagnostic Log & Batch Write: Write answers to attempts/{id}/answers in parallel (max 2.5s)
+  console.log(`[ExamSubmission] Step B: Writing all ${Object.keys(savedAnswers).length} answers in parallel...`);
+  const answerEntries = Object.entries(savedAnswers).filter(([_, val]) => val !== null && val !== undefined);
+  if (answerEntries.length > 0) {
+    const writePromises = answerEntries.map(async ([qId, val]) => {
       try {
         const answerRef = doc(db, 'attempts', attemptId, 'answers', qId);
         const now = new Date().toISOString();
@@ -674,11 +622,16 @@ export async function submitExamAttempt(
           answeredAt: now,
           updatedAt: now,
         }, { merge: true });
-        console.log(`[ExamSubmission] Step B: Successfully saved answer for question [${qId}] = ${val}`);
       } catch (saveErr: any) {
         console.warn(`[ExamSubmission] Step B: Answer write warning for [${qId}]: code=${saveErr?.code}, message=${saveErr?.message}`);
       }
-    }
+    });
+
+    await Promise.race([
+      Promise.allSettled(writePromises),
+      new Promise((resolve) => setTimeout(resolve, 2500)),
+    ]);
+    console.log(`[ExamSubmission] Step B: Answers parallel sync complete.`);
   }
 
   // (ج) Step C: Grading request to /api/exams/grade with 20s timeout and up to 2 auto-retries
@@ -692,6 +645,10 @@ export async function submitExamAttempt(
   } catch (tErr) {
     console.warn('[ExamSubmission] Could not retrieve ID token:', tErr);
   }
+
+  const computedDurationUsed = attemptData.startedAt 
+    ? Math.max(1, Math.round((Date.now() - new Date(attemptData.startedAt).getTime()) / 1000))
+    : (attemptData.durationSeconds || 60);
 
   let serverStatus = 0;
   let serverResult: any = null;
@@ -728,6 +685,8 @@ export async function submitExamAttempt(
             examTitle: attemptData.examTitle,
             totalPoints: attemptData.totalPoints,
             isRetake: attemptData.isRetake,
+            durationUsed: computedDurationUsed,
+            durationSeconds: computedDurationUsed,
           },
           idToken,
         }),
@@ -818,59 +777,63 @@ export async function submitExamAttempt(
   // (د) Step D Diagnostic Log: Attempt status and breakdown after submission
   console.log(`[ExamSubmission] Step D: Attempt status after submission: status=${gradedAttempt.status}, score=${gradedAttempt.score}%, correct=${gradedAttempt.correctCount}, wrong=${gradedAttempt.wrongCount}, unanswered=${gradedAttempt.unansweredCount}, pointsEarned=${gradedAttempt.pointsEarned}`);
 
-  // If requiresClientSync (e.g. dev environment without service account), sync to Firestore
+  // Non-blocking best-effort client sync if requiresClientSync (so student is never kept waiting)
   if (serverResult.requiresClientSync) {
-    try {
-      const attemptDocRef = doc(db, 'attempts', attemptId);
-      await updateDoc(attemptDocRef, {
-        status: 'submitted',
-        submittedAt: gradedAttempt.submittedAt,
-        score: gradedAttempt.score,
-        correctCount: gradedAttempt.correctCount,
-        correctAnswers: gradedAttempt.correctAnswers,
-        wrongCount: gradedAttempt.wrongCount,
-        wrongAnswers: gradedAttempt.wrongAnswers,
-        unansweredCount: gradedAttempt.unansweredCount,
-        unanswered: gradedAttempt.unanswered,
-        pointsEarned: gradedAttempt.pointsEarned,
-        durationSeconds: gradedAttempt.durationSeconds,
-        durationUsed: gradedAttempt.durationUsed,
-        reviews,
-      });
-
-      // Update points in users collection if first completion
-      if (serverResult.isFirstCompletion && gradedAttempt.pointsEarned > 0) {
-        const userDocRef = doc(db, 'users', userId);
-        await runTransaction(db, async (transaction) => {
-          const uSnap = await transaction.get(userDocRef);
-          if (uSnap.exists()) {
-            const uData = uSnap.data() as UserProfile;
-            transaction.update(userDocRef, {
-              totalPoints: (uData.totalPoints || 0) + gradedAttempt.pointsEarned,
-              weeklyPoints: (uData.weeklyPoints || 0) + gradedAttempt.pointsEarned,
-              monthlyPoints: (uData.monthlyPoints || 0) + gradedAttempt.pointsEarned,
-              examsCompleted: (uData.examsCompleted || 0) + 1,
-              correctAnswers: (uData.correctAnswers || 0) + gradedAttempt.correctCount,
-              wrongAnswers: (uData.wrongAnswers || 0) + gradedAttempt.wrongCount,
-              updatedAt: new Date().toISOString(),
-            });
-          }
+    (async () => {
+      try {
+        const attemptDocRef = doc(db, 'attempts', attemptId);
+        await updateDoc(attemptDocRef, {
+          status: 'submitted',
+          submittedAt: gradedAttempt.submittedAt,
+          score: gradedAttempt.score,
+          correctCount: gradedAttempt.correctCount,
+          correctAnswers: gradedAttempt.correctAnswers,
+          wrongCount: gradedAttempt.wrongCount,
+          wrongAnswers: gradedAttempt.wrongAnswers,
+          unansweredCount: gradedAttempt.unansweredCount,
+          unanswered: gradedAttempt.unanswered,
+          pointsEarned: gradedAttempt.pointsEarned,
+          durationSeconds: gradedAttempt.durationSeconds,
+          durationUsed: gradedAttempt.durationUsed,
+          reviews,
         });
-
-        // Sync to publicProfiles
-        const pubRef = doc(db, 'publicProfiles', userId);
-        const pubSnap = await getDoc(pubRef);
-        const curPoints = pubSnap.exists() ? (pubSnap.data().totalPoints || 0) : 0;
-        await setDoc(pubRef, {
-          totalPoints: curPoints + gradedAttempt.pointsEarned,
-          points: curPoints + gradedAttempt.pointsEarned,
-          examsCompleted: (pubSnap.exists() ? (pubSnap.data().examsCompleted || 0) : 0) + 1,
-          updatedAt: new Date().toISOString(),
-        }, { merge: true });
+      } catch (syncErr: any) {
+        console.warn('[ExamSubmission] Client attempt sync notice:', syncErr?.message);
       }
-    } catch (syncErr: any) {
-      console.warn('[ExamSubmission] Client sync notice:', syncErr?.message);
-    }
+
+      if (serverResult.isFirstCompletion && gradedAttempt.pointsEarned > 0) {
+        try {
+          const userDocRef = doc(db, 'users', userId);
+          await runTransaction(db, async (transaction) => {
+            const uSnap = await transaction.get(userDocRef);
+            if (uSnap.exists()) {
+              const uData = uSnap.data() as UserProfile;
+              transaction.update(userDocRef, {
+                totalPoints: (uData.totalPoints || 0) + gradedAttempt.pointsEarned,
+                weeklyPoints: (uData.weeklyPoints || 0) + gradedAttempt.pointsEarned,
+                monthlyPoints: (uData.monthlyPoints || 0) + gradedAttempt.pointsEarned,
+                examsCompleted: (uData.examsCompleted || 0) + 1,
+                correctAnswers: (uData.correctAnswers || 0) + gradedAttempt.correctCount,
+                wrongAnswers: (uData.wrongAnswers || 0) + gradedAttempt.wrongCount,
+                updatedAt: new Date().toISOString(),
+              });
+            }
+          });
+
+          const pubRef = doc(db, 'publicProfiles', userId);
+          const pubSnap = await getDoc(pubRef);
+          const curPoints = pubSnap.exists() ? (pubSnap.data().totalPoints || 0) : 0;
+          await setDoc(pubRef, {
+            totalPoints: curPoints + gradedAttempt.pointsEarned,
+            points: curPoints + gradedAttempt.pointsEarned,
+            examsCompleted: (pubSnap.exists() ? (pubSnap.data().examsCompleted || 0) : 0) + 1,
+            updatedAt: new Date().toISOString(),
+          }, { merge: true });
+        } catch (ptsErr: any) {
+          console.warn('[ExamSubmission] Client points sync notice:', ptsErr?.message);
+        }
+      }
+    })().catch(() => {});
   }
 
   // Update localStorage cache
@@ -912,12 +875,42 @@ export async function getAttemptReviews(attemptId: string, userId: string): Prom
     const savedReviews = (attemptData.reviews as QuestionReview[]) || [];
 
     // Check if reviews suffered from the fallback bug:
-    // e.g., examId is NOT physics FIRST_EXAM_ID, but savedReviews contains physics questions
     const hasPhysicsMismatch = attemptData.examId !== FIRST_EXAM_ID && 
       savedReviews.some(r => r.questionText?.includes('الزخم الخطي') || r.questionId === 'q1');
+    const hasLiteraryMismatch = attemptData.examId !== LITERARY_EXAM_ID &&
+      savedReviews.some(r => r.questionId?.startsWith('lit_') || r.questionText?.includes('كم الاستفهامية') || r.questionText?.includes('البحر الخفيف'));
 
-    if (savedReviews.length > 0 && !hasPhysicsMismatch) {
+    if (savedReviews.length > 0 && !hasPhysicsMismatch && !hasLiteraryMismatch) {
       return savedReviews;
+    }
+
+    // Reconstruct reviews using the actual exam questions
+    const questions = await getExamQuestions(attemptData.examId);
+    const answers = (attemptData as any).answers || (await getSavedAnswersForAttempt(attemptId));
+    if (questions.length > 0) {
+      const repairedReviews: QuestionReview[] = questions.map((q, idx) => {
+        const studentAns = answers[q.id] !== undefined ? answers[q.id] : null;
+        const isUnanswered = studentAns === null || studentAns === undefined;
+        const correctAns = (q as any).correctAnswer !== undefined ? Number((q as any).correctAnswer) : 0;
+        const isCorrect = !isUnanswered && Number(studentAns) === Number(correctAns);
+        const pts = q.points || 5;
+        return {
+          questionId: q.id,
+          questionNumber: q.order || (idx + 1),
+          questionText: q.questionText,
+          options: q.options,
+          studentAnswer: studentAns,
+          correctAnswer: correctAns,
+          isCorrect,
+          isUnanswered,
+          explanation: (q as any).explanation || '',
+          hint: q.hint || '',
+          points: pts,
+          pointsEarned: isCorrect ? pts : 0,
+          source: q.source || 'أريكسون',
+        };
+      });
+      return repairedReviews;
     }
 
     return savedReviews;

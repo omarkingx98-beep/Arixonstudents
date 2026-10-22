@@ -58,10 +58,11 @@ export const ExamResultsView: React.FC<ExamResultsViewProps> = ({
   }, [userId]);
 
   const score = attempt.score ?? 0;
-  const correctCount = attempt.correctAnswers ?? 0;
-  const wrongCount = attempt.wrongAnswers ?? 0;
-  const unansweredCount = attempt.unanswered ?? 0;
+  const correctCount = (attempt as any).correctCount ?? attempt.correctAnswers ?? 0;
+  const wrongCount = (attempt as any).wrongCount ?? attempt.wrongAnswers ?? 0;
+  const unansweredCount = (attempt as any).unansweredCount ?? attempt.unanswered ?? 0;
   const pointsEarned = attempt.pointsEarned ?? 0;
+  const durationSeconds = (attempt as any).durationUsed ?? attempt.durationSeconds ?? 0;
 
   // Format time spent
   const formatTimeSpent = (seconds: number) => {
@@ -191,7 +192,7 @@ export const ExamResultsView: React.FC<ExamResultsViewProps> = ({
         {/* Time spent */}
         <div className="flex items-center justify-center gap-2 text-xs text-slate-500 dark:text-slate-400 pt-1">
           <Clock className="w-4 h-4 text-slate-400" />
-          <span>الوقت المستغرق: {formatTimeSpent(attempt.durationSeconds || 0)}</span>
+          <span>الوقت المستغرق: {formatTimeSpent(durationSeconds)}</span>
         </div>
       </div>
 

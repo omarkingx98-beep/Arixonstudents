@@ -61,11 +61,20 @@ export function encodeFirestoreValue(val: any): any {
 
 const BASE_URL = `https://firestore.googleapis.com/v1/projects/${firebaseAppConfig.projectId}/databases/(default)/documents`;
 
+function buildRestUrl(path: string, extraQuery?: string): string {
+  const apiKey = firebaseAppConfig.apiKey;
+  const params = [];
+  if (apiKey) params.push(`key=${encodeURIComponent(apiKey)}`);
+  if (extraQuery) params.push(extraQuery);
+  const qs = params.length > 0 ? `?${params.join('&')}` : '';
+  return `${BASE_URL}/${path}${qs}`;
+}
+
 /**
  * Fetch a single Firestore document via REST API
  */
 export async function getRestDoc(docPath: string, idToken?: string): Promise<Record<string, any> | null> {
-  const url = `${BASE_URL}/${docPath}`;
+  const url = buildRestUrl(docPath);
   const headers: Record<string, string> = {
     'Accept': 'application/json',
   };
@@ -90,7 +99,7 @@ export async function getRestCollection(
   collectionPath: string,
   idToken?: string
 ): Promise<Array<{ id: string; data: Record<string, any> }>> {
-  const url = `${BASE_URL}/${collectionPath}`;
+  const url = buildRestUrl(collectionPath);
   const headers: Record<string, string> = {
     'Accept': 'application/json',
   };
@@ -127,7 +136,7 @@ export async function patchRestDoc(
   const keys = Object.keys(data);
   if (keys.length === 0) return true;
   const updateMask = keys.map((k) => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join('&');
-  const url = `${BASE_URL}/${docPath}?${updateMask}`;
+  const url = buildRestUrl(docPath, updateMask);
 
   const fields: Record<string, any> = {};
   for (const k of keys) {

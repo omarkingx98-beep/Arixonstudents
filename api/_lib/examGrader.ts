@@ -317,11 +317,22 @@ export async function gradeAndSubmitExam(params: {
     try {
       const restDocs = await getRestCollection(`exams/${examId}/questions`, params.idToken);
       if (restDocs.length > 0) {
+        // Also fetch answerKeys subcollection if available via REST
+        const restKeysMap = new Map<string, any>();
+        try {
+          const restKeyDocs = await getRestCollection(`exams/${examId}/answerKeys`, params.idToken);
+          restKeyDocs.forEach((kd) => restKeysMap.set(kd.id, kd.data));
+        } catch (_) {}
+
         restDocs.sort((a, b) => (a.data.order || 0) - (b.data.order || 0));
         for (let idx = 0; idx < restDocs.length; idx++) {
           const qItem = restDocs[idx];
           const qData = qItem.data;
-          const ansKey = qData.correctAnswer !== undefined ? qData.correctAnswer : 0;
+          const keyData = restKeysMap.get(qItem.id) || {};
+          const ansKey = keyData.correctAnswer !== undefined 
+            ? keyData.correctAnswer 
+            : (qData.correctAnswer !== undefined ? qData.correctAnswer : 0);
+
           questionsWithKeys.push({
             id: qItem.id,
             examId,
@@ -333,10 +344,10 @@ export async function gradeAndSubmitExam(params: {
             points: qData.points || 5,
             questionType: qData.questionType || 'multiple_choice',
             correctAnswer: ansKey,
-            explanation: qData.explanation || '',
-            hint: qData.hint || '',
-            solutionSteps: qData.solutionSteps || null,
-            distractorAnalysis: qData.distractorAnalysis || null,
+            explanation: keyData.explanation || qData.explanation || '',
+            hint: keyData.hint || qData.hint || '',
+            solutionSteps: keyData.solutionSteps || qData.solutionSteps || null,
+            distractorAnalysis: keyData.distractorAnalysis || qData.distractorAnalysis || null,
           });
         }
       }
@@ -345,14 +356,14 @@ export async function gradeAndSubmitExam(params: {
     }
   }
 
-  // 4c. Built-in verified ministerial banks for Physics and Arabic
+  // 4c. Built-in verified ministerial banks ONLY for official ministerial exams (strict ID match)
   if (questionsWithKeys.length === 0) {
-    const isArabic = examId === LITERARY_EXAM_ID || examId.includes('arabic') || examSubject.includes('عرب');
-    const isPhysics = examId === FIRST_EXAM_ID || examId.includes('physics') || examSubject.includes('فيزياء');
+    const isMinisterialPhysics = examId === FIRST_EXAM_ID || examId === 'exam_physics_tw2009_01';
+    const isMinisterialArabic = examId === LITERARY_EXAM_ID || examId === 'exam_arabic_tw2009_01';
 
-    if (isPhysics) {
+    if (isMinisterialPhysics) {
       questionsWithKeys = FIRST_EXAM_QUESTIONS;
-    } else if (isArabic) {
+    } else if (isMinisterialArabic) {
       questionsWithKeys = LITERARY_EXAM_QUESTIONS;
     }
   }
@@ -446,6 +457,11 @@ export async function gradeAndSubmitExam(params: {
       durationUsed = Math.max(1, Math.round((Date.now() - startedMs) / 1000));
     }
   }
+  if (durationUsed === 0) {
+    if (params.clientAttemptData?.durationUsed) durationUsed = Number(params.clientAttemptData.durationUsed);
+    else if (params.clientAttemptData?.durationSeconds) durationUsed = Number(params.clientAttemptData.durationSeconds);
+    else if (attemptData.durationSeconds) durationUsed = Number(attemptData.durationSeconds);
+  }
 
   // Idempotent points check: award points only on the FIRST completion of an exam
   const isRetake = Boolean(attemptData.isRetake);
@@ -461,9 +477,13 @@ export async function gradeAndSubmitExam(params: {
     submittedAt: nowIso,
     score: scorePercent,
     correctCount,
+    correctAnswers: correctCount,
     wrongCount,
+    wrongAnswers: wrongCount,
     unansweredCount,
+    unanswered: unansweredCount,
     durationUsed,
+    durationSeconds: durationUsed,
     pointsEarned: pointsAwarded,
     answers,
     reviews,
@@ -537,9 +557,13 @@ export async function gradeAndSubmitExam(params: {
         submittedAt: nowIso,
         score: scorePercent,
         correctCount,
+        correctAnswers: correctCount,
         wrongCount,
+        wrongAnswers: wrongCount,
         unansweredCount,
+        unanswered: unansweredCount,
         durationUsed,
+        durationSeconds: durationUsed,
         pointsEarned: pointsAwarded,
         answers,
         reviews,

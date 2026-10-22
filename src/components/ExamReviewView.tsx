@@ -25,9 +25,12 @@ export const ExamReviewView: React.FC<ExamReviewViewProps> = ({
   onBack,
 }) => {
   const initialReviews = (attempt as any).reviews || [];
-  // Detect if review contains physics fallback questions on a non-physics exam
-  const hasMismatch = attempt.examId !== 'exam_physics_tw2009_01' && 
-    initialReviews.some((r: any) => r.questionText?.includes('الزخم الخطي') || r.questionId === 'q1');
+  // Detect if review contains ministerial fallback questions on a custom/different exam
+  const hasMismatch = 
+    (attempt.examId !== 'exam_physics_tw2009_01' && 
+     initialReviews.some((r: any) => r.questionText?.includes('الزخم الخطي') || r.questionId === 'q1')) ||
+    (attempt.examId !== 'exam_arabic_tw2009_01' && 
+     initialReviews.some((r: any) => r.questionId?.startsWith('lit_') || r.questionText?.includes('كم الاستفهامية') || r.questionText?.includes('البحر الخفيف')));
 
   const [reviews, setReviews] = useState<QuestionReview[]>(hasMismatch ? [] : initialReviews);
   const [isLoading, setIsLoading] = useState<boolean>(hasMismatch || !initialReviews.length);

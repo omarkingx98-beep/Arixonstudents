@@ -270,6 +270,16 @@ export async function saveExamWithValidation(
     }
   }
 
+  // Always validate questions basic integrity
+  for (let i = 0; i < questions.length; i++) {
+    const q = questions[i];
+    if (q.options && q.options.length > 0) {
+      if (q.correctAnswer === undefined || q.correctAnswer === null || q.correctAnswer < 0 || q.correctAnswer >= q.options.length) {
+        throw new Error(`السؤال رقم (${i + 1}) لا يحتوي على إجابة نموذجية صحيحة محددة بين الخيارات.`);
+      }
+    }
+  }
+
   // 1. Write exam document
   const examDocRef = doc(db, 'exams', examId);
   const cleanExam = sanitizeFirestoreData({
@@ -333,6 +343,87 @@ export async function saveExamWithValidation(
   }
 
   return examId;
+}
+
+/**
+ * Fetch questions for an exam WITH correct answers and explanations for Admin editing & preview
+ */
+export async function getAdminExamQuestions(examId: string): Promise<Question[]> {
+  const isMinisterialArabic = examId === LITERARY_EXAM_ID || examId === 'exam_arabic_tw2009_01';
+  const isMinisterialPhysics = examId === FIRST_EXAM_ID || examId === 'exam_physics_tw2009_01';
+
+  try {
+    const qCol = collection(db, 'exams', examId, 'questions');
+    const qSnap = await getDocs(query(qCol, orderBy('order', 'asc')));
+
+    // Read answerKeys subcollection
+    const keysMap = new Map<string, any>();
+    try {
+      const kCol = collection(db, 'exams', examId, 'answerKeys');
+      const kSnap = await getDocs(kCol);
+      kSnap.forEach((kd) => keysMap.set(kd.id, kd.data()));
+    } catch (kErr) {
+      console.warn('[adminService] Notice reading answerKeys in getAdminExamQuestions:', kErr);
+    }
+
+    const questions: Question[] = [];
+
+    qSnap.forEach((d) => {
+      const data = d.data() as any;
+      const keyData = keysMap.get(d.id);
+
+      // Check Surah Yusuf override if applicable
+      const yusufOverride = examId === SURAH_YUSUF_EXAM_ID ? SURAH_YUSUF_CORRECT_KEYS[d.id] : undefined;
+
+      let correctAns = 0;
+      if (yusufOverride !== undefined) {
+        correctAns = yusufOverride.correctAnswer;
+      } else if (keyData?.correctAnswer !== undefined) {
+        correctAns = keyData.correctAnswer;
+      } else if (data.correctAnswer !== undefined) {
+        correctAns = data.correctAnswer;
+      }
+
+      const expl = yusufOverride?.explanation || keyData?.explanation || data.explanation || '';
+
+      questions.push({
+        id: d.id,
+        examId,
+        questionText: data.questionText || '',
+        options: data.options || [],
+        correctAnswer: correctAns,
+        explanation: expl,
+        difficulty: data.difficulty || 'medium',
+        source: data.source || 'أريكسون',
+        points: data.points || 5,
+        order: data.order || (questions.length + 1),
+        questionType: data.questionType || 'multiple_choice',
+        media: data.media || undefined,
+        hint: keyData?.hint || data.hint || undefined,
+        solutionSteps: keyData?.solutionSteps || data.solutionSteps || undefined,
+        distractorAnalysis: keyData?.distractorAnalysis || data.distractorAnalysis || undefined,
+      });
+    });
+
+    if (questions.length > 0) {
+      return questions;
+    }
+
+    // Fallbacks for ministerial exams if subcollection not populated
+    if (isMinisterialPhysics) {
+      return FIRST_EXAM_QUESTIONS;
+    }
+    if (isMinisterialArabic) {
+      return LITERARY_EXAM_QUESTIONS;
+    }
+
+    return [];
+  } catch (err: any) {
+    console.error('[adminService] Error in getAdminExamQuestions:', err);
+    if (isMinisterialPhysics) return FIRST_EXAM_QUESTIONS;
+    if (isMinisterialArabic) return LITERARY_EXAM_QUESTIONS;
+    return [];
+  }
 }
 
 export async function setExamPublishStatus(
@@ -1538,11 +1629,26 @@ export async function repairExamAnswerKeys(targetExamId?: string): Promise<{
         const keyRef = doc(db, 'exams', examId, 'answerKeys', qDoc.id);
         const keySnap = await getDoc(keyRef);
 
-        if (!keySnap.exists() && qData.correctAnswer !== undefined) {
+        const yusufOverride = examId === SURAH_YUSUF_EXAM_ID ? SURAH_YUSUF_CORRECT_KEYS[qDoc.id] : undefined;
+        const targetCorrectAnswer = yusufOverride !== undefined ? yusufOverride.correctAnswer : qData.correctAnswer;
+        const targetExplanation = yusufOverride?.explanation || qData.explanation || '';
+
+        const needsRepair = !keySnap.exists() || 
+          (yusufOverride !== undefined && keySnap.data()?.correctAnswer !== yusufOverride.correctAnswer) ||
+          (yusufOverride !== undefined && qData.correctAnswer !== yusufOverride.correctAnswer);
+
+        if (needsRepair && targetCorrectAnswer !== undefined) {
+          if (yusufOverride !== undefined && qData.correctAnswer !== yusufOverride.correctAnswer) {
+            await updateDoc(doc(db, 'exams', examId, 'questions', qDoc.id), {
+              correctAnswer: targetCorrectAnswer,
+              explanation: targetExplanation,
+            }).catch(() => null);
+          }
+
           await setDoc(keyRef, {
             id: qDoc.id,
-            correctAnswer: qData.correctAnswer,
-            explanation: qData.explanation || '',
+            correctAnswer: targetCorrectAnswer,
+            explanation: targetExplanation,
             hint: qData.hint || null,
             solutionSteps: qData.solutionSteps || null,
             distractorAnalysis: qData.distractorAnalysis || null,

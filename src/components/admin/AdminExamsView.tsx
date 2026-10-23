@@ -37,9 +37,9 @@ import {
   checkExamReadiness,
   repairExamAnswerKeys,
   regradePendingAttempts,
+  getAdminExamQuestions,
 } from '../../lib/adminService';
 import { useAdmin } from '../../context/AdminContext';
-import { getExamQuestions } from '../../lib/examService';
 import { AdminCreateExamModal } from './AdminCreateExamModal';
 import { AdminExamResultsModal } from './AdminExamResultsModal';
 import type { Exam, Question, SubjectId } from '../../types';
@@ -213,7 +213,7 @@ export const AdminExamsView: React.FC<AdminExamsViewProps> = ({
     setExamToPreview(exam);
     setIsLoadingPreview(true);
     try {
-      const qs = await getExamQuestions(exam.id);
+      const qs = await getAdminExamQuestions(exam.id);
       setPreviewQuestions(qs);
     } catch (err) {
       console.warn('Error fetching questions for preview:', err);
@@ -229,7 +229,7 @@ export const AdminExamsView: React.FC<AdminExamsViewProps> = ({
     if (!window.confirm(`هل تريد استنساخ وتكرار امتحان "${exam.title}" كمسودة جديدة؟`)) return;
 
     try {
-      const existingQs = await getExamQuestions(exam.id);
+      const existingQs = await getAdminExamQuestions(exam.id);
       const newTitle = `نسخة - ${exam.title}`;
 
       await saveExamWithValidation(

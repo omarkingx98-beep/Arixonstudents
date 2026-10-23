@@ -18,7 +18,6 @@ interface ExamDetailsModalProps {
   isOpen: boolean;
   onClose: () => void;
   onStartExam: (exam: Exam) => Promise<void>;
-  onRetakeExam?: (exam: Exam) => Promise<void>;
   onViewResult?: (attemptId: string) => void;
   isLoading?: boolean;
 }
@@ -28,7 +27,6 @@ export const ExamDetailsModal: React.FC<ExamDetailsModalProps> = ({
   isOpen,
   onClose,
   onStartExam,
-  onRetakeExam,
   onViewResult,
   isLoading = false,
 }) => {
@@ -54,20 +52,6 @@ export const ExamDetailsModal: React.FC<ExamDetailsModalProps> = ({
       await onStartExam(exam);
     } catch (err: any) {
       setError(err?.message || 'حدث خطأ أثناء بدء الامتحان. يرجى المحاولة مرة أخرى.');
-    }
-  };
-
-  const handleRetake = async () => {
-    setError(null);
-    try {
-      if (onRetakeExam) {
-        await onRetakeExam(exam);
-      } else {
-        await onStartExam(exam);
-      }
-      onClose();
-    } catch (err: any) {
-      setError(err?.message || 'حدث خطأ أثناء بدء إعادة الامتحان.');
     }
   };
 
@@ -202,33 +186,22 @@ export const ExamDetailsModal: React.FC<ExamDetailsModalProps> = ({
         {/* Footer Actions */}
         <div className="p-5 sm:p-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 flex flex-col sm:flex-row items-center gap-2.5">
           {isCompleted ? (
-            <>
-              <button
-                id="confirm-view-result-btn"
-                onClick={() => {
-                  if (onViewResult && exam.userLastAttemptId) {
-                    onViewResult(exam.userLastAttemptId);
-                    onClose();
-                  } else {
-                    handleStart();
-                  }
-                }}
-                disabled={isLoading}
-                className="w-full sm:flex-1 py-3 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white font-bold text-sm flex items-center justify-center gap-2 shadow-md shadow-blue-500/25 transition-all cursor-pointer disabled:opacity-70"
-              >
-                <CheckCircle2 className="w-4 h-4" />
-                <span>عرض النتيجة والمراجعة</span>
-              </button>
-
-              <button
-                id="confirm-retake-exam-btn"
-                onClick={handleRetake}
-                disabled={isLoading}
-                className="w-full sm:w-auto py-3 px-4 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-sm flex items-center justify-center gap-2 transition-colors cursor-pointer disabled:opacity-70"
-              >
-                <span>إعادة المحاولة (تدريب)</span>
-              </button>
-            </>
+            <button
+              id="confirm-view-result-btn"
+              onClick={() => {
+                if (onViewResult && exam.userLastAttemptId) {
+                  onViewResult(exam.userLastAttemptId);
+                  onClose();
+                } else {
+                  handleStart();
+                }
+              }}
+              disabled={isLoading}
+              className="w-full py-3 px-5 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white font-bold text-sm flex items-center justify-center gap-2 shadow-md shadow-blue-500/25 transition-all cursor-pointer disabled:opacity-70"
+            >
+              <CheckCircle2 className="w-4 h-4" />
+              <span>عرض النتيجة ومراجعة الحل</span>
+            </button>
           ) : (
             <button
               id="confirm-start-exam-btn"

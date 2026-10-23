@@ -6,6 +6,8 @@ import {
   FIRST_EXAM_QUESTIONS, 
   LITERARY_EXAM_ID, 
   LITERARY_EXAM_QUESTIONS, 
+  SURAH_YUSUF_EXAM_ID,
+  SURAH_YUSUF_CORRECT_KEYS,
   type QuestionWithKey 
 } from './examData.js';
 import { getRestDoc, getRestCollection, patchRestDoc } from './firestoreRest.js';
@@ -302,9 +304,15 @@ export async function gradeAndSubmitExam(params: {
           const qData = qDoc.data();
           const keyData = keysMap.get(qDoc.id);
 
-          const ansKey = keyData?.correctAnswer !== undefined 
-            ? keyData.correctAnswer 
-            : (qData.correctAnswer !== undefined ? qData.correctAnswer : undefined);
+          const yusufOverride = examId === SURAH_YUSUF_EXAM_ID ? SURAH_YUSUF_CORRECT_KEYS[qDoc.id] : undefined;
+
+          const ansKey = yusufOverride !== undefined
+            ? yusufOverride.correctAnswer
+            : (keyData?.correctAnswer !== undefined 
+                ? keyData.correctAnswer 
+                : (qData.correctAnswer !== undefined ? qData.correctAnswer : undefined));
+
+          const expl = yusufOverride?.explanation || keyData?.explanation || qData.explanation || '';
 
           if (ansKey === undefined) {
             console.error(`[ExamGrader] Missing answer key for question: ${qDoc.id} in exam: ${examId}`);
@@ -323,7 +331,7 @@ export async function gradeAndSubmitExam(params: {
             points: qData.points || 5,
             questionType: qData.questionType || 'multiple_choice',
             correctAnswer: ansKey,
-            explanation: keyData?.explanation || qData.explanation || '',
+            explanation: expl,
             hint: keyData?.hint || qData.hint || '',
             solutionSteps: keyData?.solutionSteps || qData.solutionSteps || null,
             distractorAnalysis: keyData?.distractorAnalysis || qData.distractorAnalysis || null,
@@ -339,16 +347,18 @@ export async function gradeAndSubmitExam(params: {
     }
   }
 
-  // 4b. REST API fallback ONLY if Admin token is available (never with regular student token for answerKeys)
-  if (questionsWithKeys.length === 0 && examId && credentialSource === 'user_token') {
+  // 4b. REST API fallback for questions (and answerKeys if admin)
+  if (questionsWithKeys.length === 0 && examId && params.idToken) {
     try {
       const restDocs = await getRestCollection(`exams/${examId}/questions`, params.idToken);
       if (restDocs.length > 0) {
         const restKeysMap = new Map<string, any>();
-        try {
-          const restKeyDocs = await getRestCollection(`exams/${examId}/answerKeys`, params.idToken);
-          restKeyDocs.forEach((kd) => restKeysMap.set(kd.id, kd.data));
-        } catch (_) {}
+        if (credentialSource === 'user_token') {
+          try {
+            const restKeyDocs = await getRestCollection(`exams/${examId}/answerKeys`, params.idToken);
+            restKeyDocs.forEach((kd) => restKeysMap.set(kd.id, kd.data));
+          } catch (_) {}
+        }
 
         restDocs.sort((a, b) => (a.data.order || 0) - (b.data.order || 0));
         let anyKeyMissing = false;
@@ -357,9 +367,16 @@ export async function gradeAndSubmitExam(params: {
           const qItem = restDocs[idx];
           const qData = qItem.data;
           const keyData = restKeysMap.get(qItem.id);
-          const ansKey = keyData?.correctAnswer !== undefined 
-            ? keyData.correctAnswer 
-            : (qData.correctAnswer !== undefined ? qData.correctAnswer : undefined);
+
+          const yusufOverride = examId === SURAH_YUSUF_EXAM_ID ? SURAH_YUSUF_CORRECT_KEYS[qItem.id] : undefined;
+
+          const ansKey = yusufOverride !== undefined
+            ? yusufOverride.correctAnswer
+            : (keyData?.correctAnswer !== undefined 
+                ? keyData.correctAnswer 
+                : (qData.correctAnswer !== undefined ? qData.correctAnswer : undefined));
+
+          const expl = yusufOverride?.explanation || keyData?.explanation || qData.explanation || '';
 
           if (ansKey === undefined) {
             anyKeyMissing = true;
@@ -377,7 +394,7 @@ export async function gradeAndSubmitExam(params: {
             points: qData.points || 5,
             questionType: qData.questionType || 'multiple_choice',
             correctAnswer: ansKey,
-            explanation: keyData?.explanation || qData.explanation || '',
+            explanation: expl,
             hint: keyData?.hint || qData.hint || '',
             solutionSteps: keyData?.solutionSteps || qData.solutionSteps || null,
             distractorAnalysis: keyData?.distractorAnalysis || qData.distractorAnalysis || null,

@@ -13,8 +13,7 @@ import {
   Layers,
   AlertTriangle,
 } from 'lucide-react';
-import { saveExamWithValidation, fetchQuestionBank } from '../../lib/adminService';
-import { getExamQuestions } from '../../lib/examService';
+import { saveExamWithValidation, fetchQuestionBank, getAdminExamQuestions } from '../../lib/adminService';
 import { auth } from '../../lib/firebase';
 import type { Exam, SubjectId, QuestionBankItem, QuestionType } from '../../types';
 
@@ -70,15 +69,15 @@ export const AdminCreateExamModal: React.FC<AdminCreateExamModalProps> = ({
   useEffect(() => {
     if (examToEdit?.id) {
       setIsLoadingQuestions(true);
-      getExamQuestions(examToEdit.id)
+      getAdminExamQuestions(examToEdit.id)
         .then((loaded) => {
           if (loaded && loaded.length > 0) {
             setQuestions(
               loaded.map((q, idx) => ({
                 id: q.id,
                 questionText: q.questionText,
-                options: q.options && q.options.length === 4 ? q.options : ['أ', 'ب', 'ج', 'د'],
-                correctAnswer: q.correctAnswer ?? 0,
+                options: q.options && q.options.length >= 2 ? q.options : ['أ', 'ب', 'ج', 'د'],
+                correctAnswer: typeof q.correctAnswer === 'number' ? q.correctAnswer : 0,
                 explanation: q.explanation || '',
                 difficulty: q.difficulty || 'medium',
                 source: q.source || 'أريكسون 2009',
@@ -93,7 +92,7 @@ export const AdminCreateExamModal: React.FC<AdminCreateExamModalProps> = ({
           }
         })
         .catch((err) => {
-          console.warn('Error loading exam questions:', err);
+          console.warn('Error loading admin exam questions:', err);
           addBlankQuestion();
         })
         .finally(() => setIsLoadingQuestions(false));
@@ -522,21 +521,15 @@ export const AdminCreateExamModal: React.FC<AdminCreateExamModalProps> = ({
                 />
               </div>
 
-              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#13192a] border border-slate-200 dark:border-slate-800 flex items-center justify-between">
+              <div className="p-4 rounded-2xl bg-blue-50/70 dark:bg-blue-950/30 border border-blue-200/70 dark:border-blue-900/50 flex items-center justify-between">
                 <div>
-                  <div className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                    السماح بإعادة تقديم الامتحان (Retake Policy)
+                  <div className="text-xs font-bold text-blue-900 dark:text-blue-200">
+                    سياسة المحاولات المعتمدة (Exam Policy)
                   </div>
-                  <div className="text-[11px] text-slate-400">
-                    إذا تم تفعيله يمكن للطالب إعادة الامتحان لتحسين نتيجته، وإذا عُطّل يسجل الاختبار لمرة واحدة فقط.
+                  <div className="text-[11px] text-blue-700/80 dark:text-blue-300/80">
+                    الامتحانات مخصصة لمحاولة واحدة معتمدة لكل طالب لضمان نزاهة الترتيب والتقييم، مع إتاحة مراجعة الحل النموذجي دائماً بعد انتهاء الامتحان.
                   </div>
                 </div>
-                <input
-                  type="checkbox"
-                  checked={allowRetake}
-                  onChange={(e) => setAllowRetake(e.target.checked)}
-                  className="w-5 h-5 accent-blue-600 rounded cursor-pointer"
-                />
               </div>
             </div>
           )}

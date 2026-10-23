@@ -167,29 +167,6 @@ export const ExamsView: React.FC<ExamsViewProps> = ({
     }
   };
 
-  // Practice Retake Handler
-  const handleRetakeExam = async (exam: Exam) => {
-    if (!profile) return;
-    setIsStartingAttempt(true);
-    try {
-      const { attempt, questions } = await startOrResumeAttempt(
-        exam.id,
-        profile.uid,
-        profile.displayName,
-        true // isRetake
-      );
-      setCurrentExam(exam);
-      setCurrentAttempt(attempt);
-      setCurrentQuestions(questions);
-      setSelectedExamForModal(null);
-      setViewMode('active');
-    } catch (err: any) {
-      console.error('Failed to start retake:', err);
-    } finally {
-      setIsStartingAttempt(false);
-    }
-  };
-
   // Called when student finishes/submits active exam
   const handleFinishExam = async (submittedAttempt: ExamAttempt) => {
     setCurrentAttempt(submittedAttempt);
@@ -479,32 +456,20 @@ export const ExamsView: React.FC<ExamsViewProps> = ({
                               {exam.userScore !== undefined ? `${exam.userScore}% (${exam.userScore} / 100)` : 'تم الإنجاز'}
                             </span>
                           </div>
-                          <div className="flex items-center gap-2">
-                            <button
-                              id={`view-result-btn-${exam.id}`}
-                              onClick={() => {
-                                if (exam.userLastAttemptId) {
-                                  openSubmittedAttempt(exam.userLastAttemptId, exam);
-                                } else {
-                                  handleExamCardClick(exam);
-                                }
-                              }}
-                              className="flex-1 py-2.5 px-3 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md shadow-blue-500/20"
-                            >
-                              <CheckCircle2 className="w-4 h-4" />
-                              <span>عرض النتيجة</span>
-                            </button>
-
-                            <button
-                              id={`retake-exam-btn-${exam.id}`}
-                              onClick={() => handleRetakeExam(exam)}
-                              className="py-2.5 px-3 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
-                              title="إعادة حل الامتحان للتدريب (دون احتساب نقاط إضافية)"
-                            >
-                              <RotateCcw className="w-3.5 h-3.5" />
-                              <span>إعادة المحاولة</span>
-                            </button>
-                          </div>
+                          <button
+                            id={`view-result-btn-${exam.id}`}
+                            onClick={() => {
+                              if (exam.userLastAttemptId) {
+                                openSubmittedAttempt(exam.userLastAttemptId, exam);
+                              } else {
+                                handleExamCardClick(exam);
+                              }
+                            }}
+                            className="w-full py-2.5 px-3 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-[0.98] text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md shadow-blue-500/20"
+                          >
+                            <CheckCircle2 className="w-4 h-4" />
+                            <span>عرض النتيجة ومراجعة الحل</span>
+                          </button>
                         </div>
                       ) : isInProgress ? (
                         <button
@@ -569,7 +534,6 @@ export const ExamsView: React.FC<ExamsViewProps> = ({
           isOpen={!!selectedExamForModal}
           onClose={() => setSelectedExamForModal(null)}
           onStartExam={handleStartExamFromModal}
-          onRetakeExam={handleRetakeExam}
           onViewResult={(attemptId) => openSubmittedAttempt(attemptId, selectedExamForModal)}
           isLoading={isStartingAttempt}
         />

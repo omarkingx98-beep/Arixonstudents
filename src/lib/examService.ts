@@ -130,12 +130,23 @@ export async function getExamsList(
       const attemptsSnap = await getDocs(attemptsQuery);
       attemptsSnap.forEach((d) => {
         const att = { ...(d.data() as ExamAttempt), id: d.id };
-        if (att.status === 'submitted') {
+        if (att.status === 'submitted' || att.status === 'submitted_pending') {
           const prev = userSubmittedAttempts[att.examId];
           if (!prev || new Date(att.submittedAt || 0) > new Date(prev.submittedAt || 0)) {
             userSubmittedAttempts[att.examId] = att;
           }
         } else if (att.status === 'in_progress') {
+          // If locally recorded as submitted, prefer completed status
+          try {
+            const localCached = localStorage.getItem(`arixon_attempt_${att.id}`);
+            if (localCached) {
+              const parsed = JSON.parse(localCached);
+              if (parsed.status === 'submitted' || parsed.score !== undefined) {
+                userSubmittedAttempts[att.examId] = { ...att, ...parsed, status: 'submitted' };
+                return;
+              }
+            }
+          } catch {}
           userInProgressAttempts[att.examId] = att;
         }
       });
@@ -193,24 +204,43 @@ export async function getExamsList(
 
       // Student attempt status: if submitted, it is permanently completed (one-time completion)
       if (currentUserId) {
-        if (userSubmittedAttempts[examObj.id]) {
-          const att = userSubmittedAttempts[examObj.id];
+        let att = userSubmittedAttempts[examObj.id];
+
+        // Fallback: check locally stored completed exam marker
+        if (!att && typeof window !== 'undefined') {
+          try {
+            const rawCompleted = localStorage.getItem(`arixon_completed_exam_${examObj.id}`);
+            if (rawCompleted) {
+              const parsed = JSON.parse(rawCompleted);
+              att = {
+                id: parsed.attemptId || `att_${currentUserId}_${examObj.id}`,
+                examId: examObj.id,
+                userId: currentUserId,
+                status: 'submitted',
+                score: parsed.score ?? 0,
+                submittedAt: parsed.submittedAt || new Date().toISOString(),
+              } as ExamAttempt;
+            }
+          } catch {}
+        }
+
+        if (att) {
           examObj.userAttemptStatus = 'completed';
           examObj.status = 'completed';
           examObj.userLastAttemptId = att.id;
           examObj.userScore = att.score ?? 0;
         } else if (userInProgressAttempts[examObj.id]) {
-          const att = userInProgressAttempts[examObj.id];
-          const isExpired = new Date(att.expectedEndAt).getTime() < Date.now();
+          const inProgressAtt = userInProgressAttempts[examObj.id];
+          const isExpired = new Date(inProgressAtt.expectedEndAt).getTime() < Date.now();
           if (!isExpired) {
             examObj.userAttemptStatus = 'in_progress';
-            examObj.userLastAttemptId = att.id;
+            examObj.userLastAttemptId = inProgressAtt.id;
           } else {
             // Expired attempt -> locked as completed
             examObj.userAttemptStatus = 'completed';
             examObj.status = 'completed';
-            examObj.userLastAttemptId = att.id;
-            examObj.userScore = att.score ?? 0;
+            examObj.userLastAttemptId = inProgressAtt.id;
+            examObj.userScore = inProgressAtt.score ?? 0;
           }
         }
       }
@@ -567,7 +597,7 @@ export async function getUserExamHistory(userId: string): Promise<ExamAttempt[]>
     const q = query(
       attemptsRef,
       where('userId', '==', userId),
-      where('status', '==', 'submitted')
+      where('status', 'in', ['submitted', 'submitted_pending'])
     );
     const snap = await getDocs(q);
     const history: ExamAttempt[] = [];
@@ -839,6 +869,16 @@ export async function submitExamAttempt(
   // Update localStorage cache
   try {
     localStorage.setItem(`arixon_attempt_${attemptId}`, JSON.stringify({ ...gradedAttempt, reviews }));
+    const finalExamId = gradedAttempt.examId || attemptData.examId;
+    if (finalExamId) {
+      localStorage.setItem(`arixon_completed_exam_${finalExamId}`, JSON.stringify({
+        attemptId,
+        examId: finalExamId,
+        score: gradedAttempt.score,
+        status: 'completed',
+        submittedAt: gradedAttempt.submittedAt,
+      }));
+    }
   } catch {}
 
   // Also update locally cached profile points

@@ -36,6 +36,7 @@ export const ExamDetailsModal: React.FC<ExamDetailsModalProps> = ({
 
   const isCompleted = 
     exam.userAttemptStatus === 'completed' || 
+    exam.userAttemptStatus === 'submitted_pending' || 
     exam.status === 'completed' || 
     exam.userScore !== undefined;
 

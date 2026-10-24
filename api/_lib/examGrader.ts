@@ -306,13 +306,14 @@ export async function gradeAndSubmitExam(params: {
 
           const yusufOverride = examId === SURAH_YUSUF_EXAM_ID ? SURAH_YUSUF_CORRECT_KEYS[qDoc.id] : undefined;
 
-          const ansKey = yusufOverride !== undefined
-            ? yusufOverride.correctAnswer
-            : (keyData?.correctAnswer !== undefined 
-                ? keyData.correctAnswer 
+          // Real keyData stored in Firestore answerKeys subcollection has highest authority
+          const ansKey = (keyData?.correctAnswer !== undefined && keyData?.correctAnswer !== null)
+            ? keyData.correctAnswer
+            : (yusufOverride !== undefined 
+                ? yusufOverride.correctAnswer 
                 : (qData.correctAnswer !== undefined ? qData.correctAnswer : undefined));
 
-          const expl = yusufOverride?.explanation || keyData?.explanation || qData.explanation || '';
+          const expl = keyData?.explanation || yusufOverride?.explanation || qData.explanation || '';
 
           if (ansKey === undefined) {
             console.error(`[ExamGrader] Missing answer key for question: ${qDoc.id} in exam: ${examId}`);
@@ -370,13 +371,14 @@ export async function gradeAndSubmitExam(params: {
 
           const yusufOverride = examId === SURAH_YUSUF_EXAM_ID ? SURAH_YUSUF_CORRECT_KEYS[qItem.id] : undefined;
 
-          const ansKey = yusufOverride !== undefined
-            ? yusufOverride.correctAnswer
-            : (keyData?.correctAnswer !== undefined 
-                ? keyData.correctAnswer 
+          // Real keyData stored in Firestore answerKeys has highest priority
+          const ansKey = (keyData?.correctAnswer !== undefined && keyData?.correctAnswer !== null)
+            ? keyData.correctAnswer
+            : (yusufOverride !== undefined 
+                ? yusufOverride.correctAnswer 
                 : (qData.correctAnswer !== undefined ? qData.correctAnswer : undefined));
 
-          const expl = yusufOverride?.explanation || keyData?.explanation || qData.explanation || '';
+          const expl = keyData?.explanation || yusufOverride?.explanation || qData.explanation || '';
 
           if (ansKey === undefined) {
             anyKeyMissing = true;
@@ -518,7 +520,15 @@ export async function gradeAndSubmitExam(params: {
     }
 
     const isUnanswered = studentOptionId === null;
-    const isCorrect = !isUnanswered && studentOptionId === correctOptionId;
+    let isCorrect = !isUnanswered && studentOptionId === correctOptionId;
+
+    // Special tolerance for Arabic RTL ratio ambiguity on q13 in physics (1:3 vs 3:1)
+    if (!isCorrect && !isUnanswered && (q.id === 'q13' || q.questionText?.includes('K1 = 9K2') || q.questionText?.includes('تسعة أمثال'))) {
+      if ((studentOptionId === 'opt_2' || studentOptionId === 'opt_3') &&
+          (correctOptionId === 'opt_2' || correctOptionId === 'opt_3')) {
+        isCorrect = true;
+      }
+    }
 
     if (isCorrect) {
       correctCount++;

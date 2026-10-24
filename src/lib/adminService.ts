@@ -376,15 +376,15 @@ export async function getAdminExamQuestions(examId: string): Promise<Question[]>
       const yusufOverride = examId === SURAH_YUSUF_EXAM_ID ? SURAH_YUSUF_CORRECT_KEYS[d.id] : undefined;
 
       let correctAns = 0;
-      if (yusufOverride !== undefined) {
-        correctAns = yusufOverride.correctAnswer;
-      } else if (keyData?.correctAnswer !== undefined) {
+      if (keyData?.correctAnswer !== undefined && keyData?.correctAnswer !== null) {
         correctAns = keyData.correctAnswer;
+      } else if (yusufOverride !== undefined) {
+        correctAns = yusufOverride.correctAnswer;
       } else if (data.correctAnswer !== undefined) {
         correctAns = data.correctAnswer;
       }
 
-      const expl = yusufOverride?.explanation || keyData?.explanation || data.explanation || '';
+      const expl = keyData?.explanation || yusufOverride?.explanation || data.explanation || '';
 
       questions.push({
         id: d.id,
@@ -1861,14 +1861,16 @@ export async function regradeSingleAttempt(attemptId: string): Promise<RegradeAt
       const qd = qDoc.data();
       const kd = keysMap.get(qDoc.id);
 
-      // Check Surah Yusuf override if applicable
       const yusufOverride = examId === SURAH_YUSUF_EXAM_ID ? SURAH_YUSUF_CORRECT_KEYS[qDoc.id] : undefined;
 
-      const ansKey = yusufOverride !== undefined 
-        ? yusufOverride.correctAnswer 
-        : (kd?.correctAnswer !== undefined ? kd.correctAnswer : (qd.correctAnswer !== undefined ? qd.correctAnswer : 0));
+      // Real keyData stored in Firestore answerKeys has highest priority
+      const ansKey = (kd?.correctAnswer !== undefined && kd?.correctAnswer !== null)
+        ? kd.correctAnswer
+        : (yusufOverride !== undefined 
+            ? yusufOverride.correctAnswer 
+            : (qd.correctAnswer !== undefined ? qd.correctAnswer : 0));
 
-      const expl = yusufOverride?.explanation || kd?.explanation || qd.explanation || '';
+      const expl = kd?.explanation || yusufOverride?.explanation || qd.explanation || '';
 
       questionsWithKeys.push({
         id: qDoc.id,
@@ -1970,7 +1972,15 @@ export async function regradeSingleAttempt(attemptId: string): Promise<RegradeAt
     }
 
     const isUnanswered = studentOptionId === null;
-    const isCorrect = !isUnanswered && studentOptionId === correctOptionId;
+    let isCorrect = !isUnanswered && studentOptionId === correctOptionId;
+
+    // Special tolerance for Arabic RTL ratio ambiguity on q13 in physics (1:3 vs 3:1)
+    if (!isCorrect && !isUnanswered && (q.id === 'q13' || q.questionText?.includes('K1 = 9K2') || q.questionText?.includes('تسعة أمثال'))) {
+      if ((studentOptionId === 'opt_2' || studentOptionId === 'opt_3') &&
+          (correctOptionId === 'opt_2' || correctOptionId === 'opt_3')) {
+        isCorrect = true;
+      }
+    }
 
     if (isCorrect) {
       correctCount++;

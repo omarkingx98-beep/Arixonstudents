@@ -47,7 +47,8 @@ async function runTestSuite() {
   const allWrongAnswers: Record<string, any> = {};
   FIRST_EXAM_QUESTIONS.forEach(q => {
     // Pick deliberately wrong index
-    const wrongIdx = (Number(q.correctAnswer) + 1) % (q.options?.length || 4);
+    let wrongIdx = (Number(q.correctAnswer) + 1) % (q.options?.length || 4);
+    if (q.id === 'q13') wrongIdx = 0; // '9 : 1' is definitively wrong
     allWrongAnswers[q.id] = `opt_${wrongIdx}`;
   });
 
@@ -78,7 +79,8 @@ async function runTestSuite() {
     if (idx < 10) {
       halfAnswers[q.id] = `opt_${q.correctAnswer}`; // Correct
     } else {
-      const wrongIdx = (Number(q.correctAnswer) + 1) % (q.options?.length || 4);
+      let wrongIdx = (Number(q.correctAnswer) + 1) % (q.options?.length || 4);
+      if (q.id === 'q13') wrongIdx = 0; // '9 : 1' is definitively wrong
       halfAnswers[q.id] = `opt_${wrongIdx}`; // Wrong
     }
   });

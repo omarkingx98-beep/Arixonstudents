@@ -26,6 +26,18 @@ import { getFriendsList } from '../lib/friendService';
 import { updateStudentBranch } from '../lib/firebase';
 import type { FriendItem } from '../types';
 
+const WhatsAppIcon: React.FC<{ className?: string }> = ({ className = 'w-4 h-4 fill-current' }) => (
+  <svg className={className} viewBox="0 0 24 24">
+    <path d="M12.031 6.172c-3.181 0-5.767 2.586-5.768 5.766-.001 1.298.38 2.27 1.019 3.287l-.582 2.128 2.182-.573c.978.58 1.911.928 3.145.929 3.178 0 5.767-2.587 5.768-5.766.001-3.187-2.575-5.77-5.764-5.771zm3.392 8.244c-.144.405-.837.774-1.17.824-.311.045-.698.077-1.114-.055-.417-.132-.977-.321-1.688-.636-1.503-.666-2.502-2.186-2.58-2.288-.077-.101-.611-.813-.611-1.55 0-.737.387-1.1.524-1.25.137-.15.3-.188.4-.188.1 0 .201.002.288.006.094.004.22-.036.344.263.128.31.439 1.072.477 1.15.038.077.064.168.013.27-.051.101-.077.164-.153.253-.077.089-.161.198-.231.266-.077.076-.157.159-.068.312.089.153.396.654.85 1.058.584.521 1.077.682 1.23.759.153.076.242.064.332-.038.09-.102.383-.446.485-.599.102-.153.204-.127.344-.076.14.051.892.42 1.045.497.153.076.255.114.293.178.038.064.038.369-.106.774zM12 2C6.477 2 2 6.477 2 12c0 1.89.525 3.66 1.438 5.168L2 22l4.98-1.306A9.957 9.957 0 0012 22c5.523 0 10-4.477 10-10S17.523 2 12 2z"/>
+  </svg>
+);
+
+const InstagramIcon: React.FC<{ className?: string }> = ({ className = 'w-4 h-4 fill-current' }) => (
+  <svg className={className} viewBox="0 0 24 24">
+    <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/>
+  </svg>
+);
+
 interface SettingsModalProps {
   onClose: () => void;
   onOpenTutorial?: () => void;
@@ -45,7 +57,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const { theme, setTheme } = useTheme();
   const { isAdmin } = useAdmin();
 
-  const [activeSubView, setActiveSubView] = useState<'main' | 'privacy' | 'about' | 'goals' | 'friends'>('main');
+  const [activeSubView, setActiveSubView] = useState<'main' | 'privacy' | 'about' | 'goals' | 'friends' | 'developer'>('main');
   const [selectedLanguage, setSelectedLanguage] = useState<'ar' | 'en'>('ar');
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [friends, setFriends] = useState<FriendItem[]>([]);
@@ -112,6 +124,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               {activeSubView === 'about' && 'حول منصة Arixon'}
               {activeSubView === 'goals' && 'المهام والتذكيرات الدراسية'}
               {activeSubView === 'friends' && 'قائمة أصدقائي'}
+              {activeSubView === 'developer' && 'تواصل مع المطور (عمر شراب)'}
             </h3>
           </div>
 
@@ -310,6 +323,23 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </button>
 
               <button
+                id="open-developer-contact-btn"
+                onClick={() => setActiveSubView('developer')}
+                className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors text-sm font-semibold cursor-pointer"
+              >
+                <div className="flex items-center gap-2.5 text-slate-700 dark:text-slate-300">
+                  <div className="w-5 h-5 rounded-md bg-emerald-100 dark:bg-emerald-950/80 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold text-xs">
+                    ع
+                  </div>
+                  <div className="text-right">
+                    <span>تواصل مع المطور (عمر شراب)</span>
+                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400 block font-normal">واتساب وإنستغرام مباشر</span>
+                  </div>
+                </div>
+                <ChevronLeft className="w-4 h-4 text-slate-400" />
+              </button>
+
+              <button
                 id="open-about-arixon-btn"
                 onClick={() => setActiveSubView('about')}
                 className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors text-sm font-semibold cursor-pointer"
@@ -320,6 +350,60 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
                 <ChevronLeft className="w-4 h-4 text-slate-400" />
               </button>
+            </div>
+
+            {/* Developer Direct Contact Card */}
+            <div 
+              id="developer-contact-card"
+              className="p-4 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-blue-500/10 border border-emerald-500/30 space-y-3"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-600 to-teal-700 text-white flex items-center justify-center font-extrabold text-sm shadow-md shadow-emerald-500/20">
+                    ع
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-sm text-slate-900 dark:text-white flex items-center gap-1.5">
+                      <span>عمر شراب</span>
+                      <span className="text-[10px] font-normal text-slate-500 font-mono">(Omar Sharab)</span>
+                    </h4>
+                    <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">
+                      مطور ومنشئ منصة Arixon
+                    </p>
+                  </div>
+                </div>
+                <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                  خيار المطور
+                </span>
+              </div>
+
+              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                هل لديك سؤال، اقتراح، أو واجهت مشكلة؟ اضغط للتواصل معي مباشرة:
+              </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-0.5">
+                <a
+                  id="whatsapp-chat-link"
+                  href="https://wa.me/972594399472"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white font-bold text-xs transition-all shadow-sm shadow-emerald-600/20 cursor-pointer"
+                >
+                  <WhatsAppIcon className="w-4 h-4 fill-current" />
+                  <span>محادثة واتساب (+972)</span>
+                </a>
+
+                <a
+                  id="instagram-profile-link"
+                  href="https://instagram.com/omarhamed.9"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-700 hover:to-purple-700 active:scale-[0.98] text-white font-bold text-xs transition-all shadow-sm shadow-pink-600/20 cursor-pointer"
+                >
+                  <InstagramIcon className="w-4 h-4 fill-current" />
+                  <span>إنستغرام (@omarhamed.9)</span>
+                </a>
+              </div>
             </div>
 
             {/* Admin Portal Shortcut if current user is an Admin */}
@@ -546,6 +630,97 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             <button
               onClick={() => setActiveSubView('main')}
               className="w-full py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-xs hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer"
+            >
+              العودة للإعدادات
+            </button>
+          </div>
+        )}
+
+        {/* SUB-VIEW: Developer Contact (Omar Sharab) */}
+        {activeSubView === 'developer' && (
+          <div className="space-y-4 text-xs sm:text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+            <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-500/10 via-teal-500/10 to-blue-500/10 border border-emerald-500/30">
+              <div className="flex items-center gap-3 mb-3">
+                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-emerald-600 to-teal-700 text-white flex items-center justify-center font-black text-lg shadow-md shadow-emerald-500/25">
+                  ع
+                </div>
+                <div>
+                  <h4 className="font-extrabold text-base text-slate-900 dark:text-white">
+                    عمر شراب (Omar Sharab)
+                  </h4>
+                  <p className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold">
+                    مطور ومؤسس منصة Arixon التعليمية
+                  </p>
+                </div>
+              </div>
+              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                مرحباً بك! تم تطوير المنصة لتوفير أفضل تجربة دراسية وامتحانات تفاعلية لطلبة التوجيهي. يسعدني دائماً استقبال استفساراتك واقتراحاتك لتطوير المنصة.
+              </p>
+            </div>
+
+            {/* Direct Contact Methods */}
+            <div className="space-y-2.5">
+              <h5 className="font-bold text-xs text-slate-900 dark:text-white px-1">
+                طرق التواصل المباشر:
+              </h5>
+
+              {/* WhatsApp Option */}
+              <a
+                id="developer-view-whatsapp-link"
+                href="https://wa.me/972594399472"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full flex items-center justify-between p-3.5 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-950/70 border border-emerald-200 dark:border-emerald-800 text-slate-900 dark:text-white transition-all cursor-pointer group"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-xs">
+                    <WhatsAppIcon className="w-5 h-5 fill-current" />
+                  </div>
+                  <div>
+                    <div className="font-bold text-sm text-emerald-950 dark:text-emerald-200">
+                      محادثة واتساب (WhatsApp)
+                    </div>
+                    <div className="text-xs text-emerald-700 dark:text-emerald-400 font-mono" dir="ltr">
+                      +972 594 399 472
+                    </div>
+                  </div>
+                </div>
+                <span className="text-xs font-bold px-2.5 py-1 rounded-xl bg-emerald-600 text-white shadow-xs group-hover:scale-105 transition-transform">
+                  فتح المحادثة
+                </span>
+              </a>
+
+              {/* Instagram Option */}
+              <a
+                id="developer-view-instagram-link"
+                href="https://instagram.com/omarhamed.9"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full flex items-center justify-between p-3.5 rounded-2xl bg-pink-50 dark:bg-pink-950/30 hover:bg-pink-100 dark:hover:bg-pink-950/60 border border-pink-200 dark:border-pink-900/60 text-slate-900 dark:text-white transition-all cursor-pointer group"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-amber-500 via-pink-600 to-purple-600 text-white flex items-center justify-center shadow-xs">
+                    <InstagramIcon className="w-5 h-5 fill-current" />
+                  </div>
+                  <div>
+                    <div className="font-bold text-sm text-pink-950 dark:text-pink-200">
+                      حساب الإنستغرام (Instagram)
+                    </div>
+                    <div className="text-xs text-pink-700 dark:text-pink-400 font-mono" dir="ltr">
+                      @omarhamed.9
+                    </div>
+                  </div>
+                </div>
+                <span className="text-xs font-bold px-2.5 py-1 rounded-xl bg-gradient-to-r from-pink-600 to-purple-600 text-white shadow-xs group-hover:scale-105 transition-transform">
+                  زيارة الحساب
+                </span>
+              </a>
+            </div>
+
+            <button
+              id="back-from-developer-subview-btn"
+              onClick={() => setActiveSubView('main')}
+              className="w-full py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-xs hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer mt-2"
             >
               العودة للإعدادات
             </button>

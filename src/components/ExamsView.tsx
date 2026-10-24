@@ -170,6 +170,26 @@ export const ExamsView: React.FC<ExamsViewProps> = ({
   // Called when student finishes/submits active exam
   const handleFinishExam = async (submittedAttempt: ExamAttempt) => {
     setCurrentAttempt(submittedAttempt);
+
+    // Immediately update local exams list state so completed badge and review button show instantly
+    const targetExamId = submittedAttempt.examId || (currentExam ? currentExam.id : '');
+    if (targetExamId) {
+      setExams((prev) =>
+        prev.map((ex) => {
+          if (ex.id === targetExamId) {
+            return {
+              ...ex,
+              userAttemptStatus: 'completed',
+              status: 'completed',
+              userScore: submittedAttempt.score ?? ex.userScore ?? 0,
+              userLastAttemptId: submittedAttempt.id,
+            };
+          }
+          return ex;
+        })
+      );
+    }
+
     setViewMode('results');
     // Refresh user's profile points and stats in background
     if (refreshProfile) {
@@ -372,7 +392,7 @@ export const ExamsView: React.FC<ExamsViewProps> = ({
           return (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {visibleExams.map((exam) => {
-                const isCompleted = exam.userAttemptStatus === 'completed' || exam.status === 'completed' || exam.userScore !== undefined;
+                const isCompleted = exam.userAttemptStatus === 'completed' || exam.userAttemptStatus === 'submitted_pending' || exam.status === 'completed' || exam.userScore !== undefined;
                 const isInProgress = !isCompleted && exam.userAttemptStatus === 'in_progress';
 
                 const difficultyText = 

@@ -92,7 +92,7 @@ export interface Exam {
   updatedAt: string;
   createdBy: string;
   // Optional client enrichment
-  userAttemptStatus?: 'not_started' | 'in_progress' | 'completed';
+  userAttemptStatus?: 'not_started' | 'in_progress' | 'completed' | 'submitted_pending';
   userLastAttemptId?: string;
   userScore?: number;
 }

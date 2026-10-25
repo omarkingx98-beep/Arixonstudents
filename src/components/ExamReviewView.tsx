@@ -82,7 +82,7 @@ export const ExamReviewView: React.FC<ExamReviewViewProps> = ({
             مراجعة الإجابات والحل النموذجي
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-            {attempt.examTitle} • درجتك: {calculatedScore}% ({correctCount} صحيحة من {totalCount}) • +{earnedPoints} نقطة
+            {attempt.examTitle} • درجتك: {totalCount === 20 ? `${correctCount} من 20 علامة (${calculatedScore}%)` : `${calculatedScore}% (${correctCount} من ${totalCount})`} • +{earnedPoints} نقطة
           </p>
         </div>
 

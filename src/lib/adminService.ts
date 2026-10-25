@@ -32,13 +32,20 @@ import type {
   ExamAttempt,
 } from '../types';
 import { 
+  FIRST_EXAM,
   FIRST_EXAM_ID, 
   FIRST_EXAM_QUESTIONS,
 } from '../data/firstExamData';
 import {
+  LITERARY_EXAM,
   LITERARY_EXAM_ID,
   LITERARY_EXAM_QUESTIONS,
 } from '../data/literaryExamData';
+import {
+  ISLAMIC_EXAM,
+  ISLAMIC_EXAM_ID,
+  ISLAMIC_EXAM_QUESTIONS,
+} from '../data/islamicExamData';
 
 export const PRIMARY_ADMIN_EMAIL = 'omarkingx99@gmail.com';
 export const PRIMARY_ADMIN_EMAILS = [
@@ -216,10 +223,21 @@ export async function fetchAllAdminExams(): Promise<Exam[]> {
     const snap = await getDocs(q);
     const exams: Exam[] = [];
     snap.forEach((d) => exams.push({ id: d.id, ...(d.data() as Omit<Exam, 'id'>) }));
+
+    if (!exams.some(e => e.id === ISLAMIC_EXAM_ID)) {
+      exams.push(ISLAMIC_EXAM);
+    }
+    if (!exams.some(e => e.id === FIRST_EXAM_ID)) {
+      exams.push(FIRST_EXAM);
+    }
+    if (!exams.some(e => e.id === LITERARY_EXAM_ID)) {
+      exams.push(LITERARY_EXAM);
+    }
+
     return exams;
   } catch (err) {
     console.error('Error fetching admin exams:', err);
-    return [];
+    return [ISLAMIC_EXAM, FIRST_EXAM, LITERARY_EXAM];
   }
 }
 
@@ -351,6 +369,7 @@ export async function saveExamWithValidation(
 export async function getAdminExamQuestions(examId: string): Promise<Question[]> {
   const isMinisterialArabic = examId === LITERARY_EXAM_ID || examId === 'exam_arabic_tw2009_01';
   const isMinisterialPhysics = examId === FIRST_EXAM_ID || examId === 'exam_physics_tw2009_01';
+  const isMinisterialIslamic = examId === ISLAMIC_EXAM_ID || examId === 'exam_islamic_tw2009_01';
 
   try {
     const qCol = collection(db, 'exams', examId, 'questions');
@@ -416,12 +435,16 @@ export async function getAdminExamQuestions(examId: string): Promise<Question[]>
     if (isMinisterialArabic) {
       return LITERARY_EXAM_QUESTIONS;
     }
+    if (isMinisterialIslamic) {
+      return ISLAMIC_EXAM_QUESTIONS;
+    }
 
     return [];
   } catch (err: any) {
     console.error('[adminService] Error in getAdminExamQuestions:', err);
     if (isMinisterialPhysics) return FIRST_EXAM_QUESTIONS;
     if (isMinisterialArabic) return LITERARY_EXAM_QUESTIONS;
+    if (isMinisterialIslamic) return ISLAMIC_EXAM_QUESTIONS;
     return [];
   }
 }
@@ -1846,6 +1869,8 @@ export async function regradeSingleAttempt(attemptId: string): Promise<RegradeAt
     questionsWithKeys = FIRST_EXAM_QUESTIONS;
   } else if (examId === LITERARY_EXAM_ID || examId === 'exam_arabic_tw2009_01') {
     questionsWithKeys = LITERARY_EXAM_QUESTIONS;
+  } else if (examId === ISLAMIC_EXAM_ID || examId === 'exam_islamic_tw2009_01') {
+    questionsWithKeys = ISLAMIC_EXAM_QUESTIONS;
   } else {
     // Fetch from Firestore
     const qSnap = await getDocs(collection(db, 'exams', examId, 'questions'));

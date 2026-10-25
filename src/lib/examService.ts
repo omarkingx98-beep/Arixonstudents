@@ -29,6 +29,11 @@ import {
   LITERARY_EXAM_ID,
   LITERARY_EXAM_QUESTIONS,
 } from '../data/literaryExamData';
+import {
+  ISLAMIC_EXAM,
+  ISLAMIC_EXAM_ID,
+  ISLAMIC_EXAM_QUESTIONS,
+} from '../data/islamicExamData';
 
 /**
  * Ensures initial ministerial exams and questions exist in Firestore for all branches.
@@ -91,6 +96,45 @@ export async function seedFirstExamIfMissing(): Promise<void> {
           questionType: q.questionType,
         };
         await setDoc(qRef, publicQuestionData, { merge: true });
+      }
+    }
+
+    // 3. Seed Islamic Studies exam (Unit 1, Lesson 1: منهج التعامل مع القرآن والسنة)
+    const islDocRef = doc(db, 'exams', ISLAMIC_EXAM_ID);
+    const islSnap = await getDoc(islDocRef);
+
+    const needsIslSeeding = !islSnap.exists() || 
+      islSnap.data()?.questionCount !== 20 ||
+      islSnap.data()?.durationMinutes !== 35;
+
+    if (needsIslSeeding) {
+      console.log('Seeding full 20-question Islamic Studies Exam into Firestore...');
+      await setDoc(islDocRef, ISLAMIC_EXAM, { merge: true });
+
+      for (const q of ISLAMIC_EXAM_QUESTIONS) {
+        const qRef = doc(db, 'exams', ISLAMIC_EXAM_ID, 'questions', q.id);
+        const publicQuestionData: Question = {
+          id: q.id,
+          examId: ISLAMIC_EXAM_ID,
+          order: q.order,
+          questionText: q.questionText,
+          options: q.options,
+          difficulty: q.difficulty,
+          source: q.source,
+          points: q.points,
+          questionType: q.questionType,
+          hint: q.hint,
+        };
+        await setDoc(qRef, publicQuestionData, { merge: true });
+
+        // Also seed answerKeys subcollection
+        const keyRef = doc(db, 'exams', ISLAMIC_EXAM_ID, 'answerKeys', q.id);
+        await setDoc(keyRef, {
+          id: q.id,
+          correctAnswer: q.correctAnswer,
+          explanation: q.explanation,
+          hint: q.hint || null,
+        }, { merge: true });
       }
     }
   } catch (error) {
@@ -248,13 +292,75 @@ export async function getExamsList(
       exams.push(examObj);
     });
 
+    // Ensure official ministerial exams are present if missing from Firestore query
+    const ensureOfficialExam = (officialExam: Exam) => {
+      if (exams.some(e => e.id === officialExam.id)) return;
+
+      // Subject filtration
+      if (subjectFilter && subjectFilter !== 'all' && officialExam.subject !== subjectFilter) {
+        return;
+      }
+
+      // Branch filtration
+      if (userBranch && userBranch !== 'all') {
+        if (userBranch === 'أدبي' && officialExam.branch === 'علمي') return;
+        if (userBranch === 'علمي' && officialExam.branch === 'أدبي') return;
+      }
+
+      const examObj: Exam = { ...officialExam };
+      if (currentUserId) {
+        let att = userSubmittedAttempts[examObj.id];
+        if (!att && typeof window !== 'undefined') {
+          try {
+            const rawCompleted = localStorage.getItem(`arixon_completed_exam_${examObj.id}`);
+            if (rawCompleted) {
+              const parsed = JSON.parse(rawCompleted);
+              att = {
+                id: parsed.attemptId || `att_${currentUserId}_${examObj.id}`,
+                examId: examObj.id,
+                userId: currentUserId,
+                status: 'submitted',
+                score: parsed.score ?? 0,
+                submittedAt: parsed.submittedAt || new Date().toISOString(),
+              } as ExamAttempt;
+            }
+          } catch {}
+        }
+
+        if (att) {
+          examObj.userAttemptStatus = 'completed';
+          examObj.status = 'completed';
+          examObj.userLastAttemptId = att.id;
+          examObj.userScore = att.score ?? 0;
+        } else if (userInProgressAttempts[examObj.id]) {
+          const inProgressAtt = userInProgressAttempts[examObj.id];
+          const isExpired = new Date(inProgressAtt.expectedEndAt).getTime() < Date.now();
+          if (!isExpired) {
+            examObj.userAttemptStatus = 'in_progress';
+            examObj.userLastAttemptId = inProgressAtt.id;
+          } else {
+            examObj.userAttemptStatus = 'completed';
+            examObj.status = 'completed';
+            examObj.userLastAttemptId = inProgressAtt.id;
+            examObj.userScore = inProgressAtt.score ?? 0;
+          }
+        }
+      }
+
+      exams.push(examObj);
+    };
+
+    ensureOfficialExam(ISLAMIC_EXAM);
+    ensureOfficialExam(FIRST_EXAM);
+    ensureOfficialExam(LITERARY_EXAM);
+
     // Sort by createdAt descending
     exams.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
     return exams;
   } catch (error) {
     console.error('Error in getExamsList:', error);
-    return [];
+    return [ISLAMIC_EXAM, FIRST_EXAM, LITERARY_EXAM];
   }
 }
 
@@ -267,9 +373,27 @@ export async function getExamById(examId: string): Promise<Exam | null> {
     if (examDoc.exists()) {
       return { id: examDoc.id, ...(examDoc.data() as Omit<Exam, 'id'>) };
     }
+    if (examId === ISLAMIC_EXAM_ID || examId === 'exam_islamic_tw2009_01') {
+      return ISLAMIC_EXAM;
+    }
+    if (examId === FIRST_EXAM_ID || examId === 'exam_physics_tw2009_01') {
+      return FIRST_EXAM;
+    }
+    if (examId === LITERARY_EXAM_ID || examId === 'exam_arabic_tw2009_01') {
+      return LITERARY_EXAM;
+    }
     return null;
   } catch (error) {
     console.error('Error fetching exam by ID:', error);
+    if (examId === ISLAMIC_EXAM_ID || examId === 'exam_islamic_tw2009_01') {
+      return ISLAMIC_EXAM;
+    }
+    if (examId === FIRST_EXAM_ID || examId === 'exam_physics_tw2009_01') {
+      return FIRST_EXAM;
+    }
+    if (examId === LITERARY_EXAM_ID || examId === 'exam_arabic_tw2009_01') {
+      return LITERARY_EXAM;
+    }
     return null;
   }
 }
@@ -296,6 +420,10 @@ export async function getExamQuestions(examId: string): Promise<Question[]> {
   const isMinisterialPhysics = 
     examId === FIRST_EXAM_ID || 
     examId === 'exam_physics_tw2009_01';
+
+  const isMinisterialIslamic = 
+    examId === ISLAMIC_EXAM_ID || 
+    examId === 'exam_islamic_tw2009_01';
 
   try {
     const qCol = collection(db, 'exams', examId, 'questions');
@@ -355,6 +483,21 @@ export async function getExamQuestions(examId: string): Promise<Question[]> {
       }));
     }
 
+    if (isMinisterialIslamic) {
+      return ISLAMIC_EXAM_QUESTIONS.map(q => ({
+        id: q.id,
+        examId,
+        questionText: q.questionText,
+        options: q.options,
+        difficulty: q.difficulty,
+        source: q.source,
+        points: q.points,
+        order: q.order,
+        questionType: q.questionType,
+        hint: q.hint,
+      }));
+    }
+
     return [];
   } catch (error) {
     console.error('Error fetching exam questions:', error);
@@ -374,6 +517,20 @@ export async function getExamQuestions(examId: string): Promise<Question[]> {
     }
     if (isMinisterialPhysics) {
       return FIRST_EXAM_QUESTIONS.map(q => ({
+        id: q.id,
+        examId,
+        questionText: q.questionText,
+        options: q.options,
+        difficulty: q.difficulty,
+        source: q.source,
+        points: q.points,
+        order: q.order,
+        questionType: q.questionType,
+        hint: q.hint,
+      }));
+    }
+    if (isMinisterialIslamic) {
+      return ISLAMIC_EXAM_QUESTIONS.map(q => ({
         id: q.id,
         examId,
         questionText: q.questionText,
@@ -919,8 +1076,10 @@ export async function getAttemptReviews(attemptId: string, userId: string): Prom
       savedReviews.some(r => r.questionText?.includes('الزخم الخطي') || r.questionId === 'q1');
     const hasLiteraryMismatch = attemptData.examId !== LITERARY_EXAM_ID &&
       savedReviews.some(r => r.questionId?.startsWith('lit_') || r.questionText?.includes('كم الاستفهامية') || r.questionText?.includes('البحر الخفيف'));
+    const hasIslamicMismatch = attemptData.examId !== ISLAMIC_EXAM_ID &&
+      savedReviews.some(r => r.questionId?.startsWith('isl_') || r.questionText?.includes('القرآن الكريم والسنة'));
 
-    if (savedReviews.length > 0 && !hasPhysicsMismatch && !hasLiteraryMismatch) {
+    if (savedReviews.length > 0 && !hasPhysicsMismatch && !hasLiteraryMismatch && !hasIslamicMismatch) {
       return savedReviews;
     }
 
@@ -931,9 +1090,17 @@ export async function getAttemptReviews(attemptId: string, userId: string): Prom
       const repairedReviews: QuestionReview[] = questions.map((q, idx) => {
         const studentAns = answers[q.id] !== undefined ? answers[q.id] : null;
         const isUnanswered = studentAns === null || studentAns === undefined;
-        const correctAns = (q as any).correctAnswer !== undefined ? Number((q as any).correctAnswer) : 0;
+        
+        const islamicQ = attemptData.examId === ISLAMIC_EXAM_ID
+          ? ISLAMIC_EXAM_QUESTIONS.find(iq => iq.id === q.id || iq.order === q.order)
+          : undefined;
+
+        const correctAns = islamicQ?.correctAnswer !== undefined
+          ? islamicQ.correctAnswer
+          : ((q as any).correctAnswer !== undefined ? Number((q as any).correctAnswer) : 0);
+
         const isCorrect = !isUnanswered && Number(studentAns) === Number(correctAns);
-        const pts = q.points || 5;
+        const pts = q.points || (attemptData.examId === ISLAMIC_EXAM_ID ? 1 : 5);
         return {
           questionId: q.id,
           questionNumber: q.order || (idx + 1),
@@ -943,8 +1110,8 @@ export async function getAttemptReviews(attemptId: string, userId: string): Prom
           correctAnswer: correctAns,
           isCorrect,
           isUnanswered,
-          explanation: (q as any).explanation || '',
-          hint: q.hint || '',
+          explanation: islamicQ?.explanation || (q as any).explanation || '',
+          hint: q.hint || islamicQ?.hint || '',
           points: pts,
           pointsEarned: isCorrect ? pts : 0,
           source: q.source || 'أريكسون',

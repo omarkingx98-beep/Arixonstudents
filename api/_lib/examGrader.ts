@@ -6,6 +6,8 @@ import {
   FIRST_EXAM_QUESTIONS, 
   LITERARY_EXAM_ID, 
   LITERARY_EXAM_QUESTIONS, 
+  ISLAMIC_EXAM_ID,
+  ISLAMIC_EXAM_QUESTIONS,
   SURAH_YUSUF_EXAM_ID,
   SURAH_YUSUF_CORRECT_KEYS,
   type QuestionWithKey 
@@ -415,12 +417,15 @@ export async function gradeAndSubmitExam(params: {
   // 4c. Built-in verified ministerial banks ONLY for official ministerial exams (strict ID match)
   const isMinisterialPhysics = examId === FIRST_EXAM_ID || examId === 'exam_physics_tw2009_01';
   const isMinisterialArabic = examId === LITERARY_EXAM_ID || examId === 'exam_arabic_tw2009_01';
+  const isMinisterialIslamic = examId === ISLAMIC_EXAM_ID || examId === 'exam_islamic_tw2009_01';
 
-  if (questionsWithKeys.length === 0 && (isMinisterialPhysics || isMinisterialArabic)) {
+  if (questionsWithKeys.length === 0 && (isMinisterialPhysics || isMinisterialArabic || isMinisterialIslamic)) {
     if (isMinisterialPhysics) {
       questionsWithKeys = FIRST_EXAM_QUESTIONS;
     } else if (isMinisterialArabic) {
       questionsWithKeys = LITERARY_EXAM_QUESTIONS;
+    } else if (isMinisterialIslamic) {
+      questionsWithKeys = ISLAMIC_EXAM_QUESTIONS;
     }
   }
 

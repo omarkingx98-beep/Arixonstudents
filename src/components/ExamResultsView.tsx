@@ -129,10 +129,10 @@ export const ExamResultsView: React.FC<ExamResultsViewProps> = ({
 
           <div className="absolute inset-0 flex flex-col items-center justify-center">
             <span className="text-3xl sm:text-4xl font-black text-slate-900 dark:text-white">
-              {score}%
+              {attempt.totalPoints === 20 ? `${correctCount} / 20` : `${score}%`}
             </span>
             <span className="text-[11px] font-semibold text-slate-400">
-              {score} / 100
+              {attempt.totalPoints === 20 ? `${score}% (${correctCount} من 20 علامة)` : `${score} / 100`}
             </span>
           </div>
         </div>

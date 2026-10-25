@@ -32,12 +32,22 @@ export const INITIAL_PROMO_BANNERS: PromoBanner[] = [
     createdAt: new Date().toISOString(),
   },
   {
+    id: 'initial_banner_whatsapp_community',
+    imageUrl: '/banners/whatsapp_community_banner.webp',
+    alt: 'انضم لمجتمع Arixon على واتساب',
+    linkType: 'external',
+    linkTarget: 'https://chat.whatsapp.com/invite/arixon-tawjihi-2009',
+    order: 2,
+    active: true,
+    createdAt: new Date().toISOString(),
+  },
+  {
     id: 'initial_banner_2',
     imageUrl: '/banners/banner_2.jpg',
     alt: 'امتحان اللغة العربية التوجيهي — أسئلة وزارية وتصحيح ذكي',
     linkType: 'internal',
     linkTarget: 'exams',
-    order: 2,
+    order: 3,
     active: true,
     createdAt: new Date().toISOString(),
   },
@@ -47,7 +57,7 @@ export const INITIAL_PROMO_BANNERS: PromoBanner[] = [
     alt: 'لوحة الشرف التنافسية — نافس أصدقاءك واجمع النقاط',
     linkType: 'internal',
     linkTarget: 'leaderboard',
-    order: 3,
+    order: 4,
     active: true,
     createdAt: new Date().toISOString(),
   },
@@ -57,7 +67,7 @@ export const INITIAL_PROMO_BANNERS: PromoBanner[] = [
     alt: 'منظومة أريكسون Arixon — دليلك الأقوى لجيل 2009',
     linkType: 'none',
     linkTarget: '',
-    order: 4,
+    order: 5,
     active: true,
     createdAt: new Date().toISOString(),
   },
@@ -67,7 +77,7 @@ export const INITIAL_PROMO_BANNERS: PromoBanner[] = [
     alt: 'شروحات وحلول نموذجية ومراجعات دقيقة بعد كل امتحان',
     linkType: 'internal',
     linkTarget: 'exams',
-    order: 5,
+    order: 6,
     active: true,
     createdAt: new Date().toISOString(),
   },
@@ -138,6 +148,16 @@ export async function getActivePromoBanners(): Promise<PromoBanner[]> {
         banners.push({ ...(d.data() as PromoBanner), id: d.id });
       });
 
+      const hasCommunityBanner = banners.some(
+        (b) => b.id === 'initial_banner_whatsapp_community' || (b.alt && b.alt.includes('مجتمع Arixon'))
+      );
+      if (!hasCommunityBanner) {
+        banners.splice(1, 0, INITIAL_PROMO_BANNERS[1]);
+        banners.forEach((b, idx) => {
+          b.order = idx + 1;
+        });
+      }
+
       const validBanners = filterActiveByDate(banners);
       try {
         sessionStorage.setItem(PROMO_CACHE_KEY, JSON.stringify(validBanners));
@@ -195,6 +215,17 @@ export async function fetchAllPromoBanners(): Promise<PromoBanner[]> {
       snap.forEach((d) => {
         banners.push({ ...(d.data() as PromoBanner), id: d.id });
       });
+
+      const hasCommunityBanner = banners.some(
+        (b) => b.id === 'initial_banner_whatsapp_community' || (b.alt && b.alt.includes('مجتمع Arixon'))
+      );
+      if (!hasCommunityBanner) {
+        banners.splice(1, 0, INITIAL_PROMO_BANNERS[1]);
+        banners.forEach((b, idx) => {
+          b.order = idx + 1;
+        });
+      }
+
       return banners;
     }
   } catch (err) {

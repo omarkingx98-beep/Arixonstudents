@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Megaphone, Sparkles, X, ChevronLeft } from 'lucide-react';
+import { Megaphone, Sparkles, X, ChevronLeft, ExternalLink } from 'lucide-react';
 import { fetchActiveAnnouncements } from '../lib/announcementService';
 import type { Announcement } from '../types';
 
@@ -44,16 +44,34 @@ export const AnnouncementTicker: React.FC = () => {
         </div>
 
         {/* Marquee Container */}
-        <div className="flex-1 overflow-hidden relative cursor-pointer group" onClick={() => setSelectedAnnouncement(announcements[0])}>
+        <div className="flex-1 overflow-hidden relative">
           <div className="inline-flex items-center whitespace-nowrap animate-marquee gap-8 hover:[animation-play-state:paused]">
             {announcements.map((ann, idx) => (
-              <span key={ann.id || idx} className="inline-flex items-center gap-2 group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors">
+              <span
+                key={ann.id || idx}
+                onClick={() => setSelectedAnnouncement(ann)}
+                className="inline-flex items-center gap-2 cursor-pointer group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors"
+              >
                 <span className="font-bold text-amber-700 dark:text-amber-300">
                   {ann.title}:
                 </span>
                 <span className="text-slate-600 dark:text-slate-300">
                   {ann.content}
                 </span>
+
+                {ann.linkUrl && (
+                  <a
+                    href={ann.linkUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-800 dark:text-emerald-300 text-[10px] font-bold border border-emerald-400/30 transition-all cursor-pointer"
+                  >
+                    <span>{ann.linkLabel || 'فتح الرابط'}</span>
+                    <ExternalLink className="w-2.5 h-2.5" />
+                  </a>
+                )}
+
                 <ChevronLeft className="w-3.5 h-3.5 text-amber-500 inline" />
                 <span className="text-amber-400/50">|</span>
               </span>
@@ -105,6 +123,20 @@ export const AnnouncementTicker: React.FC = () => {
             {selectedAnnouncement.expiresAt && (
               <div className="text-[11px] text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 p-2.5 rounded-xl border border-amber-200/60 dark:border-amber-900/40">
                 صالح حتى: {new Date(selectedAnnouncement.expiresAt).toLocaleString('ar-EG')}
+              </div>
+            )}
+
+            {selectedAnnouncement.linkUrl && (
+              <div className="pt-1">
+                <a
+                  href={selectedAnnouncement.linkUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm shadow-emerald-600/20 transition-all cursor-pointer"
+                >
+                  <ExternalLink className="w-4 h-4" />
+                  <span>{selectedAnnouncement.linkLabel || 'فتح الرابط'}</span>
+                </a>
               </div>
             )}
 

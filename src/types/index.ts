@@ -295,6 +295,8 @@ export interface Announcement {
   title: string;
   content: string;
   image?: string;
+  linkUrl?: string;
+  linkLabel?: string;
   priority: 'low' | 'medium' | 'high';
   published: boolean;
   scheduledAt?: string | null;
@@ -303,6 +305,14 @@ export interface Announcement {
   updatedAt: string;
   publishedAt?: string | null;
   createdBy: string;
+}
+
+export interface CommunitySettings {
+  whatsappUrl: string;
+  enabled: boolean;
+  label: string;
+  updatedAt?: string;
+  updatedBy?: string;
 }
 
 export interface Challenge {

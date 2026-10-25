@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { useAdmin } from '../context/AdminContext';
@@ -20,11 +20,13 @@ import {
   Users,
   MessageSquare,
   GraduationCap,
+  Code,
 } from 'lucide-react';
 import { DailyGoals } from './DailyGoals';
 import { getFriendsList } from '../lib/friendService';
 import { updateStudentBranch } from '../lib/firebase';
-import type { FriendItem } from '../types';
+import { fetchCommunitySettings } from '../lib/communityService';
+import type { FriendItem, CommunitySettings } from '../types';
 
 const WhatsAppIcon: React.FC<{ className?: string }> = ({ className = 'w-4 h-4 fill-current' }) => (
   <svg className={className} viewBox="0 0 24 24">
@@ -63,6 +65,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [friends, setFriends] = useState<FriendItem[]>([]);
   const [isLoadingFriends, setIsLoadingFriends] = useState(false);
   const [isSwitchingBranch, setIsSwitchingBranch] = useState(false);
+  const [communitySettings, setCommunitySettings] = useState<CommunitySettings | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    fetchCommunitySettings().then((res) => {
+      if (isMounted) setCommunitySettings(res);
+    });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const handleBranchSwitch = async (newBranch: 'علمي' | 'أدبي') => {
     if (!profile?.uid || isSwitchingBranch || profile.branch === newBranch) return;
@@ -124,7 +137,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               {activeSubView === 'about' && 'حول منصة Arixon'}
               {activeSubView === 'goals' && 'المهام والتذكيرات الدراسية'}
               {activeSubView === 'friends' && 'قائمة أصدقائي'}
-              {activeSubView === 'developer' && 'تواصل مع المطور (عمر شراب)'}
+              {activeSubView === 'developer' && 'خيارات المطور'}
             </h3>
           </div>
 
@@ -323,18 +336,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </button>
 
               <button
-                id="open-developer-contact-btn"
+                id="open-developer-options-btn"
                 onClick={() => setActiveSubView('developer')}
                 className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors text-sm font-semibold cursor-pointer"
               >
                 <div className="flex items-center gap-2.5 text-slate-700 dark:text-slate-300">
-                  <div className="w-5 h-5 rounded-md bg-emerald-100 dark:bg-emerald-950/80 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold text-xs">
-                    ع
-                  </div>
-                  <div className="text-right">
-                    <span>تواصل مع المطور (عمر شراب)</span>
-                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400 block font-normal">واتساب وإنستغرام مباشر</span>
-                  </div>
+                  <Code className="w-4 h-4 text-emerald-500" />
+                  <span>خيارات المطور</span>
                 </div>
                 <ChevronLeft className="w-4 h-4 text-slate-400" />
               </button>
@@ -352,59 +360,37 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </button>
             </div>
 
-            {/* Developer Direct Contact Card */}
-            <div 
-              id="developer-contact-card"
-              className="p-4 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-blue-500/10 border border-emerald-500/30 space-y-3"
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-600 to-teal-700 text-white flex items-center justify-center font-extrabold text-sm shadow-md shadow-emerald-500/20">
-                    ع
+            {/* Student WhatsApp Community Card */}
+            {communitySettings?.enabled && communitySettings?.whatsappUrl && (
+              <div 
+                id="whatsapp-community-card"
+                className="p-4 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-emerald-500/15 border border-emerald-500/30 flex items-center justify-between gap-3 shadow-xs"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-xs shrink-0">
+                    <WhatsAppIcon className="w-5 h-5 fill-current" />
                   </div>
                   <div>
-                    <h4 className="font-bold text-sm text-slate-900 dark:text-white flex items-center gap-1.5">
-                      <span>عمر شراب</span>
-                      <span className="text-[10px] font-normal text-slate-500 font-mono">(Omar Sharab)</span>
+                    <h4 className="font-bold text-xs sm:text-sm text-slate-900 dark:text-white">
+                      انضم لمجتمع توجيهي 2009 على واتساب
                     </h4>
-                    <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">
-                      مطور ومنشئ منصة Arixon
+                    <p className="text-[11px] text-emerald-700 dark:text-emerald-400 font-medium">
+                      {communitySettings.label || 'Arixon | مجتمع توجيهي 2009'}
                     </p>
                   </div>
                 </div>
-                <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                  خيار المطور
-                </span>
-              </div>
-
-              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                هل لديك سؤال، اقتراح، أو واجهت مشكلة؟ اضغط للتواصل معي مباشرة:
-              </p>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-0.5">
                 <a
-                  id="whatsapp-chat-link"
-                  href="https://wa.me/972594399472"
+                  id="join-whatsapp-community-btn"
+                  href={communitySettings.whatsappUrl}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white font-bold text-xs transition-all shadow-sm shadow-emerald-600/20 cursor-pointer"
+                  className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white text-xs font-black shrink-0 transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
                 >
-                  <WhatsAppIcon className="w-4 h-4 fill-current" />
-                  <span>محادثة واتساب (+972)</span>
-                </a>
-
-                <a
-                  id="instagram-profile-link"
-                  href="https://instagram.com/omarhamed.9"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-700 hover:to-purple-700 active:scale-[0.98] text-white font-bold text-xs transition-all shadow-sm shadow-pink-600/20 cursor-pointer"
-                >
-                  <InstagramIcon className="w-4 h-4 fill-current" />
-                  <span>إنستغرام (@omarhamed.9)</span>
+                  <WhatsAppIcon className="w-3.5 h-3.5 fill-current" />
+                  <span>انضمام</span>
                 </a>
               </div>
-            </div>
+            )}
 
             {/* Admin Portal Shortcut if current user is an Admin */}
             {isAdmin && onOpenAdmin && (

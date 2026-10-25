@@ -40,10 +40,44 @@ export async function fetchActiveAnnouncements(): Promise<Announcement[]> {
       list.push({ ...data, id });
     });
 
+    // If community announcement is not yet in Firestore, include the official active announcement
+    const hasCommunity = list.some(
+      (a) => a.linkUrl && a.linkUrl.includes('chat.whatsapp.com')
+    );
+    if (!hasCommunity) {
+      list.unshift({
+        id: 'ann_whatsapp_community_official',
+        title: 'مجتمع توجيهي 2009 الرسمي',
+        content: 'انضم لمجتمع Arixon على واتساب: تحديات ونتائج وأخبار',
+        priority: 'high',
+        published: true,
+        createdAt: '2026-10-25T12:00:00.000Z',
+        updatedAt: '2026-10-25T12:00:00.000Z',
+        publishedAt: '2026-10-25T12:00:00.000Z',
+        createdBy: 'admin',
+        linkUrl: 'https://chat.whatsapp.com/invite/arixon-tawjihi-2009',
+        linkLabel: 'انضم للمجموعة الآن',
+      });
+    }
+
     return list;
   } catch (err) {
     console.warn('[announcementService] Error fetching active announcements:', err);
-    return [];
+    return [
+      {
+        id: 'ann_whatsapp_community_official',
+        title: 'مجتمع توجيهي 2009 الرسمي',
+        content: 'انضم لمجتمع Arixon على واتساب: تحديات ونتائج وأخبار',
+        priority: 'high',
+        published: true,
+        createdAt: '2026-10-25T12:00:00.000Z',
+        updatedAt: '2026-10-25T12:00:00.000Z',
+        publishedAt: '2026-10-25T12:00:00.000Z',
+        createdBy: 'admin',
+        linkUrl: 'https://chat.whatsapp.com/invite/arixon-tawjihi-2009',
+        linkLabel: 'انضم للمجموعة الآن',
+      },
+    ];
   }
 }
 

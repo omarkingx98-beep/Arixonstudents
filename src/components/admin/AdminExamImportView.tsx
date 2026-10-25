@@ -17,10 +17,18 @@ import {
   Send,
   Save,
   Check,
+  ChevronDown,
+  X,
 } from 'lucide-react';
 import { auth } from '../../lib/firebase';
 import { saveExamWithValidation } from '../../lib/adminService';
 import type { SubjectId } from '../../types';
+
+interface CompactErrorInfo {
+  message: string;
+  code?: string;
+  details?: string;
+}
 
 interface ParsedOption {
   id: string;
@@ -38,6 +46,7 @@ interface ParsedQuestion {
   explanation: string;
   marks: number;
   difficulty?: 'easy' | 'medium' | 'hard';
+  needsReview?: boolean;
 }
 
 interface ParsedExamData {
@@ -79,7 +88,8 @@ export const AdminExamImportView: React.FC<AdminExamImportViewProps> = ({
 }) => {
   const [rawText, setRawText] = useState('');
   const [isParsing, setIsParsing] = useState(false);
-  const [parseError, setParseError] = useState<string | null>(null);
+  const [parseError, setParseError] = useState<CompactErrorInfo | null>(null);
+  const [showErrorDetails, setShowErrorDetails] = useState(false);
 
   // Parsed Output State
   const [parsedExam, setParsedExam] = useState<ParsedExamData | null>(null);
@@ -97,6 +107,7 @@ export const AdminExamImportView: React.FC<AdminExamImportViewProps> = ({
     }
     setRawText('');
     setParseError(null);
+    setShowErrorDetails(false);
     setParsedExam(null);
     setParsedQuestions([]);
     setValidationErrors([]);
@@ -106,18 +117,26 @@ export const AdminExamImportView: React.FC<AdminExamImportViewProps> = ({
 
   const handleParse = async () => {
     if (!rawText.trim()) {
-      setParseError('يرجى لصق نص الامتحان أولاً قبل الضغط على زر التحليل.');
+      setParseError({
+        message: 'يرجى لصق نص الامتحان أولاً قبل الضغط على زر التحليل.',
+        code: 'EMPTY_TEXT',
+      });
       return;
     }
 
     setParseError(null);
+    setShowErrorDetails(false);
     setSaveSuccessMsg(null);
     setIsParsing(true);
 
     try {
       const user = auth.currentUser;
       if (!user) {
-        throw new Error('جلسة المشرف غير نشطة. يرجى التأكد من تسجيل الدخول بحساب المشرف.');
+        setParseError({
+          message: 'جلسة المشرف غير نشطة. يرجى التأكد من تسجيل الدخول بحساب المشرف.',
+          code: 'AUTH_REQUIRED',
+        });
+        return;
       }
 
       const token = await user.getIdToken(true);
@@ -130,21 +149,33 @@ export const AdminExamImportView: React.FC<AdminExamImportViewProps> = ({
         body: JSON.stringify({ rawExamText: rawText.trim() }),
       });
 
-      const responseText = await res.text();
-      if (!responseText || !responseText.trim()) {
-        throw new Error('أرجع الخادم رداً فارغاً. تحقق من ضبط متغير البيئة GEMINI_API_KEY على الخادم.');
-      }
-
       let json: any = null;
       try {
-        json = JSON.parse(responseText);
-      } catch (parseErr) {
-        console.error('[AdminExamImportView] Failed to parse server response:', responseText);
-        throw new Error('فشل قراءة رد الخادم. الاستجابة ليست بتنسيق JSON صالح.');
+        json = await res.json();
+      } catch (parseErr: any) {
+        console.error('[AdminExamImportView] Failed to parse JSON response:', parseErr);
       }
 
-      if (!res.ok || !json?.ok) {
-        throw new Error(json?.error || 'تعذر تحليل نص الامتحان. تأكد من وضوح الأسئلة والخيارات.');
+      if (!json) {
+        setParseError({
+          message: 'انتهت مهلة التحليل، حاول مرة ثانية',
+          code: 'TIMEOUT',
+          details: 'أرجع الخادم استجابة فارغة أو تعذر الاتصال.',
+        });
+        return;
+      }
+
+      if (!json.ok) {
+        setParseError({
+          message: json.message || 'تعذر قراءة نص الامتحان، حاول مرة ثانية.',
+          code: json.code,
+          details: json.details
+            ? typeof json.details === 'object'
+              ? JSON.stringify(json.details, null, 2)
+              : String(json.details)
+            : undefined,
+        });
+        return;
       }
 
       const { exam, questions, validation } = json.data;
@@ -164,9 +195,22 @@ export const AdminExamImportView: React.FC<AdminExamImportViewProps> = ({
       setParsedQuestions(questions || []);
       setValidationErrors(validation?.errors || []);
       setValidationWarnings(validation?.warnings || []);
+
+      // If some questions need review, also show a friendly alert
+      if (validation?.missingAnswersSummary) {
+        setParseError({
+          message: validation.missingAnswersSummary,
+          code: 'NEEDS_REVIEW',
+          details: 'يرجى مراجعة الأسئلة وتحديد الإجابة النموذجية الصحيحة قبل الحفظ.',
+        });
+      }
     } catch (err: any) {
       console.error('[AdminExamImportView] Parse error:', err);
-      setParseError(err.message || 'حدث خطأ غير متوقع أثناء معالجة النص.');
+      setParseError({
+        message: err.message || 'تعذر قراءة نص الامتحان، حاول مرة ثانية.',
+        code: 'NETWORK_ERROR',
+        details: err?.stack || err?.message,
+      });
     } finally {
       setIsParsing(false);
     }
@@ -188,7 +232,11 @@ export const AdminExamImportView: React.FC<AdminExamImportViewProps> = ({
   const handleCorrectOptionChange = (qIndex: number, newCorrectOptionId: string) => {
     setParsedQuestions((prev) => {
       const updated = [...prev];
-      updated[qIndex] = { ...updated[qIndex], correctOptionId: newCorrectOptionId };
+      updated[qIndex] = {
+        ...updated[qIndex],
+        correctOptionId: newCorrectOptionId,
+        needsReview: false,
+      };
       return updated;
     });
   };
@@ -287,9 +335,12 @@ export const AdminExamImportView: React.FC<AdminExamImportViewProps> = ({
       onBackToExams();
     } catch (err: any) {
       console.error('[AdminExamImportView] Error saving exam:', err);
-      const msg = `فشل حفظ الامتحان في قاعدة البيانات (${err?.code || 'ERROR'}): ${err?.message || 'تحقق من الصلاحيات أو اتصال Firestore'}`;
-      setParseError(msg);
-      alert(msg);
+      setParseError({
+        message: 'فشل حفظ الامتحان في قاعدة البيانات',
+        code: err?.code || 'SAVE_ERROR',
+        details: err?.message || 'تحقق من الصلاحيات أو اتصال Firestore',
+      });
+      alert(`فشل حفظ الامتحان: ${err?.message || 'خطأ غير معروف'}`);
     } finally {
       setIsSaving(false);
     }
@@ -328,14 +379,65 @@ export const AdminExamImportView: React.FC<AdminExamImportViewProps> = ({
         </div>
       </div>
 
-      {/* Parse Error Alert */}
+      {/* Compact Single-Line Alert Banner (No large red box) */}
       {parseError && (
-        <div className="p-4 bg-rose-50 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/60 rounded-2xl flex items-start gap-3 text-xs text-rose-700 dark:text-rose-400 shadow-xs">
-          <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
-          <div className="space-y-1">
-            <span className="font-bold block">تنبيه أثناء معالجة الامتحان:</span>
-            <span>{parseError}</span>
+        <div 
+          id="ai-importer-compact-alert"
+          className="p-3 sm:px-4 rounded-2xl bg-amber-500/10 dark:bg-amber-950/30 border border-amber-500/30 text-amber-900 dark:text-amber-200 text-xs shadow-xs transition-all space-y-2"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2.5">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+              <span className="font-bold text-xs">
+                {parseError.message}
+              </span>
+              {parseError.code && (
+                <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-800 dark:text-amber-300">
+                  {parseError.code}
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0 mr-auto">
+              {parseError.details && (
+                <button
+                  type="button"
+                  onClick={() => setShowErrorDetails((prev) => !prev)}
+                  className="text-[11px] font-semibold text-amber-700 dark:text-amber-400 hover:underline flex items-center gap-1 cursor-pointer"
+                >
+                  <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showErrorDetails ? 'rotate-180' : ''}`} />
+                  <span>{showErrorDetails ? 'إخفاء التفاصيل' : 'تفاصيل للأدمن'}</span>
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={handleParse}
+                disabled={isParsing || !rawText.trim()}
+                className="px-3 py-1 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs transition-all cursor-pointer disabled:opacity-50"
+              >
+                <RotateCcw className={`w-3.5 h-3.5 ${isParsing ? 'animate-spin' : ''}`} />
+                <span>إعادة المحاولة</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setParseError(null)}
+                className="p-1 rounded-lg text-amber-600/70 hover:text-amber-800 dark:hover:text-amber-200 transition-colors"
+                title="إغلاق التنبيه"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
+
+          {/* Collapsible Admin Details */}
+          {showErrorDetails && parseError.details && (
+            <div className="pt-2 border-t border-amber-500/20 text-[11px] font-mono text-amber-800 dark:text-amber-300/90 whitespace-pre-wrap bg-amber-500/5 p-2 rounded-xl">
+              <span className="font-bold block mb-1">تفاصيل الخطأ التقني للمشرف:</span>
+              {parseError.details}
+            </div>
+          )}
         </div>
       )}
 
@@ -575,9 +677,17 @@ export const AdminExamImportView: React.FC<AdminExamImportViewProps> = ({
                   className="bg-white dark:bg-[#0c101c] p-6 rounded-3xl border border-slate-200/80 dark:border-slate-800/80 shadow-xs space-y-4 relative"
                 >
                   <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800/80 pb-3">
-                    <span className="text-xs font-black px-2.5 py-1 rounded-lg bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20">
-                      السؤال رقم {q.number || qIndex + 1}
-                    </span>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-black px-2.5 py-1 rounded-lg bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20">
+                        السؤال رقم {q.number || qIndex + 1}
+                      </span>
+                      {(!q.correctOptionId || q.needsReview) && (
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/30 flex items-center gap-1">
+                          <AlertTriangle className="w-3 h-3 text-amber-600 dark:text-amber-400 shrink-0" />
+                          <span>بحاجة لمراجعة: حدد الإجابة النموذجية</span>
+                        </span>
+                      )}
+                    </div>
 
                     <button
                       type="button"

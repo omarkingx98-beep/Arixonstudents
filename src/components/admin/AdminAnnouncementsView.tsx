@@ -26,6 +26,8 @@ export const AdminAnnouncementsView: React.FC = () => {
   const [priority, setPriority] = useState<'low' | 'medium' | 'high'>('medium');
   const [published, setPublished] = useState(true);
   const [expiresAt, setExpiresAt] = useState('');
+  const [linkUrl, setLinkUrl] = useState('');
+  const [linkLabel, setLinkLabel] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const loadData = async () => {
@@ -51,6 +53,8 @@ export const AdminAnnouncementsView: React.FC = () => {
     setPriority('medium');
     setPublished(true);
     setExpiresAt('');
+    setLinkUrl('');
+    setLinkLabel('');
     setIsModalOpen(true);
   };
 
@@ -61,6 +65,8 @@ export const AdminAnnouncementsView: React.FC = () => {
     setPriority(ann.priority || 'medium');
     setPublished(ann.published);
     setExpiresAt(ann.expiresAt ? ann.expiresAt.substring(0, 16) : '');
+    setLinkUrl(ann.linkUrl || '');
+    setLinkLabel(ann.linkLabel || '');
     setIsModalOpen(true);
   };
 
@@ -90,6 +96,8 @@ export const AdminAnnouncementsView: React.FC = () => {
         priority,
         published,
         expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null,
+        linkUrl: linkUrl.trim() || undefined,
+        linkLabel: linkLabel.trim() || undefined,
         createdAt: editingAnn?.createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         publishedAt: published ? (editingAnn?.publishedAt || new Date().toISOString()) : null,
@@ -318,6 +326,52 @@ export const AdminAnnouncementsView: React.FC = () => {
                   >
                     نشر الإعلان فوراً للطلبة
                   </label>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block mb-1">
+                  تاريخ ووقت انتهاء الصلاحية (اختياري - يختفي الإعلان تلقائياً بعده)
+                </label>
+                <input
+                  type="datetime-local"
+                  value={expiresAt}
+                  onChange={(e) => setExpiresAt(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#13192a] text-xs"
+                />
+              </div>
+
+              {/* Optional Link Fields */}
+              <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-[#13192a] border border-slate-200/80 dark:border-slate-800/80 space-y-3">
+                <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 block">
+                  ربط الإعلان برابط تفاعلي قابل للضغط (اختياري)
+                </span>
+                
+                <div>
+                  <label className="text-[10px] text-slate-500 dark:text-slate-400 block mb-1">
+                    رابط الوجهة (URL - مثلاً رابط مجموعة واتساب https://chat.whatsapp.com/...)
+                  </label>
+                  <input
+                    type="url"
+                    dir="ltr"
+                    value={linkUrl}
+                    onChange={(e) => setLinkUrl(e.target.value)}
+                    placeholder="https://chat.whatsapp.com/..."
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0c101c] text-xs font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-[10px] text-slate-500 dark:text-slate-400 block mb-1">
+                    نص الزر / الشارة (اختياري - مثلاً: "انضم لمجتمع واتساب" أو "اضغط هنا")
+                  </label>
+                  <input
+                    type="text"
+                    value={linkLabel}
+                    onChange={(e) => setLinkLabel(e.target.value)}
+                    placeholder="انضم للمجتمع"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#0c101c] text-xs"
+                  />
                 </div>
               </div>
 

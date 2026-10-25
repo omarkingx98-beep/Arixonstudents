@@ -621,13 +621,32 @@ async function startServer() {
       const authUser = await verifyAuthToken(req);
       const isPrimary = isPrimaryAdmin(authUser?.email);
       if (!authUser || (!authUser.admin && !isPrimary)) {
-        res.status(403).json({ ok: false, error: 'غير مصرح لك باستخدام مستورد الامتحانات بالذكاء الاصطناعي.' });
+        res.status(403).json({
+          ok: false,
+          code: 'AUTH_FAILED',
+          message: 'غير مصرح لك باستخدام مستورد الامتحانات بالذكاء الاصطناعي.',
+        });
         return;
       }
 
       const { rawExamText } = req.body;
       if (!rawExamText || typeof rawExamText !== 'string' || !rawExamText.trim()) {
-        res.status(400).json({ ok: false, error: 'يرجى لصق محتوى الامتحان أولاً.' });
+        res.status(200).json({
+          ok: false,
+          code: 'EMPTY_TEXT',
+          message: 'يرجى لصق نص الامتحان أولاً قبل الضغط على زر التحليل.',
+        });
+        return;
+      }
+
+      const apiKey = process.env.GEMINI_API_KEY || process.env.API_KEY;
+      if (!apiKey) {
+        res.status(200).json({
+          ok: false,
+          code: 'AI_SERVICE_DISABLED',
+          message: 'خدمة الذكاء الاصطناعي غير مفعّلة',
+          details: 'متغير البيئة GEMINI_API_KEY غير مضبوط على الخادم.',
+        });
         return;
       }
 
@@ -636,11 +655,35 @@ async function startServer() {
 
       res.json({
         ok: true,
+        code: 'SUCCESS',
+        message: 'تم تحليل الامتحان بنجاح',
         data: parseResult,
       });
     } catch (err: any) {
       console.error('[AI Parse Exam] Error:', err);
-      res.status(500).json({ ok: false, error: err?.message || 'تعذر تحليل نص الامتحان بواسطة الذكاء الاصطناعي.' });
+
+      let code = err?.code || 'PARSER_ERROR';
+      let message = err?.message || 'تعذر قراءة نص الامتحان، حاول مرة ثانية.';
+      let details = err?.details || err?.message || 'خطأ غير محدد';
+
+      if (err?.message?.includes('timeout') || err?.message?.includes('TIMED_OUT')) {
+        code = 'TIMEOUT';
+        message = 'انتهت مهلة التحليل، حاول مرة ثانية';
+      } else if (err?.code === 'NO_QUESTIONS_FOUND') {
+        code = 'NO_QUESTIONS_FOUND';
+        message = 'لم أجد أسئلة في النص، الصق نص الامتحان فقط';
+      } else if (err?.code === 'AI_SERVICE_DISABLED') {
+        code = 'AI_SERVICE_DISABLED';
+        message = 'خدمة الذكاء الاصطناعي غير مفعّلة';
+        details = 'متغير البيئة GEMINI_API_KEY غير مضبوط على الخادم.';
+      }
+
+      res.status(200).json({
+        ok: false,
+        code,
+        message,
+        details,
+      });
     }
   });
 

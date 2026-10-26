@@ -459,6 +459,16 @@ export async function gradeAndSubmitExam(params: {
 
   // 5. Grade with Option-ID Invariant Matching
   currentStep = 'GRADE_QUESTIONS';
+  const declaredQuestionCount = 
+    Number(params.clientAttemptData?.questionCount) || 
+    Number(attemptData?.questionCount) || 
+    0;
+
+  if (declaredQuestionCount > 0 && questionsWithKeys.length > declaredQuestionCount) {
+    console.log(`[ExamGrader] Slicing questionsWithKeys from ${questionsWithKeys.length} to declaredQuestionCount: ${declaredQuestionCount}`);
+    questionsWithKeys = questionsWithKeys.slice(0, declaredQuestionCount);
+  }
+
   let correctCount = 0;
   let wrongCount = 0;
   let unansweredCount = 0;
@@ -599,6 +609,7 @@ export async function gradeAndSubmitExam(params: {
     status: 'submitted',
     submittedAt: nowIso,
     score: scorePercent,
+    questionCount: totalQuestions,
     correctCount,
     correctAnswers: correctCount,
     wrongCount,

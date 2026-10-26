@@ -174,10 +174,26 @@ export const PromoCarousel: React.FC<PromoCarouselProps> = ({ onNavigate }) => {
 
     if (banner.linkType === 'external') {
       let url = banner.linkTarget.trim();
+      if (url.includes('arixon-tawjihi-2009')) {
+        url = 'https://chat.whatsapp.com/FQ39q5zXeZq8DJeeuPJNpu';
+      }
       if (!url.startsWith('http://') && !url.startsWith('https://')) {
         url = `https://${url}`;
       }
-      window.open(url, '_blank', 'noopener,noreferrer');
+      try {
+        const opened = window.open(url, '_blank', 'noopener,noreferrer');
+        if (!opened || opened.closed || typeof opened.closed === 'undefined') {
+          const a = document.createElement('a');
+          a.href = url;
+          a.target = '_blank';
+          a.rel = 'noopener noreferrer';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+        }
+      } catch {
+        window.location.href = url;
+      }
       return;
     }
 

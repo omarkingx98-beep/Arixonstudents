@@ -12,7 +12,8 @@ import {
   Moon, 
   ShieldCheck, 
   ArrowLeft,
-  GraduationCap
+  GraduationCap,
+  MessageCircle
 } from 'lucide-react';
 import { Logo } from './Logo';
 import { useAuth } from '../context/AuthContext';
@@ -165,6 +166,33 @@ export const SideMenuDrawer: React.FC<SideMenuDrawerProps> = ({
               </div>
               <ArrowLeft className="w-4 h-4 text-blue-500 shrink-0 group-hover:-translate-x-0.5 transition-transform" />
             </button>
+
+            {/* Feature 3: Official WhatsApp Community Group */}
+            <a
+              id="menu-whatsapp-community-btn"
+              href="https://chat.whatsapp.com/FQ39q5zXeZq8DJeeuPJNpu"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full p-3.5 rounded-2xl border border-emerald-300/90 dark:border-emerald-800/80 bg-gradient-to-r from-emerald-50/90 via-teal-50/50 to-emerald-50/90 dark:from-emerald-950/40 dark:via-teal-950/20 dark:to-emerald-950/30 hover:border-emerald-500 flex items-center justify-between gap-3 transition-all cursor-pointer shadow-xs group text-right"
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs group-hover:scale-105 transition-transform">
+                  <MessageCircle className="w-5 h-5" />
+                </div>
+                <div className="min-w-0">
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                    <span>مجتمع واتساب الرسمي</span>
+                    <span className="text-[10px] bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 px-1.5 py-0.5 rounded-full font-bold">
+                      انضم الآن
+                    </span>
+                  </h4>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                    تحديات ونماذج وأخبار توجيهي 2009 أولاً بأول
+                  </p>
+                </div>
+              </div>
+              <ArrowLeft className="w-4 h-4 text-emerald-600 shrink-0 group-hover:-translate-x-0.5 transition-transform" />
+            </a>
           </div>
 
           {/* Section: Platform Navigation */}

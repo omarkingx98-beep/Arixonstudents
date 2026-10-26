@@ -646,7 +646,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate }) =>
               <div className="flex items-center gap-3">
                 <Bell className="w-4 h-4 text-amber-600" />
                 <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                  نشر إعلان أو تعميم للطلاب
+                  التحكم في إعلانات الشريط العلوي (النصوص)
                 </span>
               </div>
               <span className="text-slate-400 group-hover:translate-x-[-2px] transition-transform">←</span>
@@ -659,7 +659,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate }) =>
               <div className="flex items-center gap-3">
                 <ImageIcon className="w-4 h-4 text-blue-600" />
                 <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                  إدارة الإعلانات المصوّرة (السلايدر)
+                  التحكم في سلايدر الإعلانات المصوّرة (البنرات)
                 </span>
               </div>
               <span className="text-slate-400 group-hover:translate-x-[-2px] transition-transform">←</span>

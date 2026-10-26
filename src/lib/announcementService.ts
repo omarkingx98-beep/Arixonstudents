@@ -37,7 +37,10 @@ export async function fetchActiveAnnouncements(): Promise<Announcement[]> {
           return;
         }
       }
-      list.push({ ...data, id });
+      const cleanLinkUrl = data.linkUrl && data.linkUrl.includes('arixon-tawjihi-2009')
+        ? 'https://chat.whatsapp.com/FQ39q5zXeZq8DJeeuPJNpu'
+        : data.linkUrl;
+      list.push({ ...data, id, linkUrl: cleanLinkUrl });
     });
 
     // If community announcement is not yet in Firestore, include the official active announcement
@@ -55,7 +58,7 @@ export async function fetchActiveAnnouncements(): Promise<Announcement[]> {
         updatedAt: '2026-10-25T12:00:00.000Z',
         publishedAt: '2026-10-25T12:00:00.000Z',
         createdBy: 'admin',
-        linkUrl: 'https://chat.whatsapp.com/invite/arixon-tawjihi-2009',
+        linkUrl: 'https://chat.whatsapp.com/FQ39q5zXeZq8DJeeuPJNpu',
         linkLabel: 'انضم للمجموعة الآن',
       });
     }
@@ -74,7 +77,7 @@ export async function fetchActiveAnnouncements(): Promise<Announcement[]> {
         updatedAt: '2026-10-25T12:00:00.000Z',
         publishedAt: '2026-10-25T12:00:00.000Z',
         createdBy: 'admin',
-        linkUrl: 'https://chat.whatsapp.com/invite/arixon-tawjihi-2009',
+        linkUrl: 'https://chat.whatsapp.com/FQ39q5zXeZq8DJeeuPJNpu',
         linkLabel: 'انضم للمجموعة الآن',
       },
     ];

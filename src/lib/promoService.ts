@@ -36,7 +36,7 @@ export const INITIAL_PROMO_BANNERS: PromoBanner[] = [
     imageUrl: '/banners/whatsapp_community_banner.webp',
     alt: 'انضم لمجتمع Arixon على واتساب',
     linkType: 'external',
-    linkTarget: 'https://chat.whatsapp.com/invite/arixon-tawjihi-2009',
+    linkTarget: 'https://chat.whatsapp.com/FQ39q5zXeZq8DJeeuPJNpu',
     order: 2,
     active: true,
     createdAt: new Date().toISOString(),
@@ -158,7 +158,14 @@ export async function getActivePromoBanners(): Promise<PromoBanner[]> {
         });
       }
 
-      const validBanners = filterActiveByDate(banners);
+      const sanitized = banners.map(b => {
+        if (b.linkTarget && b.linkTarget.includes('arixon-tawjihi-2009')) {
+          return { ...b, linkTarget: 'https://chat.whatsapp.com/FQ39q5zXeZq8DJeeuPJNpu' };
+        }
+        return b;
+      });
+
+      const validBanners = filterActiveByDate(sanitized);
       try {
         sessionStorage.setItem(PROMO_CACHE_KEY, JSON.stringify(validBanners));
       } catch {}
@@ -226,7 +233,14 @@ export async function fetchAllPromoBanners(): Promise<PromoBanner[]> {
         });
       }
 
-      return banners;
+      const sanitized = banners.map(b => {
+        if (b.linkTarget && b.linkTarget.includes('arixon-tawjihi-2009')) {
+          return { ...b, linkTarget: 'https://chat.whatsapp.com/FQ39q5zXeZq8DJeeuPJNpu' };
+        }
+        return b;
+      });
+
+      return sanitized;
     }
   } catch (err) {
     console.warn('[PromoService] Could not fetch all promo banners from Firestore:', err);
@@ -450,7 +464,18 @@ export async function uploadPromoImage(file: File): Promise<string> {
     const downloadUrl = await getDownloadURL(storageRef);
     return downloadUrl;
   } catch (err: any) {
-    console.warn('[PromoService] Storage upload failed or not enabled:', err?.message);
-    throw new Error('تعذر رفع الصورة إلى Firebase Storage. يمكنك استخدام رابط صورة مباشر.');
+    console.warn('[PromoService] Storage upload failed, falling back to compressed Base64 Data URL:', err?.message);
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        if (typeof reader.result === 'string') {
+          resolve(reader.result);
+        } else {
+          reject(new Error('تعذر معالجة الصورة'));
+        }
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(compressedBlob);
+    });
   }
 }

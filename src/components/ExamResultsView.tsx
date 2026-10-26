@@ -64,6 +64,17 @@ export const ExamResultsView: React.FC<ExamResultsViewProps> = ({
   const pointsEarned = attempt.pointsEarned ?? 0;
   const durationSeconds = (attempt as any).durationUsed ?? attempt.durationSeconds ?? 0;
 
+  const reviewsCount = attempt.reviews?.length || 0;
+  const totalCountFromAnswers = correctCount + wrongCount + unansweredCount;
+  const totalExamQuestions =
+    (attempt as any).questionCount ||
+    (reviewsCount > 0 ? reviewsCount : 0) ||
+    (totalCountFromAnswers > 0 ? totalCountFromAnswers : 0) ||
+    20;
+
+  // Exact mathematically sound percentage: (correctCount / totalExamQuestions) * 100
+  const accuratePercentage = totalExamQuestions > 0 ? Math.round((correctCount / totalExamQuestions) * 100) : score;
+
   // Format time spent
   const formatTimeSpent = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -80,7 +91,7 @@ export const ExamResultsView: React.FC<ExamResultsViewProps> = ({
     return { title: 'فرصة رائعة للمراجعة والتعلم!', badge: 'يحتاج تدريب', color: 'text-rose-600 dark:text-rose-400' };
   };
 
-  const performance = getPerformanceMessage(score);
+  const performance = getPerformanceMessage(accuratePercentage);
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-8 space-y-6 animate-fadeIn pb-24 md:pb-12">
@@ -121,7 +132,7 @@ export const ExamResultsView: React.FC<ExamResultsViewProps> = ({
               className="stroke-blue-600 transition-all duration-1000 ease-out"
               strokeWidth="8"
               strokeDasharray="264"
-              strokeDashoffset={264 - (264 * score) / 100}
+              strokeDashoffset={264 - (264 * accuratePercentage) / 100}
               strokeLinecap="round"
               fill="transparent"
             />
@@ -129,11 +140,18 @@ export const ExamResultsView: React.FC<ExamResultsViewProps> = ({
 
           <div className="absolute inset-0 flex flex-col items-center justify-center">
             <span className="text-3xl sm:text-4xl font-black text-slate-900 dark:text-white">
-              {attempt.totalPoints === 20 ? `${correctCount} / 20` : `${score}%`}
+              {accuratePercentage}%
             </span>
-            <span className="text-[11px] font-semibold text-slate-400">
-              {attempt.totalPoints === 20 ? `${score}% (${correctCount} من 20 علامة)` : `${score} / 100`}
+            <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+              {correctCount} من {totalExamQuestions} إجابة صحيحة
             </span>
+            {attempt.totalPoints && (
+              <span className="text-[10px] text-blue-600 dark:text-blue-400 font-bold mt-0.5">
+                {attempt.totalPoints === 20 
+                  ? `${correctCount} من 20 علامة` 
+                  : `${Math.round((accuratePercentage / 100) * attempt.totalPoints)} من ${attempt.totalPoints} علامة`}
+              </span>
+            )}
           </div>
         </div>
 

@@ -4,10 +4,12 @@ import { recordAdminAuditLog } from './adminService';
 import type { CommunitySettings } from '../types';
 
 export const COMMUNITY_SETTINGS_DOC = 'settings/community';
-export const COMMUNITY_CACHE_KEY = 'arixon_community_settings_cache_v1';
+export const COMMUNITY_CACHE_KEY = 'arixon_community_settings_cache_v2';
+
+export const REAL_WHATSAPP_COMMUNITY_URL = 'https://chat.whatsapp.com/FQ39q5zXeZq8DJeeuPJNpu';
 
 export const DEFAULT_COMMUNITY_SETTINGS: CommunitySettings = {
-  whatsappUrl: 'https://chat.whatsapp.com/invite/arixon-tawjihi-2009',
+  whatsappUrl: REAL_WHATSAPP_COMMUNITY_URL,
   enabled: true,
   label: 'Arixon | مجتمع توجيهي 2009',
 };
@@ -39,7 +41,10 @@ export async function fetchCommunitySettings(): Promise<CommunitySettings> {
     if (cached) {
       const parsed = JSON.parse(cached);
       if (parsed && typeof parsed === 'object') {
-        // Continue to firestore in background, but return cached if offline or rapid
+        if (!parsed.whatsappUrl || parsed.whatsappUrl.includes('arixon-tawjihi-2009')) {
+          parsed.whatsappUrl = REAL_WHATSAPP_COMMUNITY_URL;
+        }
+        return parsed;
       }
     }
   } catch {}
@@ -48,8 +53,12 @@ export async function fetchCommunitySettings(): Promise<CommunitySettings> {
     const snap = await getDoc(doc(db, 'settings', 'community'));
     if (snap.exists()) {
       const data = snap.data() as Partial<CommunitySettings>;
+      let finalUrl = data.whatsappUrl || REAL_WHATSAPP_COMMUNITY_URL;
+      if (finalUrl.includes('arixon-tawjihi-2009')) {
+        finalUrl = REAL_WHATSAPP_COMMUNITY_URL;
+      }
       const settings: CommunitySettings = {
-        whatsappUrl: data.whatsappUrl || DEFAULT_COMMUNITY_SETTINGS.whatsappUrl,
+        whatsappUrl: finalUrl,
         enabled: data.enabled !== undefined ? Boolean(data.enabled) : true,
         label: data.label || DEFAULT_COMMUNITY_SETTINGS.label,
         updatedAt: data.updatedAt,

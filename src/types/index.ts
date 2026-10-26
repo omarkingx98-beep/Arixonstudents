@@ -143,6 +143,7 @@ export interface ExamAttempt {
   examSubject?: string;
   lesson?: string;
   totalPoints?: number;
+  questionCount?: number;
   userDisplayName?: string;
   isRetake?: boolean;
   correctCount?: number;

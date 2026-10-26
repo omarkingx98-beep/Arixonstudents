@@ -76,10 +76,10 @@ export async function seedFirstExamIfMissing(): Promise<void> {
     const litSnap = await getDoc(litDocRef);
 
     const needsLitSeeding = !litSnap.exists() || 
-      litSnap.data()?.questionCount !== 15;
+      litSnap.data()?.questionCount !== 20;
 
     if (needsLitSeeding) {
-      console.log('Seeding full 15-question Arabic Exam into Firestore...');
+      console.log('Seeding full 20-question Arabic Exam into Firestore...');
       await setDoc(litDocRef, LITERARY_EXAM, { merge: true });
 
       for (const q of LITERARY_EXAM_QUESTIONS) {
@@ -627,6 +627,7 @@ export async function startOrResumeAttempt(
     examSubject: exam.subjectNameAr || exam.subject,
     lesson: exam.lesson,
     totalPoints: exam.totalPoints,
+    questionCount: exam.questionCount || 20,
     startedAt: startedAt.toISOString(),
     expectedEndAt: expectedEndAt.toISOString(),
     submittedAt: null,
@@ -871,6 +872,7 @@ export async function submitExamAttempt(
             expectedEndAt: attemptData.expectedEndAt,
             examTitle: attemptData.examTitle,
             totalPoints: attemptData.totalPoints,
+            questionCount: attemptData.questionCount || Object.keys(savedAnswers).length || 20,
             isRetake: attemptData.isRetake,
             durationUsed: computedDurationUsed,
             durationSeconds: computedDurationUsed,

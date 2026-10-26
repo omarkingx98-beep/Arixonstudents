@@ -37,7 +37,7 @@ export const AdminSettingsView: React.FC = () => {
   });
 
   const [community, setCommunity] = useState<CommunitySettings>({
-    whatsappUrl: 'https://chat.whatsapp.com/invite/arixon-tawjihi-2009',
+    whatsappUrl: 'https://chat.whatsapp.com/FQ39q5zXeZq8DJeeuPJNpu',
     enabled: true,
     label: 'Arixon | مجتمع توجيهي 2009',
   });

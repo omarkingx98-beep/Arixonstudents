@@ -30,6 +30,10 @@ export const AnnouncementTicker: React.FC = () => {
     return null;
   }
 
+  const tickerItems = announcements.length < 4
+    ? [...announcements, ...announcements, ...announcements]
+    : [...announcements, ...announcements];
+
   return (
     <>
       <div 
@@ -46,9 +50,9 @@ export const AnnouncementTicker: React.FC = () => {
         {/* Marquee Container */}
         <div className="flex-1 overflow-hidden relative">
           <div className="inline-flex items-center whitespace-nowrap animate-marquee gap-8 hover:[animation-play-state:paused]">
-            {announcements.map((ann, idx) => (
+            {tickerItems.map((ann, idx) => (
               <span
-                key={ann.id || idx}
+                key={`${ann.id || 'item'}_${idx}`}
                 onClick={() => setSelectedAnnouncement(ann)}
                 className="inline-flex items-center gap-2 cursor-pointer group-hover:text-amber-600 dark:group-hover:text-amber-400 transition-colors"
               >

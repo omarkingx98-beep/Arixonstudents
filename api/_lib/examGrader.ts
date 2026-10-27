@@ -108,11 +108,18 @@ export function getAdminFirestore(): { db: FirebaseFirestore.Firestore | null; h
       } catch (err: any) {
         console.warn('[ExamGrader] Failed to initialize with individual credentials:', err?.message);
       }
+    } else if (getApps().length > 0) {
+      try {
+        adminDb = getFirestore();
+        adminHasValidServiceAccount = true;
+        console.log('[ExamGrader] Firebase Admin Firestore initialized from existing app instance.');
+      } catch (appErr: any) {
+        console.warn('[ExamGrader] Existing app could not get Firestore:', appErr?.message);
+        adminHasValidServiceAccount = false;
+        adminDb = null;
+      }
     } else {
-      // CRITICAL VERCEL FIX:
-      // Do NOT call initializeApp without credentials on Vercel/Lambda!
-      // Doing so triggers a 60-second metadata server hang (169.254.169.254).
-      console.warn('[ExamGrader] Notice: No Firebase service account credentials found in environment (FIREBASE_SERVICE_ACCOUNT_KEY or FIREBASE_CLIENT_EMAIL + FIREBASE_PRIVATE_KEY). Client-authoritative sync will be utilized.');
+      console.warn('[ExamGrader] Notice: No Firebase service account credentials found in environment.');
       adminHasValidServiceAccount = false;
       adminDb = null;
     }

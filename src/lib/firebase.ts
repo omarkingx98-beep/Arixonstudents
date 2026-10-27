@@ -288,6 +288,20 @@ export function getAuthErrorMessage(err: any): string {
  * Sign out
  */
 export async function logOut(): Promise<void> {
+  if (typeof window !== 'undefined') {
+    try {
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && (k.startsWith('arixon_completed_') || k.startsWith('arixon_attempt_') || k.startsWith('arixon_cached_profile_'))) {
+          keysToRemove.push(k);
+        }
+      }
+      for (const k of keysToRemove) {
+        localStorage.removeItem(k);
+      }
+    } catch {}
+  }
   await signOut(auth);
 }
 

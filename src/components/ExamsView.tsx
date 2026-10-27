@@ -107,8 +107,9 @@ export const ExamsView: React.FC<ExamsViewProps> = ({
   }, [initialAttempt, initialViewMode]);
 
   // Handle clicking "Start Exam", "Resume", or "View Completed"
+  // Handle clicking "Start Exam", "Resume", or "View Completed"
   const handleExamCardClick = (exam: Exam) => {
-    const isCompleted = exam.userAttemptStatus === 'completed' || exam.status === 'completed' || exam.userScore !== undefined;
+    const isCompleted = (exam.userAttemptStatus === 'completed' || exam.userAttemptStatus === 'submitted_pending') && Boolean(exam.userLastAttemptId);
     if (isCompleted && exam.userLastAttemptId) {
       // View existing submitted attempt result directly without re-taking
       openSubmittedAttempt(exam.userLastAttemptId, exam);
@@ -129,9 +130,25 @@ export const ExamsView: React.FC<ExamsViewProps> = ({
         setCurrentAttempt(att);
         if (exam) setCurrentExam(exam);
         setViewMode('results');
+      } else {
+        // Attempt does not exist for this student (e.g. stale cross-user cache or bad id)
+        // Reset stale markers on this exam and open the exam details modal so student can take it
+        if (exam) {
+          exam.userAttemptStatus = 'not_started';
+          exam.userLastAttemptId = undefined;
+          exam.userScore = undefined;
+          try {
+            localStorage.removeItem(`arixon_completed_${profile.uid}_${exam.id}`);
+            localStorage.removeItem(`arixon_completed_exam_${exam.id}`);
+          } catch {}
+          setSelectedExamForModal(exam);
+        }
       }
     } catch (err) {
       console.error('Error loading submitted attempt:', err);
+      if (exam) {
+        setSelectedExamForModal(exam);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -392,7 +409,7 @@ export const ExamsView: React.FC<ExamsViewProps> = ({
           return (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {visibleExams.map((exam) => {
-                const isCompleted = exam.userAttemptStatus === 'completed' || exam.userAttemptStatus === 'submitted_pending' || exam.status === 'completed' || exam.userScore !== undefined;
+                const isCompleted = (exam.userAttemptStatus === 'completed' || exam.userAttemptStatus === 'submitted_pending') && Boolean(exam.userLastAttemptId);
                 const isInProgress = !isCompleted && exam.userAttemptStatus === 'in_progress';
 
                 const difficultyText = 
@@ -403,6 +420,9 @@ export const ExamsView: React.FC<ExamsViewProps> = ({
                   exam.difficulty === 'easy' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300' :
                   exam.difficulty === 'hard' ? 'bg-red-50 text-red-700 dark:bg-red-950/60 dark:text-red-300' :
                   'bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300';
+
+                const earnedMarks = Math.round(((exam.userScore ?? 0) / 100) * (exam.totalPoints || 100));
+                const totalMarks = exam.totalPoints || 100;
 
                 return (
                   <div
@@ -473,7 +493,7 @@ export const ExamsView: React.FC<ExamsViewProps> = ({
                           <div className="flex items-center justify-between text-xs px-1">
                             <span className="text-slate-500 font-medium">النتيجة:</span>
                             <span className="font-bold text-emerald-600 dark:text-emerald-400">
-                              {exam.userScore !== undefined ? `${exam.userScore}% (${exam.userScore} / 100)` : 'تم الإنجاز'}
+                              {exam.userScore !== undefined ? `${exam.userScore}% (${earnedMarks} / ${totalMarks})` : 'تم الإنجاز'}
                             </span>
                           </div>
                           <button

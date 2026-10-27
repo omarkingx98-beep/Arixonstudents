@@ -159,8 +159,12 @@ export async function getActivePromoBanners(): Promise<PromoBanner[]> {
       }
 
       const sanitized = banners.map(b => {
-        if (b.linkTarget && b.linkTarget.includes('arixon-tawjihi-2009')) {
-          return { ...b, linkTarget: 'https://chat.whatsapp.com/FQ39q5zXeZq8DJeeuPJNpu' };
+        if (
+          (b.linkTarget && (b.linkTarget.includes('whatsapp.com') || b.linkTarget.includes('arixon-tawjihi-2009'))) ||
+          (b.alt && b.alt.includes('واتساب')) ||
+          b.id === 'initial_banner_whatsapp_community'
+        ) {
+          return { ...b, linkType: 'external' as const, linkTarget: 'https://chat.whatsapp.com/FQ39q5zXeZq8DJeeuPJNpu' };
         }
         return b;
       });

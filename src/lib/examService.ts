@@ -102,10 +102,14 @@ export async function seedFirstExamIfMissing(): Promise<void> {
     // 3. Seed Islamic Studies exam (Unit 1, Lesson 1: منهج التعامل مع القرآن والسنة)
     const islDocRef = doc(db, 'exams', ISLAMIC_EXAM_ID);
     const islSnap = await getDoc(islDocRef);
+    const islData = islSnap.exists() ? islSnap.data() : null;
 
     const needsIslSeeding = !islSnap.exists() || 
-      islSnap.data()?.questionCount !== 20 ||
-      islSnap.data()?.durationMinutes !== 35;
+      islData?.subject !== 'islamic_studies' ||
+      islData?.totalPoints !== 20 ||
+      islData?.subjectNameAr !== 'التربية الإسلامية' ||
+      islData?.questionCount !== 20 ||
+      islData?.durationMinutes !== 35;
 
     if (needsIslSeeding) {
       console.log('Seeding full 20-question Islamic Studies Exam into Firestore...');
@@ -154,6 +158,22 @@ export async function getExamsList(
     // Make sure first exam is seeded
     await seedFirstExamIfMissing();
 
+    // Clean up any legacy un-scoped completed exam keys that contaminated localStorage across users
+    if (typeof window !== 'undefined') {
+      try {
+        const keysToRemove: string[] = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k && k.startsWith('arixon_completed_exam_')) {
+            keysToRemove.push(k);
+          }
+        }
+        for (const k of keysToRemove) {
+          localStorage.removeItem(k);
+        }
+      } catch {}
+    }
+
     const examsRef = collection(db, 'exams');
     let q = query(examsRef, where('published', '==', true));
 
@@ -185,7 +205,7 @@ export async function getExamsList(
             const localCached = localStorage.getItem(`arixon_attempt_${att.id}`);
             if (localCached) {
               const parsed = JSON.parse(localCached);
-              if (parsed.status === 'submitted' || parsed.score !== undefined) {
+              if ((parsed.status === 'submitted' || parsed.score !== undefined) && parsed.userId === currentUserId) {
                 userSubmittedAttempts[att.examId] = { ...att, ...parsed, status: 'submitted' };
                 return;
               }
@@ -202,6 +222,30 @@ export async function getExamsList(
         ...data,
         id: docSnapshot.id,
       };
+
+      // Canonical override for official ministerial exams to ensure 100% accurate subject and points
+      if (examObj.id === ISLAMIC_EXAM_ID || examObj.id === 'exam_islamic_tw2009_01' || examObj.title?.includes('التربية الإسلامية')) {
+        examObj.subject = 'islamic_studies';
+        examObj.subjectNameAr = 'التربية الإسلامية';
+        examObj.totalPoints = 20;
+        examObj.questionCount = 20;
+        examObj.durationMinutes = 35;
+        examObj.branch = 'مشترك';
+      } else if (examObj.id === FIRST_EXAM_ID || examObj.id === 'exam_physics_tw2009_01' || (examObj.title?.includes('الفيزياء') && examObj.title?.includes('الزخم'))) {
+        examObj.subject = 'physics';
+        examObj.subjectNameAr = 'الفيزياء';
+        examObj.totalPoints = 100;
+        examObj.questionCount = 20;
+        examObj.durationMinutes = 35;
+        examObj.branch = 'علمي';
+      } else if (examObj.id === LITERARY_EXAM_ID || examObj.id === 'exam_arabic_tw2009_01' || (examObj.title?.includes('اللغة العربية') && examObj.title?.includes('مهارات'))) {
+        examObj.subject = 'arabic';
+        examObj.subjectNameAr = 'اللغة العربية';
+        examObj.totalPoints = 100;
+        examObj.questionCount = 20;
+        examObj.durationMinutes = 30;
+        examObj.branch = 'مشترك';
+      }
 
       // Status check: do not show unpublished, draft, or archived exams to students
       const st = (examObj.status as string) || (examObj.published ? 'published' : 'draft');
@@ -246,31 +290,32 @@ export async function getExamsList(
         }
       }
 
-      // Student attempt status: if submitted, it is permanently completed (one-time completion)
+      // Student attempt status: strictly scoped to currentUserId
       if (currentUserId) {
         let att = userSubmittedAttempts[examObj.id];
 
-        // Fallback: check locally stored completed exam marker
+        // Safe fallback: check ONLY user-scoped completed exam cache
         if (!att && typeof window !== 'undefined') {
           try {
-            const rawCompleted = localStorage.getItem(`arixon_completed_exam_${examObj.id}`);
+            const rawCompleted = localStorage.getItem(`arixon_completed_${currentUserId}_${examObj.id}`);
             if (rawCompleted) {
               const parsed = JSON.parse(rawCompleted);
-              att = {
-                id: parsed.attemptId || `att_${currentUserId}_${examObj.id}`,
-                examId: examObj.id,
-                userId: currentUserId,
-                status: 'submitted',
-                score: parsed.score ?? 0,
-                submittedAt: parsed.submittedAt || new Date().toISOString(),
-              } as ExamAttempt;
+              if (parsed && parsed.userId === currentUserId && parsed.attemptId) {
+                att = {
+                  id: parsed.attemptId,
+                  examId: examObj.id,
+                  userId: currentUserId,
+                  status: 'submitted',
+                  score: parsed.score ?? 0,
+                  submittedAt: parsed.submittedAt || new Date().toISOString(),
+                } as ExamAttempt;
+              }
             }
           } catch {}
         }
 
         if (att) {
           examObj.userAttemptStatus = 'completed';
-          examObj.status = 'completed';
           examObj.userLastAttemptId = att.id;
           examObj.userScore = att.score ?? 0;
         } else if (userInProgressAttempts[examObj.id]) {
@@ -282,10 +327,13 @@ export async function getExamsList(
           } else {
             // Expired attempt -> locked as completed
             examObj.userAttemptStatus = 'completed';
-            examObj.status = 'completed';
             examObj.userLastAttemptId = inProgressAtt.id;
             examObj.userScore = inProgressAtt.score ?? 0;
           }
+        } else {
+          examObj.userAttemptStatus = 'not_started';
+          examObj.userLastAttemptId = undefined;
+          examObj.userScore = undefined;
         }
       }
 
@@ -294,7 +342,17 @@ export async function getExamsList(
 
     // Ensure official ministerial exams are present if missing from Firestore query
     const ensureOfficialExam = (officialExam: Exam) => {
-      if (exams.some(e => e.id === officialExam.id)) return;
+      const existingIdx = exams.findIndex(e => e.id === officialExam.id || (e.title && e.title.includes(officialExam.subjectNameAr) && e.lesson === officialExam.lesson));
+      if (existingIdx !== -1) {
+        // Enforce canonical metadata on the existing exam
+        exams[existingIdx].subject = officialExam.subject;
+        exams[existingIdx].subjectNameAr = officialExam.subjectNameAr;
+        exams[existingIdx].totalPoints = officialExam.totalPoints;
+        exams[existingIdx].questionCount = officialExam.questionCount;
+        exams[existingIdx].durationMinutes = officialExam.durationMinutes;
+        exams[existingIdx].branch = officialExam.branch;
+        return;
+      }
 
       // Subject filtration
       if (subjectFilter && subjectFilter !== 'all' && officialExam.subject !== subjectFilter) {
@@ -312,24 +370,25 @@ export async function getExamsList(
         let att = userSubmittedAttempts[examObj.id];
         if (!att && typeof window !== 'undefined') {
           try {
-            const rawCompleted = localStorage.getItem(`arixon_completed_exam_${examObj.id}`);
+            const rawCompleted = localStorage.getItem(`arixon_completed_${currentUserId}_${examObj.id}`);
             if (rawCompleted) {
               const parsed = JSON.parse(rawCompleted);
-              att = {
-                id: parsed.attemptId || `att_${currentUserId}_${examObj.id}`,
-                examId: examObj.id,
-                userId: currentUserId,
-                status: 'submitted',
-                score: parsed.score ?? 0,
-                submittedAt: parsed.submittedAt || new Date().toISOString(),
-              } as ExamAttempt;
+              if (parsed && parsed.userId === currentUserId && parsed.attemptId) {
+                att = {
+                  id: parsed.attemptId,
+                  examId: examObj.id,
+                  userId: currentUserId,
+                  status: 'submitted',
+                  score: parsed.score ?? 0,
+                  submittedAt: parsed.submittedAt || new Date().toISOString(),
+                } as ExamAttempt;
+              }
             }
           } catch {}
         }
 
         if (att) {
           examObj.userAttemptStatus = 'completed';
-          examObj.status = 'completed';
           examObj.userLastAttemptId = att.id;
           examObj.userScore = att.score ?? 0;
         } else if (userInProgressAttempts[examObj.id]) {
@@ -340,10 +399,13 @@ export async function getExamsList(
             examObj.userLastAttemptId = inProgressAtt.id;
           } else {
             examObj.userAttemptStatus = 'completed';
-            examObj.status = 'completed';
             examObj.userLastAttemptId = inProgressAtt.id;
             examObj.userScore = inProgressAtt.score ?? 0;
           }
+        } else {
+          examObj.userAttemptStatus = 'not_started';
+          examObj.userLastAttemptId = undefined;
+          examObj.userScore = undefined;
         }
       }
 
@@ -929,7 +991,9 @@ export async function submitExamAttempt(
       const pendingAttempt: ExamAttempt = {
         id: attemptId,
         userId,
-        examId: '',
+        examId: attemptData.examId || '',
+        examTitle: attemptData.examTitle || '',
+        examSubject: attemptData.examSubject || '',
         status: 'submitted_pending',
         pendingReason: lastError?.message || 'Server grading deferred',
         submittedAt: now,
@@ -1025,14 +1089,15 @@ export async function submitExamAttempt(
     })().catch(() => {});
   }
 
-  // Update localStorage cache
+  // Update localStorage cache (strictly user-scoped)
   try {
     localStorage.setItem(`arixon_attempt_${attemptId}`, JSON.stringify({ ...gradedAttempt, reviews }));
     const finalExamId = gradedAttempt.examId || attemptData.examId;
-    if (finalExamId) {
-      localStorage.setItem(`arixon_completed_exam_${finalExamId}`, JSON.stringify({
+    if (finalExamId && userId) {
+      localStorage.setItem(`arixon_completed_${userId}_${finalExamId}`, JSON.stringify({
         attemptId,
         examId: finalExamId,
+        userId,
         score: gradedAttempt.score,
         status: 'completed',
         submittedAt: gradedAttempt.submittedAt,
@@ -1097,9 +1162,21 @@ export async function getAttemptReviews(attemptId: string, userId: string): Prom
           ? ISLAMIC_EXAM_QUESTIONS.find(iq => iq.id === q.id || iq.order === q.order)
           : undefined;
 
+        const literaryQ = attemptData.examId === LITERARY_EXAM_ID
+          ? LITERARY_EXAM_QUESTIONS.find(lq => lq.id === q.id || lq.order === q.order)
+          : undefined;
+
+        const physicsQ = attemptData.examId === FIRST_EXAM_ID
+          ? FIRST_EXAM_QUESTIONS.find(pq => pq.id === q.id || pq.order === q.order)
+          : undefined;
+
         const correctAns = islamicQ?.correctAnswer !== undefined
           ? islamicQ.correctAnswer
-          : ((q as any).correctAnswer !== undefined ? Number((q as any).correctAnswer) : 0);
+          : (literaryQ?.correctAnswer !== undefined
+              ? literaryQ.correctAnswer
+              : (physicsQ?.correctAnswer !== undefined
+                  ? physicsQ.correctAnswer
+                  : ((q as any).correctAnswer !== undefined ? Number((q as any).correctAnswer) : 0)));
 
         const isCorrect = !isUnanswered && Number(studentAns) === Number(correctAns);
         const pts = q.points || (attemptData.examId === ISLAMIC_EXAM_ID ? 1 : 5);
@@ -1112,8 +1189,8 @@ export async function getAttemptReviews(attemptId: string, userId: string): Prom
           correctAnswer: correctAns,
           isCorrect,
           isUnanswered,
-          explanation: islamicQ?.explanation || (q as any).explanation || '',
-          hint: q.hint || islamicQ?.hint || '',
+          explanation: islamicQ?.explanation || literaryQ?.explanation || physicsQ?.explanation || (q as any).explanation || '',
+          hint: q.hint || islamicQ?.hint || literaryQ?.hint || physicsQ?.hint || '',
           points: pts,
           pointsEarned: isCorrect ? pts : 0,
           source: q.source || 'أريكسون',

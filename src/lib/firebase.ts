@@ -3,6 +3,9 @@ import {
   getAuth, 
   GoogleAuthProvider, 
   signInWithPopup, 
+  signInWithRedirect,
+  getRedirectResult,
+  reauthenticateWithPopup,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   sendPasswordResetEmail,
@@ -10,7 +13,11 @@ import {
   setPersistence,
   browserLocalPersistence,
   User,
-  Auth
+  Auth,
+  EmailAuthProvider,
+  linkWithCredential,
+  updatePassword,
+  fetchSignInMethodsForEmail
 } from 'firebase/auth';
 import { 
   initializeFirestore,
@@ -21,6 +28,8 @@ import {
   getDoc, 
   setDoc, 
   updateDoc, 
+  deleteDoc,
+  serverTimestamp,
   collection, 
   query, 
   orderBy, 
@@ -215,18 +224,42 @@ export function sanitizeFirestoreData<T extends Record<string, any>>(data: T): P
 }
 
 /**
- * Sign in with Google Popup
+ * Sign in with Google Popup with redirect fallback for mobile webviews / blocked popups
  */
 export async function signInWithGoogle(): Promise<User> {
-  const result = await signInWithPopup(auth, googleProvider);
-  return result.user;
+  try {
+    const result = await signInWithPopup(auth, googleProvider);
+    return result.user;
+  } catch (err: any) {
+    console.error('[FirebaseAuthError] signInWithPopup error code:', err?.code, err);
+    // If popup is blocked by mobile in-app browser or pop-up blocker, fallback to redirect
+    if (err?.code === 'auth/popup-blocked' || err?.code === 'auth/cancelled-popup-request') {
+      console.info('[FirebaseAuth] Falling back to signInWithRedirect...');
+      await signInWithRedirect(auth, googleProvider);
+      return new Promise(() => {}); // Wait for browser redirect
+    }
+    throw err;
+  }
+}
+
+/**
+ * Check if the user returned from a signInWithRedirect flow
+ */
+export async function checkRedirectSignInResult(): Promise<User | null> {
+  try {
+    const result = await getRedirectResult(auth);
+    return result ? result.user : null;
+  } catch (err: any) {
+    console.error('[FirebaseAuthError] getRedirectResult code:', err?.code, err);
+    return null;
+  }
 }
 
 /**
  * Sign in with Email and Password
  */
 export async function signInWithEmail(email: string, password: string): Promise<User> {
-  const result = await signInWithEmailAndPassword(auth, email.trim(), password);
+  const result = await signInWithEmailAndPassword(auth, email.trim().toLowerCase(), password.trim());
   return result.user;
 }
 
@@ -234,7 +267,7 @@ export async function signInWithEmail(email: string, password: string): Promise<
  * Sign up with Email and Password
  */
 export async function signUpWithEmail(email: string, password: string): Promise<User> {
-  const result = await createUserWithEmailAndPassword(auth, email.trim(), password);
+  const result = await createUserWithEmailAndPassword(auth, email.trim().toLowerCase(), password.trim());
   return result.user;
 }
 
@@ -242,45 +275,216 @@ export async function signUpWithEmail(email: string, password: string): Promise<
  * Send Password Reset Email
  */
 export async function resetPassword(email: string): Promise<void> {
-  await sendPasswordResetEmail(auth, email.trim());
+  await sendPasswordResetEmail(auth, email.trim().toLowerCase());
 }
 
 /**
- * Helper to map Firebase Auth error codes into clear, user-friendly Arabic messages
+ * Link an Email & Password credential to an existing user (e.g. Google user)
+ * Re-authenticates with Google first if Firebase requires recent login.
+ */
+export async function linkPasswordToAccount(user: User, password: string): Promise<void> {
+  if (!user.email) {
+    throw new Error('لا يوجد بريد إلكتروني مرتبط بحسابك.');
+  }
+  const cleanPassword = password.trim();
+  if (cleanPassword.length < 6) {
+    throw new Error('يجب أن تتكون كلمة المرور من 6 أحرف أو أرقام على الأقل.');
+  }
+
+  const credential = EmailAuthProvider.credential(user.email, cleanPassword);
+  try {
+    await linkWithCredential(user, credential);
+  } catch (err: any) {
+    console.error('[FirebaseAuthError] linkWithCredential code:', err?.code, err);
+    if (err.code === 'auth/provider-already-linked') {
+      await updatePassword(user, cleanPassword);
+    } else if (err.code === 'auth/requires-recent-login') {
+      try {
+        await reauthenticateWithPopup(user, googleProvider);
+        await linkWithCredential(user, credential);
+      } catch (reauthErr: any) {
+        console.error('[FirebaseAuthError] reauth code:', reauthErr?.code, reauthErr);
+        throw new Error('يرجى إعادة تسجيل الدخول أولاً لتأكيد هويتك قبل تعيين كلمة المرور.');
+      }
+    } else if (err.code === 'auth/credential-already-in-use') {
+      throw new Error('بيانات الاعتماد هذه مستخدمة بالفعل في حساب آخر.');
+    } else {
+      throw err;
+    }
+  }
+}
+
+/**
+ * Check if the user has a password provider linked to their account
+ */
+export function userHasPasswordProvider(user: User | null): boolean {
+  if (!user) return false;
+  return user.providerData.some((p) => p.providerId === 'password');
+}
+
+/**
+ * Check sign in methods registered for an email (e.g. ['google.com'] or ['password'])
+ */
+export async function checkEmailSignInMethods(email: string): Promise<string[]> {
+  try {
+    return await fetchSignInMethodsForEmail(auth, email.trim().toLowerCase());
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Helper to map Firebase Auth error codes into 1 small line in Arabic
+ * Detailed technical codes are logged to console.error only
  */
 export function getAuthErrorMessage(err: any): string {
   if (!err) return 'حدث خطأ غير متوقع أثناء تسجيل الدخول.';
   const code = typeof err === 'object' && err.code ? err.code : '';
+  console.error('[FirebaseAuthError] Code:', code, err);
 
   switch (code) {
     case 'auth/invalid-email':
-      return 'بريد غير صالح';
+      return 'صيغة البريد الإلكتروني غير صالحة';
     case 'auth/user-not-found':
-      return 'لا يوجد حساب بهذا البريد';
+      return 'لا يوجد حساب بهذا البريد. إذا سجّلت بجوجل استخدم زر Google';
     case 'auth/wrong-password':
-      return 'كلمة المرور غير صحيحة';
     case 'auth/invalid-credential':
-      return 'البريد أو كلمة المرور غير صحيحة';
+      return 'البريد أو كلمة المرور غير صحيحة. إذا سجّلت بجوجل استخدم زر Google أو اضغط نسيت كلمة المرور';
     case 'auth/email-already-in-use':
-      return 'هذا البريد مستخدم بالفعل';
-    case 'auth/weak-password':
-      return 'كلمة المرور ضعيفة (6 أحرف على الأقل)';
-    case 'auth/operation-not-allowed':
-      return 'تسجيل الدخول بهذه الطريقة غير مفعّل';
-    case 'auth/network-request-failed':
-      return 'تحقق من الاتصال بالإنترنت';
-    case 'auth/too-many-requests':
-      return 'محاولات كثيرة، حاول لاحقًا';
-    case 'auth/unauthorized-domain':
-      return 'نطاق التطبيق غير مصرح به';
-    case 'auth/popup-closed-by-user':
-      return 'تم إغلاق نافذة تسجيل الدخول';
-    case 'auth/popup-blocked':
-      return 'تم حظر النافذة المنبثقة بواسطة المتصفح';
+      return 'هذا البريد مسجل بالفعل. سجّل دخولك بزر Google أو بكلمة المرور';
     case 'auth/account-exists-with-different-credential':
-      return 'هذا البريد مستخدم بالفعل بوسيلة دخول أخرى';
+      return 'هذا البريد مسجل بالفعل عبر Google. يرجى الدخول بزر Google';
+    case 'auth/weak-password':
+      return 'كلمة المرور ضعيفة (يجب أن تتكون من 6 أحرف على الأقل)';
+    case 'auth/operation-not-allowed':
+      return 'طريقة تسجيل الدخول هذه غير مفعّلة حالياً';
+    case 'auth/network-request-failed':
+      return 'تعذر الاتصال بالخادم، يرجى التحقق من اتصالك بالإنترنت';
+    case 'auth/too-many-requests':
+      return 'تم حظر المحاولات مؤقتاً لتكرار الخطأ. انتظر دقيقة أو ادخل بـ Google';
+    case 'auth/unauthorized-domain':
+      return 'نطاق الموقع غير مصرح به في إعدادات Firebase';
+    case 'auth/popup-closed-by-user':
+      return 'تم إغلاق نافذة تسجيل الدخول بجوجل';
+    case 'auth/popup-blocked':
+      return 'المتصفح حظر النافذة المنبثقة، افتح الرابط في Chrome أو Safari';
     default:
-      return err.message || 'حدث خطأ، يرجى المحاولة لاحقاً';
+      return err.message || 'حدث خطأ أثناء المصادقة، يرجى المحاولة لاحقاً';
+  }
+}
+
+/**
+ * Part N: Save user avatar in Firestore without Firebase Storage
+ * - avatars/{uid}: { full: data URL, updatedAt } (< 60KB)
+ * - publicProfiles/{uid}: avatar: thumbnail or preset (< 8KB)
+ * - users/{uid}: photoURL: thumbnail or preset
+ */
+export async function saveUserAvatar(
+  uid: string,
+  fullDataUrl: string,
+  thumbnailOrPreset: string
+): Promise<void> {
+  const now = new Date().toISOString();
+
+  // 1. If it's a base64 data URL, store full image in avatars/{uid}
+  if (fullDataUrl.startsWith('data:image/')) {
+    const avatarRef = doc(db, 'avatars', uid);
+    await setDoc(avatarRef, {
+      full: fullDataUrl,
+      updatedAt: serverTimestamp(),
+    });
+  } else if (thumbnailOrPreset.startsWith('preset:')) {
+    try {
+      await deleteDoc(doc(db, 'avatars', uid));
+    } catch {}
+  }
+
+  // 2. Update publicProfiles/{uid}
+  const pubRef = doc(db, 'publicProfiles', uid);
+  await updateDoc(pubRef, {
+    avatar: thumbnailOrPreset,
+    photoURL: thumbnailOrPreset,
+    updatedAt: now,
+  }).catch(async () => {
+    await setDoc(pubRef, {
+      avatar: thumbnailOrPreset,
+      photoURL: thumbnailOrPreset,
+      updatedAt: now,
+    }, { merge: true });
+  });
+
+  // 3. Update users/{uid}
+  const userRef = doc(db, 'users', uid);
+  await updateDoc(userRef, {
+    photoURL: thumbnailOrPreset,
+    updatedAt: now,
+  }).catch(() => {});
+
+  // Cache in sessionStorage
+  if (typeof window !== 'undefined') {
+    try {
+      if (fullDataUrl) sessionStorage.setItem(`arixon_avatar_full_${uid}`, fullDataUrl);
+      if (thumbnailOrPreset) sessionStorage.setItem(`arixon_avatar_thumb_${uid}`, thumbnailOrPreset);
+    } catch {}
+  }
+}
+
+/**
+ * Part N: Fetch full avatar from avatars/{uid} (read only when opening profile)
+ */
+export async function fetchFullAvatar(uid: string): Promise<string | null> {
+  if (typeof window !== 'undefined') {
+    try {
+      const cached = sessionStorage.getItem(`arixon_avatar_full_${uid}`);
+      if (cached) return cached;
+    } catch {}
+  }
+
+  try {
+    const snap = await getDoc(doc(db, 'avatars', uid));
+    if (snap.exists()) {
+      const full = snap.data().full as string;
+      if (typeof window !== 'undefined' && full) {
+        try {
+          sessionStorage.setItem(`arixon_avatar_full_${uid}`, full);
+        } catch {}
+      }
+      return full || null;
+    }
+    return null;
+  } catch (err) {
+    console.warn('[AvatarService] fetchFullAvatar warning:', err);
+    return null;
+  }
+}
+
+/**
+ * Part N: Remove user avatar (reset to initial letter / default)
+ */
+export async function removeUserAvatar(uid: string): Promise<void> {
+  const now = new Date().toISOString();
+  try {
+    await deleteDoc(doc(db, 'avatars', uid));
+  } catch {}
+
+  const pubRef = doc(db, 'publicProfiles', uid);
+  await updateDoc(pubRef, {
+    avatar: '',
+    photoURL: '',
+    updatedAt: now,
+  }).catch(() => {});
+
+  const userRef = doc(db, 'users', uid);
+  await updateDoc(userRef, {
+    photoURL: '',
+    updatedAt: now,
+  }).catch(() => {});
+
+  if (typeof window !== 'undefined') {
+    try {
+      sessionStorage.removeItem(`arixon_avatar_full_${uid}`);
+      sessionStorage.removeItem(`arixon_avatar_thumb_${uid}`);
+    } catch {}
   }
 }
 

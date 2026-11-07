@@ -13,6 +13,8 @@ import {
   Clock,
   Play,
   UserPlus,
+  KeyRound,
+  X,
 } from 'lucide-react';
 import { PromoCarousel } from './PromoCarousel';
 import type { NavigationTab } from '../types';
@@ -21,14 +23,17 @@ interface HomeDashboardProps {
   onNavigate: (tab: NavigationTab) => void;
   onOpenTutorial?: () => void;
   onOpenUserSearch?: () => void;
+  onOpenSecuritySettings?: () => void;
 }
 
 export const HomeDashboard: React.FC<HomeDashboardProps> = ({ 
   onNavigate, 
   onOpenTutorial,
-  onOpenUserSearch
+  onOpenUserSearch,
+  onOpenSecuritySettings,
 }) => {
-  const { profile } = useAuth();
+  const { user, profile, hasPasswordProvider } = useAuth();
+  const [isDismissedPasswordBanner, setIsDismissedPasswordBanner] = React.useState(false);
 
   // Real statistics strictly calculated from stored Firestore user data
   const totalPoints = profile?.totalPoints ?? 0;
@@ -64,6 +69,48 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
           <span>توجيهي 2009</span>
         </div>
       </div>
+
+      {/* Google User Without Password Reminder Banner */}
+      {!hasPasswordProvider && !isDismissedPasswordBanner && user?.email && (
+        <div 
+          id="google-password-reminder-banner"
+          className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-500/15 via-amber-500/5 to-blue-500/10 border border-amber-500/30 flex items-center justify-between gap-3 text-right animate-fadeIn"
+        >
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-xl bg-amber-500 text-white shrink-0">
+              <KeyRound className="w-4 h-4" />
+            </div>
+            <div>
+              <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
+                هل ترغب بتسجيل الدخول ببريدك الإلكتروني مباشرة؟
+              </h4>
+              <p className="text-[11px] text-slate-600 dark:text-slate-400">
+                حسابك مسجل عبر Google. عيّن كلمة سر الآن للدخول بأي طريقة تفضلها.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-1.5 shrink-0">
+            {onOpenSecuritySettings && (
+              <button
+                type="button"
+                onClick={onOpenSecuritySettings}
+                className="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
+              >
+                تعيين كلمة سر
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setIsDismissedPasswordBanner(true)}
+              aria-label="إغلاق التنبيه"
+              className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Promotional Banners Carousel (Part G) */}
       <PromoCarousel onNavigate={onNavigate} />

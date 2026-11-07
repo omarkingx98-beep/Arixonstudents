@@ -17,9 +17,11 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useAdmin } from '../context/AdminContext';
-import { fetchPublicUserProfile } from '../lib/firebase';
+import { fetchPublicUserProfile, removeUserAvatar, db } from '../lib/firebase';
 import { sendFriendRequest, getFriendshipStatus, acceptFriendRequest } from '../lib/friendService';
 import { submitStudentReport } from '../lib/reportService';
+import { UserAvatar } from './UserAvatar';
+import { collection, addDoc } from 'firebase/firestore';
 import type { PublicUserProfile } from '../types';
 
 interface PublicProfileModalProps {
@@ -184,15 +186,12 @@ export const PublicProfileModal: React.FC<PublicProfileModalProps> = ({
             {/* Avatar & Identifiers strictly from publicProfiles safe fields */}
             <div className="flex flex-col items-center pt-2">
               <div className="relative">
-                <img
-                  src={userProfile.avatar || userProfile.photoURL || '/favicon-192x192.png'}
-                  alt={userProfile.displayName}
-                  className="w-20 h-20 rounded-3xl object-cover border-4 border-blue-500/20 shadow-md"
-                  onError={(e) => {
-                    e.currentTarget.src = '/favicon-192x192.png';
-                  }}
+                <UserAvatar
+                  avatar={userProfile.avatar || userProfile.photoURL}
+                  name={userProfile.displayName}
+                  size="xl"
                 />
-                <span className="absolute -bottom-1 -right-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-600 text-white shadow-xs">
+                <span className="absolute -bottom-1 -right-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-600 text-white shadow-xs">
                   {userProfile.track || userProfile.branch || 'علمي'}
                 </span>
               </div>
@@ -316,6 +315,37 @@ export const PublicProfileModal: React.FC<PublicProfileModalProps> = ({
                   <Flag className="w-3.5 h-3.5 text-red-500" />
                   <span>إبلاغ عن الطالب</span>
                 </button>
+
+                {/* Admin: Remove Avatar */}
+                {isAdmin && (userProfile.avatar || userProfile.photoURL) && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!window.confirm(`هل أنت متأكد كأدمن من إزالة الصورة الشخصية للطالب ${userProfile.displayName}؟`)) return;
+                      try {
+                        await removeUserAvatar(userProfile.uid);
+                        if (myProfile) {
+                          await addDoc(collection(db, 'adminAuditLogs'), {
+                            action: 'REMOVE_USER_AVATAR',
+                            targetUid: userProfile.uid,
+                            targetName: userProfile.displayName,
+                            performedBy: myProfile.uid,
+                            performedByName: myProfile.displayName || myProfile.username,
+                            createdAt: new Date().toISOString(),
+                          });
+                        }
+                        setUserProfile((prev) => prev ? { ...prev, avatar: '', photoURL: '' } : null);
+                        alert('تمت إزالة الصورة بنجاح وتعيين الحرف الافتراضي.');
+                      } catch (err: any) {
+                        alert(err.message || 'فشل إزالة الصورة');
+                      }
+                    }}
+                    className="w-full py-2 px-3 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+                  >
+                    <ShieldAlert className="w-3.5 h-3.5" />
+                    <span>إزالة الصورة الشخصية (إجراء إداري)</span>
+                  </button>
+                )}
               </div>
             )}
 
@@ -352,6 +382,7 @@ export const PublicProfileModal: React.FC<PublicProfileModalProps> = ({
                     onChange={(e) => setReportReason(e.target.value)}
                     className="w-full text-xs p-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#111625] text-slate-800 dark:text-slate-200"
                   >
+                    <option value="صورة شخصية غير لائقة">صورة شخصية غير لائقة أو مسيئة</option>
                     <option value="مضايقة أو إساءة">مضايقة أو إساءة في الرسائل</option>
                     <option value="اسم مستخدم غير لائق">اسم مستخدم غير لائق أو مسيء</option>
                     <option value="انتحال شخصية">انتحال شخصية طالب أو معلم</option>

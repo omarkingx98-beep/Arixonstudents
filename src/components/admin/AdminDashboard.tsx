@@ -646,7 +646,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigate }) =>
               <div className="flex items-center gap-3">
                 <Bell className="w-4 h-4 text-amber-600" />
                 <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                  التحكم في إعلانات الشريط العلوي (النصوص)
+                  إدارة الإعلانات والتعميمات والبنرات (شامل)
                 </span>
               </div>
               <span className="text-slate-400 group-hover:translate-x-[-2px] transition-transform">←</span>

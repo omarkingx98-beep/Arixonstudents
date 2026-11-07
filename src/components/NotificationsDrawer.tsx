@@ -25,6 +25,7 @@ import {
 import { acceptFriendRequest, rejectFriendRequest, getFriendsList } from '../lib/friendService';
 import { subscribeToUserChats } from '../lib/chatService';
 import { useAuth } from '../context/AuthContext';
+import { UserAvatar } from './UserAvatar';
 import type { AppNotification, BroadcastNotification, FriendItem, ChatConversation } from '../types';
 
 interface NotificationsDrawerProps {
@@ -525,13 +526,10 @@ export const NotificationsDrawer: React.FC<NotificationsDrawerProps> = ({
                       }`}
                     >
                       <div className="flex items-center gap-3 min-w-0 flex-1">
-                        <img
-                          src={other.photoURL || '/favicon-192x192.png'}
-                          alt={other.displayName}
-                          className="w-10 h-10 rounded-xl object-cover border border-slate-200 dark:border-slate-700 shrink-0"
-                          onError={(e) => {
-                            e.currentTarget.src = '/favicon-192x192.png';
-                          }}
+                        <UserAvatar
+                          avatar={other.photoURL}
+                          name={other.displayName}
+                          size="md"
                         />
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center justify-between gap-2">

@@ -72,7 +72,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
     { id: 'questions', label: 'بنك الأسئلة', icon: FileQuestion },
     { id: 'students', label: 'إدارة الطلاب', icon: Users },
     { id: 'leaderboard', label: 'المتصدرين والنقاط', icon: Trophy },
-    { id: 'announcements', label: 'إعلانات الشريط العلوي (النصوص)', icon: Bell },
+    { id: 'announcements', label: 'إدارة الإعلانات والتعميمات والبنرات', icon: Bell },
     { id: 'banners', label: 'سلايدر الإعلانات المصورة (البنرات)', icon: ImageIcon },
     { id: 'challenges', label: 'التحديات التنافسية', icon: Swords },
     { id: 'analytics', label: 'التحليلات المتقدمة', icon: BarChart3 },

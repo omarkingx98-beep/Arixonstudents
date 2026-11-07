@@ -1,28 +1,21 @@
 import React, { useEffect, useState } from 'react';
 import { Megaphone, Sparkles, X, ChevronLeft, ExternalLink } from 'lucide-react';
-import { fetchActiveAnnouncements } from '../lib/announcementService';
-import type { Announcement } from '../types';
+import { subscribeToActiveTickers } from '../lib/dynamicAnnouncementService';
+import type { DynamicAnnouncement } from '../types';
 
 export const AnnouncementTicker: React.FC = () => {
-  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
-  const [selectedAnnouncement, setSelectedAnnouncement] = useState<Announcement | null>(null);
+  const [announcements, setAnnouncements] = useState<DynamicAnnouncement[]>([]);
+  const [selectedAnnouncement, setSelectedAnnouncement] = useState<DynamicAnnouncement | null>(null);
   const [isDismissed, setIsDismissed] = useState(false);
 
   useEffect(() => {
-    let isMounted = true;
-    const load = async () => {
-      const active = await fetchActiveAnnouncements();
-      if (isMounted) {
-        setAnnouncements(active);
-      }
-    };
+    // Real-time app-wide updates listener
+    const unsubscribe = subscribeToActiveTickers((active) => {
+      setAnnouncements(active);
+    });
 
-    load();
-    // Refresh periodically every 60 seconds to purge expired ones
-    const interval = setInterval(load, 60000);
     return () => {
-      isMounted = false;
-      clearInterval(interval);
+      unsubscribe();
     };
   }, []);
 

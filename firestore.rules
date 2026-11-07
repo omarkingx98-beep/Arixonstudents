@@ -67,7 +67,19 @@ service cloud.firestore {
       }
     }
 
-    // Public Profiles (Limited safe data for student search and profile view - E3 & E4)
+    // High-resolution user avatars (Part N: Canvas compressed < 60KB in Firestore, no storage)
+    match /avatars/{userId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAdmin() || (
+        isOwner(userId) &&
+        request.resource.data.keys().hasOnly(['full', 'updatedAt']) &&
+        request.resource.data.full is string &&
+        request.resource.data.full.size() <= 60000
+      );
+      allow delete: if isOwner(userId) || isAdmin();
+    }
+
+    // Public Profiles (Limited safe data for student search and profile view - E3, E4, Part N)
     match /publicProfiles/{userId} {
       allow read: if isAuthenticated();
       allow create, update: if isAdmin() || (
@@ -76,7 +88,8 @@ service cloud.firestore {
           'uid', 'displayName', 'username', 'usernameLower', 'avatar', 'photoURL',
           'track', 'branch', 'points', 'totalPoints', 'weeklyPoints', 'monthlyPoints',
           'examsCompleted', 'correctAnswers', 'wrongAnswers', 'createdAt', 'updatedAt', 'age'
-        ])
+        ]) &&
+        request.resource.data.get('avatar', '').size() <= 8000
       );
       allow delete: if isAdmin();
     }
@@ -128,6 +141,12 @@ service cloud.firestore {
 
     // Announcements
     match /announcements/{announcementId} {
+      allow read: if isAuthenticated();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Dynamic App Announcements (New unified collection for ticker & image ads)
+    match /appAnnouncements/{announcementId} {
       allow read: if isAuthenticated();
       allow create, update, delete: if isAdmin();
     }
@@ -218,6 +237,19 @@ service cloud.firestore {
           isAdmin()
         );
         allow delete: if isAdmin();
+      }
+
+      // Typing Presence (Part L: chats/{chatId}/presence/{userId})
+      match /presence/{userId} {
+        allow read: if isAuthenticated() && (
+          chatId.matches('.*' + request.auth.uid + '.*') ||
+          (exists(/databases/$(database)/documents/chats/$(chatId)) && 
+           request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants) ||
+          isAdmin()
+        );
+        allow create, update, delete: if isAuthenticated() && (
+          request.auth.uid == userId || isAdmin()
+        );
       }
     }
 

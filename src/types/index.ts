@@ -234,6 +234,11 @@ export type AdminAuditAction =
   | 'publish_announcement'
   | 'unpublish_announcement'
   | 'archive_announcement'
+  | 'create_announcement'
+  | 'edit_announcement'
+  | 'delete_announcement'
+  | 'toggle_announcement'
+  | 'reorder_announcements'
   | 'publish_challenge'
   | 'edit_challenge'
   | 'ai_generation'
@@ -289,6 +294,31 @@ export interface QuestionBankItem {
   updatedAt: string;
   createdBy: string;
   updatedBy?: string;
+}
+
+export type DynamicAnnouncementType = 'ticker' | 'image_ad';
+export type AnnouncementPriority = 'low' | 'medium' | 'high' | 'urgent';
+
+export interface DynamicAnnouncement {
+  id: string;
+  type: DynamicAnnouncementType; // 'ticker' for top text ticker, 'image_ad' for image-based banner
+  title: string;
+  content: string;
+  imageUrl?: string;
+  imageAlt?: string;
+  linkUrl?: string;
+  linkType?: 'none' | 'internal' | 'external';
+  linkLabel?: string;
+  openInNewTab?: boolean;
+  priority?: AnnouncementPriority;
+  active: boolean; // Visibility toggle
+  order: number;
+  targetAudience?: 'all' | 'scientific' | 'literary' | 'مشترك';
+  startAt?: string | null;
+  expiresAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  createdBy: string;
 }
 
 export interface Announcement {

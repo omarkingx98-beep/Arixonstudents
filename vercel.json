@@ -9,6 +9,14 @@
   },
   "rewrites": [
     {
+      "source": "/__/auth/:path*",
+      "destination": "https://arixonstudents-d902a.firebaseapp.com/__/auth/:path*"
+    },
+    {
+      "source": "/__/firebase/init.json",
+      "destination": "https://arixonstudents-d902a.firebaseapp.com/__/firebase/init.json"
+    },
+    {
       "source": "/api/(.*)",
       "destination": "/api/$1"
     },

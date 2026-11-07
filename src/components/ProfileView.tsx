@@ -25,8 +25,10 @@ import {
   Users,
   MessageSquare,
   Search,
+  Camera,
 } from 'lucide-react';
 import { getFriendsList } from '../lib/friendService';
+import { UserAvatar } from './UserAvatar';
 import type { FriendItem } from '../types';
 
 interface ProfileViewProps {
@@ -127,16 +129,21 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
         className="rounded-3xl border border-slate-200/90 dark:border-slate-800/90 bg-white dark:bg-[#111625] p-6 sm:p-8 shadow-xs"
       >
         <div className="flex flex-col sm:flex-row items-center sm:items-start gap-5 text-center sm:text-right">
-          {/* Avatar */}
-          <div className="relative">
-            <img
-              src={profile?.photoURL || 'https://api.dicebear.com/7.x/bottts-neutral/svg?seed=Arixon1'}
-              alt={profile?.username || 'User avatar'}
-              className="w-24 h-24 sm:w-28 sm:h-28 rounded-3xl object-cover border-2 border-blue-500/30 p-1 bg-slate-50 dark:bg-slate-800 shadow-md"
+          {/* Avatar with edit overlay */}
+          <div className="relative group">
+            <UserAvatar
+              avatar={profile?.photoURL}
+              name={profile?.displayName}
+              size="xl"
             />
-            <div className="absolute -bottom-1 -left-1 p-1.5 rounded-xl bg-blue-600 text-white shadow-sm">
-              <UserCheck className="w-4 h-4" />
-            </div>
+            <button
+              type="button"
+              onClick={() => setIsEditing(true)}
+              className="absolute -bottom-1 -left-1 p-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white shadow-md transition-all cursor-pointer flex items-center justify-center"
+              title="تعديل الصورة والبيانات"
+            >
+              <Camera className="w-4 h-4" />
+            </button>
           </div>
 
           {/* User Identifiers */}

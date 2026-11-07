@@ -44,6 +44,7 @@ function MainAppShell() {
   const { isAdmin, isCheckingAdmin } = useAdmin();
   const [currentTab, setCurrentTab] = useState<NavigationTab>('home');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [settingsInitialSubView, setSettingsInitialSubView] = useState<'main' | 'security'>('main');
   const [isTutorialOpen, setIsTutorialOpen] = useState(false);
   const [isAdminModeActive, setIsAdminModeActive] = useState<boolean>(() => {
     return window.location.hash === '#admin' || window.location.search.includes('admin=true');
@@ -386,6 +387,10 @@ function MainAppShell() {
             onNavigate={setCurrentTab} 
             onOpenTutorial={() => setIsTutorialOpen(true)}
             onOpenUserSearch={() => setIsUserSearchOpen(true)}
+            onOpenSecuritySettings={() => {
+              setSettingsInitialSubView('security');
+              setIsSettingsOpen(true);
+            }}
           />
         )}
         {currentTab === 'exams' && (
@@ -403,7 +408,10 @@ function MainAppShell() {
         )}
         {currentTab === 'profile' && (
           <ProfileView 
-            onOpenSettings={() => setIsSettingsOpen(true)} 
+            onOpenSettings={() => {
+              setSettingsInitialSubView('main');
+              setIsSettingsOpen(true);
+            }} 
             onViewAttempt={handleViewAttemptFromProfile}
             onOpenAdmin={handleOpenAdmin}
             onSelectUser={(uid) => setInspectedUserId(uid)}
@@ -428,6 +436,7 @@ function MainAppShell() {
       {/* Global Settings Modal */}
       {isSettingsOpen && (
         <SettingsModal 
+          initialSubView={settingsInitialSubView}
           onClose={() => setIsSettingsOpen(false)} 
           onOpenTutorial={() => setIsTutorialOpen(true)}
           onOpenAdmin={handleOpenAdmin}

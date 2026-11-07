@@ -9,7 +9,9 @@ import {
   signUpWithEmail as fbSignUpWithEmail,
   resetPassword as fbResetPassword,
   getAuthErrorMessage,
-  touchUserActivity
+  touchUserActivity,
+  linkPasswordToAccount,
+  userHasPasswordProvider
 } from '../lib/firebase';
 import type { UserProfile } from '../types';
 
@@ -25,11 +27,14 @@ interface AuthContextType {
   user: User | null;
   profile: UserProfile | null;
   error: string | null;
+  hasPasswordProvider: boolean;
+  isGoogleUser: boolean;
   signIn: () => Promise<void>;
   signInWithGoogle: () => Promise<void>;
   signInWithEmail: (email: string, password: string) => Promise<void>;
   signUpWithEmail: (email: string, password: string) => Promise<void>;
   sendPasswordReset: (email: string) => Promise<void>;
+  linkPassword: (password: string) => Promise<void>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
   setProfileOptimistic: (profile: UserProfile) => void;
@@ -158,6 +163,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const linkPasswordHandler = async (password: string) => {
+    if (!user) {
+      throw new Error('يجب تسجيل الدخول أولاً.');
+    }
+    try {
+      setError(null);
+      await linkPasswordToAccount(user, password);
+      // Refresh user state
+      if (auth.currentUser) {
+        setUser({ ...auth.currentUser });
+      }
+    } catch (err: unknown) {
+      console.error('[AuthContext] Link password error:', err);
+      const friendlyMsg = getAuthErrorMessage(err);
+      setError(friendlyMsg);
+      throw err;
+    }
+  };
+
   const handleSignOut = async () => {
     try {
       localStorage.removeItem('arixon_demo_session');
@@ -188,6 +212,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setError(null);
   };
 
+  const hasPasswordProvider = userHasPasswordProvider(user);
+  const isGoogleUser = Boolean(user && user.providerData.some((p) => p.providerId === 'google.com'));
+
   return (
     <AuthContext.Provider
       value={{
@@ -195,11 +222,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         user,
         profile,
         error,
+        hasPasswordProvider,
+        isGoogleUser,
         signIn,
         signInWithGoogle: signInWithGoogleHandler,
         signInWithEmail: signInWithEmailHandler,
         signUpWithEmail: signUpWithEmailHandler,
         sendPasswordReset: sendPasswordResetHandler,
+        linkPassword: linkPasswordHandler,
         signOut: handleSignOut,
         refreshProfile,
         setProfileOptimistic,

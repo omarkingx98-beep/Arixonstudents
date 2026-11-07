@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ChevronRight, ChevronLeft, Play, Pause, ExternalLink } from 'lucide-react';
 import { getActivePromoBanners, getPromoSettings } from '../lib/promoService';
-import type { PromoBanner, PromoSettings, NavigationTab } from '../types';
+import { subscribeToActiveImageAds } from '../lib/dynamicAnnouncementService';
+import type { PromoBanner, PromoSettings, NavigationTab, DynamicAnnouncement } from '../types';
 
 interface PromoCarouselProps {
   onNavigate?: (tab: NavigationTab) => void;
@@ -24,26 +25,41 @@ export const PromoCarousel: React.FC<PromoCarouselProps> = ({ onNavigate }) => {
   const touchEndXRef = useRef<number | null>(null);
   const touchResumeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Fetch banners & settings once
+  // Real-time subscription to active dynamic image ads
   useEffect(() => {
     let isMounted = true;
-    async function loadData() {
-      try {
-        const [activeBanners, promoSettings] = await Promise.all([
-          getActivePromoBanners(),
-          getPromoSettings(),
-        ]);
-        if (isMounted) {
-          setBanners(activeBanners);
-          setSettings(promoSettings);
-        }
-      } catch (err) {
-        console.warn('[PromoCarousel] Could not load banners:', err);
-      } finally {
-        if (isMounted) setIsLoading(false);
+
+    // Load initial settings
+    getPromoSettings().then((s) => {
+      if (isMounted) setSettings(s);
+    }).catch(() => {});
+
+    // Subscribe to real-time image ads from appAnnouncements
+    const unsubscribe = subscribeToActiveImageAds((imageAds: DynamicAnnouncement[]) => {
+      if (!isMounted) return;
+      if (imageAds && imageAds.length > 0) {
+        const mappedBanners: PromoBanner[] = imageAds.map((ad) => ({
+          id: ad.id,
+          imageUrl: ad.imageUrl || '/banners/whatsapp_community_banner.webp',
+          alt: ad.imageAlt || ad.title,
+          linkType: (ad.linkType === 'external' ? 'external' : ad.linkType === 'internal' ? 'internal' : 'none'),
+          linkTarget: ad.linkUrl || '',
+          order: ad.order,
+          active: ad.active,
+          createdAt: ad.createdAt,
+        }));
+        setBanners(mappedBanners);
+        setIsLoading(false);
+      } else {
+        // Fallback to initial promo banners
+        getActivePromoBanners().then((fallback) => {
+          if (isMounted) {
+            setBanners(fallback);
+            setIsLoading(false);
+          }
+        });
       }
-    }
-    loadData();
+    });
 
     // Check prefers-reduced-motion
     if (typeof window !== 'undefined' && window.matchMedia) {
@@ -59,6 +75,7 @@ export const PromoCarousel: React.FC<PromoCarouselProps> = ({ onNavigate }) => {
 
     return () => {
       isMounted = false;
+      unsubscribe();
     };
   }, []);
 

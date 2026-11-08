@@ -13,13 +13,16 @@ const __filename = typeof import.meta !== 'undefined' && import.meta.url
 const __dirname = path.dirname(__filename);
 
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
-const PRIMARY_ADMIN_EMAIL = 'omarkingx99@gmail.com';
-const PRIMARY_ADMIN_EMAILS = [
+const envOwnerEmails = process.env.OWNER_EMAILS
+  ? process.env.OWNER_EMAILS.split(',').map((e) => e.trim().toLowerCase())
+  : [];
+const PRIMARY_ADMIN_EMAILS = Array.from(new Set([
+  ...envOwnerEmails,
   (process.env.ADMIN_PRIMARY_EMAIL || '').toLowerCase().trim(),
   'omar88x99@gmail.com',
   'omarkingx99@gmail.com',
   'omarkingx98@gmail.com',
-].filter(Boolean);
+].filter(Boolean)));
 
 function isPrimaryAdmin(email?: string | null): boolean {
   if (!email) return false;
@@ -44,6 +47,7 @@ try {
 import { runTwoStageAiGeneration, runRegenerateSingleQuestion } from './server/aiPipeline';
 import { parseRawExamWithGemini } from './server/aiExamParser';
 import { gradeAndSubmitExam, autoCloseExpiredAttempts } from './server/examGrader';
+import { handleStaffAction, handleReportsAction } from './api/_lib/staffHandler';
 let geminiClient: GoogleGenAI | null = null;
 function getGeminiClient(): GoogleGenAI {
   if (!geminiClient) {
@@ -787,6 +791,52 @@ async function startServer() {
     } catch (err: any) {
       console.warn('[API /api/exams/auto-close-expired] Error:', err);
       res.status(500).json({ success: false, error: err?.message });
+    }
+  });
+
+  /**
+   * Team & Staff Management Endpoint
+   */
+  app.all('/api/staff', async (req: Request, res: Response) => {
+    try {
+      const authUser = await verifyAuthToken(req);
+      if (!authUser || !authUser.uid) {
+        res.status(401).json({ error: 'غير مصرح: يلزم تسجيل الدخول.' });
+        return;
+      }
+      const action = (req.query?.action as string) || req.body?.action;
+      if (!action) {
+        res.status(400).json({ error: 'الإجراء (action) مطلوب.' });
+        return;
+      }
+      const result = await handleStaffAction(action, req.body, authUser);
+      res.status(result.status).json(result.data);
+    } catch (err: any) {
+      console.error('[API /api/staff] Error:', err);
+      res.status(500).json({ error: err?.message || 'Internal server error in staff endpoint' });
+    }
+  });
+
+  /**
+   * Reports, Complaints, Support, and Moderation Endpoint
+   */
+  app.all('/api/reports', async (req: Request, res: Response) => {
+    try {
+      const authUser = await verifyAuthToken(req);
+      if (!authUser || !authUser.uid) {
+        res.status(401).json({ error: 'غير مصرح: يلزم تسجيل الدخول.' });
+        return;
+      }
+      const action = (req.query?.action as string) || req.body?.action;
+      if (!action) {
+        res.status(400).json({ error: 'الإجراء (action) مطلوب.' });
+        return;
+      }
+      const result = await handleReportsAction(action, req.body, authUser);
+      res.status(result.status).json(result.data);
+    } catch (err: any) {
+      console.error('[API /api/reports] Error:', err);
+      res.status(500).json({ error: err?.message || 'Internal server error in reports endpoint' });
     }
   });
 

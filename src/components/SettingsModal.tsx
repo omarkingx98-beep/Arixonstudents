@@ -44,7 +44,7 @@ const InstagramIcon: React.FC<{ className?: string }> = ({ className = 'w-4 h-4 
 );
 
 interface SettingsModalProps {
-  initialSubView?: 'main' | 'privacy' | 'about' | 'goals' | 'friends' | 'developer' | 'security';
+  initialSubView?: 'main' | 'privacy' | 'about' | 'goals' | 'friends' | 'developer' | 'security' | 'support';
   onClose: () => void;
   onOpenTutorial?: () => void;
   onOpenAdmin?: () => void;
@@ -64,7 +64,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const { theme, setTheme } = useTheme();
   const { isAdmin } = useAdmin();
 
-  const [activeSubView, setActiveSubView] = useState<'main' | 'privacy' | 'about' | 'goals' | 'friends' | 'developer' | 'security'>(initialSubView || 'main');
+  const [activeSubView, setActiveSubView] = useState<'main' | 'privacy' | 'about' | 'goals' | 'friends' | 'developer' | 'security' | 'support'>(initialSubView || 'main');
   const [selectedLanguage, setSelectedLanguage] = useState<'ar' | 'en'>('ar');
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [friends, setFriends] = useState<FriendItem[]>([]);
@@ -80,6 +80,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [securitySuccess, setSecuritySuccess] = useState<string | null>(null);
   const [securityError, setSecurityError] = useState<string | null>(null);
   const [isSendingResetEmail, setIsSendingResetEmail] = useState(false);
+
+  // Support & Complaint states
+  const [supportCategory, setSupportCategory] = useState<'complaint' | 'support' | 'suggestion'>('support');
+  const [supportReason, setSupportReason] = useState('');
+  const [supportDescription, setSupportDescription] = useState('');
+  const [isSubmittingSupport, setIsSubmittingSupport] = useState(false);
+  const [supportSuccess, setSupportSuccess] = useState<string | null>(null);
+  const [supportError, setSupportError] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -369,6 +377,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <div className="flex items-center gap-2.5 text-slate-700 dark:text-slate-300">
                   <ShieldCheck className="w-4 h-4 text-emerald-500" />
                   <span>سياسة الخصوصية وحماية البيانات</span>
+                </div>
+                <ChevronLeft className="w-4 h-4 text-slate-400" />
+              </button>
+
+              <button
+                id="open-support-complaint-btn"
+                onClick={() => {
+                  setSupportError(null);
+                  setSupportSuccess(null);
+                  setActiveSubView('support');
+                }}
+                className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors text-sm font-semibold cursor-pointer"
+              >
+                <div className="flex items-center gap-2.5 text-slate-700 dark:text-slate-300">
+                  <MessageSquare className="w-4 h-4 text-teal-500" />
+                  <span>الشكاوى، الدعم الفني والاقتراحات</span>
                 </div>
                 <ChevronLeft className="w-4 h-4 text-slate-400" />
               </button>
@@ -942,6 +966,163 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             <button
               onClick={() => setActiveSubView('main')}
               className="w-full py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-xs hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer mt-2"
+            >
+              العودة للإعدادات
+            </button>
+          </div>
+        )}
+
+        {/* Support, Complaints & Suggestions SubView */}
+        {activeSubView === 'support' && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 pb-2 border-b border-slate-100 dark:border-slate-800">
+              <button
+                onClick={() => setActiveSubView('main')}
+                className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500"
+              >
+                <ChevronLeft className="w-5 h-5 rotate-180" />
+              </button>
+              <h3 className="font-bold text-sm sm:text-base text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                <MessageSquare className="w-4 h-4 text-teal-500" />
+                <span>الشكاوى، الدعم الفني والاقتراحات</span>
+              </h3>
+            </div>
+
+            <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+              يسعدنا سماع صوتك. سيصل طلبك مباشرة إلى فريق الإشراف والدعم، وسيتم الرد عليك رسميًا عبر الإشعارات.
+            </p>
+
+            {supportError && (
+              <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-xs text-rose-700 dark:text-rose-300">
+                {supportError}
+              </div>
+            )}
+
+            {supportSuccess && (
+              <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-xs text-emerald-700 dark:text-emerald-300">
+                {supportSuccess}
+              </div>
+            )}
+
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (!supportReason.trim()) {
+                  setSupportError('يرجى كتابة عنوان أو سبب للطلب.');
+                  return;
+                }
+                setIsSubmittingSupport(true);
+                setSupportError(null);
+                setSupportSuccess(null);
+                try {
+                  const token = await user?.getIdToken();
+                  const res = await fetch('/api/reports', {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      Authorization: `Bearer ${token}`,
+                    },
+                    body: JSON.stringify({
+                      action: 'createReport',
+                      category: supportCategory,
+                      type: supportCategory,
+                      targetType: 'system',
+                      reason: supportReason.trim(),
+                      description: supportDescription.trim() || undefined,
+                    }),
+                  });
+                  const data = await res.json();
+                  if (!res.ok) throw new Error(data.error || 'فشل إرسال الطلب.');
+                  setSupportSuccess(
+                    `تم إرسال طلبك بنجاح برقم مرجعي (#${data.reportId?.substring(0, 8)}). سيقوم فريق الإشراف بمراجعته وإشعارك بالرد فورًا.`
+                  );
+                  setSupportReason('');
+                  setSupportDescription('');
+                } catch (err: any) {
+                  setSupportError(err.message || 'فشل إرسال الطلب.');
+                } finally {
+                  setIsSubmittingSupport(false);
+                }
+              }}
+              className="space-y-3"
+            >
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                  نوع الطلب:
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { id: 'support', label: 'دعم فني', icon: '🎧' },
+                    { id: 'complaint', label: 'شكوى / خطأ', icon: '⚠️' },
+                    { id: 'suggestion', label: 'اقتراح تطوير', icon: '💡' },
+                  ].map((cat) => (
+                    <button
+                      key={cat.id}
+                      type="button"
+                      onClick={() => setSupportCategory(cat.id as any)}
+                      className={`p-2.5 rounded-xl border text-xs font-bold transition-all flex flex-col items-center gap-1 cursor-pointer ${
+                        supportCategory === cat.id
+                          ? 'border-teal-500 bg-teal-50 text-teal-800 dark:bg-teal-950/40 dark:text-teal-300 shadow-xs'
+                          : 'border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 text-slate-600 dark:text-slate-400'
+                      }`}
+                    >
+                      <span className="text-base">{cat.icon}</span>
+                      <span>{cat.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  عنوان الطلب أو المشكلة:
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={supportReason}
+                  onChange={(e) => setSupportReason(e.target.value)}
+                  placeholder="مثال: صعوبة في فتح امتحان اللغة العربية أو استفسار"
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-xs focus:outline-hidden focus:ring-2 focus:ring-teal-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  التفاصيل والشرح (اختياري):
+                </label>
+                <textarea
+                  rows={4}
+                  value={supportDescription}
+                  onChange={(e) => setSupportDescription(e.target.value)}
+                  placeholder="اكتب أي تفاصيل توضيحية تساعد فريق الدعم والمشرفين..."
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl text-xs focus:outline-hidden focus:ring-2 focus:ring-teal-500"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={isSubmittingSupport}
+                className="w-full py-2.5 px-4 rounded-xl bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white font-bold text-xs transition-colors shadow-xs flex items-center justify-center gap-2 cursor-pointer"
+              >
+                {isSubmittingSupport ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>جارٍ الإرسال...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-4 h-4" />
+                    <span>إرسال الطلب للمشرفين</span>
+                  </>
+                )}
+              </button>
+            </form>
+
+            <button
+              type="button"
+              onClick={() => setActiveSubView('main')}
+              className="w-full py-2 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-xs hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer mt-1"
             >
               العودة للإعدادات
             </button>

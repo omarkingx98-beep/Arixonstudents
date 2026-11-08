@@ -30,6 +30,7 @@ import type {
   ExamTemplate,
   GenerationMode,
   ExamAttempt,
+  StaffRole,
 } from '../types';
 import { 
   FIRST_EXAM,
@@ -74,26 +75,36 @@ export async function getAuthToken(): Promise<string | null> {
  */
 export async function checkUserAdminClaims(): Promise<{
   isAdmin: boolean;
-  role: 'super_admin' | 'admin' | null;
+  isStaff: boolean;
+  role: StaffRole | null;
   email: string | null;
   uid: string | null;
 }> {
   const user = auth.currentUser;
   if (!user) {
-    return { isAdmin: false, role: null, email: null, uid: null };
+    return { isAdmin: false, isStaff: false, role: null, email: null, uid: null };
   }
 
-  // Force token refresh to ensure custom claims are latest
+  // Force token check
   const tokenResult = await user.getIdTokenResult(false);
   const claims = tokenResult.claims;
 
   const isEmailPrimary = isPrimaryAdminEmail(user.email);
-  const hasAdminClaim = claims.admin === true || claims.role === 'super_admin';
+  const claimRole = claims.role as StaffRole | undefined;
+  const isStaffRole = !!(
+    claimRole &&
+    ['super_admin', 'admin', 'moderator', 'content_editor', 'community_manager', 'support_agent'].includes(claimRole)
+  );
 
-  if (hasAdminClaim || isEmailPrimary) {
+  const isAdmin = claims.admin === true || claimRole === 'super_admin' || claimRole === 'admin' || isEmailPrimary;
+  const isStaff = isAdmin || isStaffRole || claims.staff === true;
+
+  if (isStaff || isEmailPrimary) {
+    const finalRole: StaffRole = claimRole || (isEmailPrimary ? 'super_admin' : 'admin');
     return {
       isAdmin: true,
-      role: (claims.role as any) || (isEmailPrimary ? 'super_admin' : 'admin'),
+      isStaff: true,
+      role: finalRole,
       email: user.email,
       uid: user.uid,
     };
@@ -101,6 +112,7 @@ export async function checkUserAdminClaims(): Promise<{
 
   return {
     isAdmin: false,
+    isStaff: false,
     role: null,
     email: user.email,
     uid: user.uid,

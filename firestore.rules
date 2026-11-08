@@ -10,25 +10,58 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
-    function isAdmin() {
+    function getRole() {
+      return request.auth.token.get('role', 'student');
+    }
+
+    function isSuperAdmin() {
       return isAuthenticated() && (
-        request.auth.token.get('admin', false) == true ||
-        request.auth.token.get('role', '') == 'super_admin' ||
-        request.auth.token.get('role', '') == 'admin' ||
-        request.auth.token.get('email', '') in [
-          'omar88x99@gmail.com',
-          'omarkingx99@gmail.com',
-          'omarkingx98@gmail.com'
-        ] ||
+        getRole() == 'super_admin' ||
         request.auth.token.get('email', '').lower() in [
           'omar88x99@gmail.com',
           'omarkingx99@gmail.com',
           'omarkingx98@gmail.com'
-        ] ||
+        ]
+      );
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && (
+        isSuperAdmin() ||
+        getRole() == 'admin' ||
+        request.auth.token.get('admin', false) == true ||
         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', '') in ['super_admin', 'admin']) ||
         exists(/databases/$(database)/documents/adminProfiles/$(request.auth.uid))
       );
+    }
+
+    function hasRole(roles) {
+      return isAuthenticated() && (
+        isSuperAdmin() ||
+        getRole() in roles
+      );
+    }
+
+    function isStaff() {
+      return isAuthenticated() && (
+        isSuperAdmin() ||
+        isAdmin() ||
+        request.auth.token.get('staff', false) == true ||
+        getRole() in ['moderator', 'content_editor', 'community_manager', 'support_agent']
+      );
+    }
+
+    // Staff Directory (Private)
+    match /staff/{staffUid} {
+      allow read: if isStaff();
+      allow write: if isSuperAdmin();
+    }
+
+    // Public Staff Badges (Read for authenticated, server write only)
+    match /staffBadges/{targetUid} {
+      allow read: if isAuthenticated();
+      allow write: if false;
     }
 
     // User profiles & student records
@@ -45,11 +78,11 @@ service cloud.firestore {
 
       // Admins have full update rights (points, freeze, roles, branch).
       // Students can update their profile info and choose/switch their branch (علمي / أدبي / مشترك), but:
-      // - Cannot change role, accountDisabled, disabledReason, disabledAt, chatDisabled
+      // - Cannot change role, accountDisabled, disabledReason, disabledAt, chatDisabled, mutedUntil
       allow update: if isAdmin() || (
         isOwner(userId) &&
         !request.resource.data.diff(resource.data).affectedKeys().hasAny([
-          'role', 'accountDisabled', 'disabledReason', 'disabledAt', 'chatDisabled'
+          'role', 'accountDisabled', 'disabledReason', 'disabledAt', 'chatDisabled', 'mutedUntil'
         ])
       );
 
@@ -94,13 +127,24 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // Reports Collection (E4: reporterId, reportedId, reason, note, createdAt, status)
+    // Reports & Complaints Collection (E4 & Part M)
     match /reports/{reportId} {
-      allow read: if isAdmin() || (isAuthenticated() && resource.data.reporterId == request.auth.uid);
+      allow read: if isSuperAdmin() || isAdmin() || hasRole(['moderator', 'support_agent']) || 
+        (isAuthenticated() && resource.data.reporterId == request.auth.uid);
       allow create: if isAuthenticated() && 
-        request.resource.data.reporterId == request.auth.uid && 
-        request.resource.data.reporterId != request.resource.data.reportedId;
-      allow update, delete: if isAdmin();
+        request.resource.data.reporterId == request.auth.uid;
+      allow update, delete: if isSuperAdmin() || isAdmin() || hasRole(['moderator', 'support_agent']);
+
+      // Immutable chat evidence snapshot
+      match /evidence/{msgId} {
+        allow read: if isSuperAdmin() || isAdmin() || hasRole(['moderator']);
+        allow write: if false;
+      }
+    }
+
+    // Moderation Actions Record
+    match /moderationActions/{actionId} {
+      allow read, write: if isSuperAdmin() || isAdmin() || hasRole(['moderator']);
     }
 
     // Admin Profiles
@@ -128,39 +172,39 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
-    // Central Question Bank (Admin only)
+    // Central Question Bank (Admin & Content Editor)
     match /questions/{questionId} {
-      allow read, write: if isAdmin();
+      allow read, write: if isAdmin() || hasRole(['content_editor']);
     }
 
     // Global Settings
     match /settings/{settingId} {
       allow read: if isAuthenticated();
-      allow write: if isAdmin();
+      allow write: if isSuperAdmin();
     }
 
     // Announcements
     match /announcements/{announcementId} {
       allow read: if isAuthenticated();
-      allow create, update, delete: if isAdmin();
+      allow create, update, delete: if isAdmin() || hasRole(['community_manager']);
     }
 
     // Dynamic App Announcements (New unified collection for ticker & image ads)
     match /appAnnouncements/{announcementId} {
       allow read: if isAuthenticated();
-      allow create, update, delete: if isAdmin();
+      allow create, update, delete: if isAdmin() || hasRole(['community_manager']);
     }
 
     // Promotional Carousel Banners (Part G)
     match /promoBanners/{bannerId} {
       allow read: if isAuthenticated();
-      allow create, update, delete: if isAdmin();
+      allow create, update, delete: if isAdmin() || hasRole(['community_manager']);
     }
 
     // Challenges
     match /challenges/{challengeId} {
       allow read: if isAuthenticated();
-      allow write: if isAdmin();
+      allow write: if isAdmin() || hasRole(['community_manager']);
     }
 
     // Direct in-app notifications
@@ -178,7 +222,7 @@ service cloud.firestore {
     // Broadcast Notifications
     match /broadcasts/{broadcastId} {
       allow read: if isAuthenticated();
-      allow create, update, delete: if isAdmin();
+      allow create, update, delete: if isAdmin() || hasRole(['community_manager']);
     }
 
     // Friend Requests (E4 & E5)
@@ -203,7 +247,8 @@ service cloud.firestore {
       allow read: if isAuthenticated() && (
         chatId.matches('.*' + request.auth.uid + '.*') ||
         (resource != null && request.auth.uid in resource.data.participants) ||
-        (isAdmin() && resource.data.get('reported', false) == true)
+        (isAdmin() && resource.data.get('reported', false) == true) ||
+        hasRole(['moderator'])
       );
       allow create: if isAuthenticated() && (
         chatId.matches('.*' + request.auth.uid + '.*') ||
@@ -223,7 +268,8 @@ service cloud.firestore {
           chatId.matches('.*' + request.auth.uid + '.*') ||
           (exists(/databases/$(database)/documents/chats/$(chatId)) && 
            request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants) ||
-          isAdmin()
+          isAdmin() ||
+          hasRole(['moderator'])
         );
         allow create: if isAuthenticated() && 
           request.resource.data.senderId == request.auth.uid && (
@@ -231,12 +277,15 @@ service cloud.firestore {
             (exists(/databases/$(database)/documents/chats/$(chatId)) && 
              request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants) ||
             isAdmin()
+          ) && (
+            !exists(/databases/$(database)/documents/users/$(request.auth.uid)) ||
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('chatDisabled', false) == false
           );
         allow update: if isAuthenticated() && (
           chatId.matches('.*' + request.auth.uid + '.*') ||
           isAdmin()
         );
-        allow delete: if isAdmin();
+        allow delete: if isSuperAdmin() || isAdmin() || hasRole(['moderator']);
       }
 
       // Typing Presence (Part L: chats/{chatId}/presence/{userId})
@@ -260,19 +309,30 @@ service cloud.firestore {
          resource.data.get('status', 'available') != 'unpublished' && 
          resource.data.get('status', 'available') != 'archived' && 
          resource.data.get('status', 'available') != 'draft') ||
-        isAdmin()
+        isAdmin() ||
+        hasRole(['content_editor'])
       );
 
-      allow create, update: if isAdmin();
+      allow create: if isAdmin() || (
+        hasRole(['content_editor']) &&
+        request.resource.data.get('published', false) == false
+      );
+
+      allow update: if isAdmin() || (
+        hasRole(['content_editor']) &&
+        (resource.data.get('published', false) == false || request.resource.data.get('status', 'draft') in ['draft', 'pending_review'])
+      );
+
       allow delete: if isAdmin();
 
       match /questions/{questionId} {
         allow read: if isAuthenticated();
-        allow create, update, delete: if isAdmin();
+        allow create, update: if isAdmin() || hasRole(['content_editor']);
+        allow delete: if isAdmin();
       }
 
       match /answerKeys/{questionId} {
-        allow read, write: if isAdmin();
+        allow read, write: if isAdmin() || hasRole(['content_editor']);
       }
     }
 
@@ -288,14 +348,14 @@ service cloud.firestore {
 
     // Exam attempts (Part F: Student cannot write score, status='submitted', or points. Cannot read other students' attempts)
     match /attempts/{attemptId} {
-      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin() || hasRole(['support_agent']));
       
       allow create: if isAuthenticated() && 
         request.resource.data.userId == request.auth.uid &&
         request.resource.data.get('status', 'in_progress') == 'in_progress' &&
         !request.resource.data.keys().hasAny(['score', 'pointsEarned', 'correctCount', 'wrongCount', 'unansweredCount', 'reviews']);
 
-      allow update: if isAdmin() || (
+      allow update: if isAdmin() || hasRole(['support_agent']) || (
         isAuthenticated() &&
         resource.data.userId == request.auth.uid &&
         resource.data.status == 'in_progress' && (
@@ -320,10 +380,12 @@ service cloud.firestore {
       match /answers/{questionId} {
         allow read: if isAuthenticated() && (
           get(/databases/$(database)/documents/attempts/$(attemptId)).data.userId == request.auth.uid ||
-          isAdmin()
+          isAdmin() ||
+          hasRole(['support_agent'])
         );
         allow create, update: if isAuthenticated() && (
           isAdmin() ||
+          hasRole(['support_agent']) ||
           (get(/databases/$(database)/documents/attempts/$(attemptId)).data.userId == request.auth.uid &&
            (get(/databases/$(database)/documents/attempts/$(attemptId)).data.status == 'in_progress' ||
             get(/databases/$(database)/documents/attempts/$(attemptId)).data.status == 'submitted_pending'))

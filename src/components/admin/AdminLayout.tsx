@@ -28,6 +28,8 @@ import {
   ShieldAlert,
   Image as ImageIcon,
 } from 'lucide-react';
+import { RoleBadge } from '../RoleBadge';
+import { canAccessTab } from '../../lib/roleService';
 import type { AdminTab } from '../../types';
 
 interface AdminLayoutProps {
@@ -43,7 +45,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
   onExitAdmin,
   children,
 }) => {
-  const { adminProfile, isSuperAdmin } = useAdmin();
+  const { adminProfile, isSuperAdmin, adminRole } = useAdmin();
   const { theme, toggleTheme } = useTheme();
   const { signOut } = useAuth();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -52,9 +54,10 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
   useEffect(() => {
     let unsub = () => {};
     try {
-      const q = query(collection(db, 'adminReports'), limit(25));
+      const q = query(collection(db, 'reports'), limit(25));
       unsub = onSnapshot(q, (snap) => {
-        setPendingReportsCount(snap.size);
+        const openReports = snap.docs.filter((d) => d.data().status === 'open');
+        setPendingReportsCount(openReports.length);
       }, () => {});
     } catch {}
 
@@ -65,12 +68,14 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
     };
   }, []);
 
-  const navItems: Array<{ id: AdminTab; label: string; icon: React.FC<{ className?: string }> }> = [
+  const allNavItems: Array<{ id: AdminTab; label: string; icon: React.FC<{ className?: string }> }> = [
     { id: 'dashboard', label: 'لوحة القيادة', icon: LayoutDashboard },
     { id: 'exams', label: 'إدارة الامتحانات', icon: BookOpen },
     { id: 'ai-import', label: 'استيراد بالذكاء الاصطناعي', icon: Sparkles },
     { id: 'questions', label: 'بنك الأسئلة', icon: FileQuestion },
     { id: 'students', label: 'إدارة الطلاب', icon: Users },
+    { id: 'team', label: 'فريق العمل والرتب', icon: ShieldCheck },
+    { id: 'moderation', label: 'مركز البلاغات والدعم', icon: ShieldAlert },
     { id: 'leaderboard', label: 'المتصدرين والنقاط', icon: Trophy },
     { id: 'announcements', label: 'إدارة الإعلانات والتعميمات والبنرات', icon: Bell },
     { id: 'banners', label: 'سلايدر الإعلانات المصورة (البنرات)', icon: ImageIcon },
@@ -81,6 +86,9 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
     { id: 'settings', label: 'إعدادات المنصة', icon: Settings },
     { id: 'profile', label: 'الملف الإداري', icon: UserCheck },
   ];
+
+  // Filter visible tabs based on role permissions
+  const navItems = allNavItems.filter((item) => canAccessTab(adminRole || 'student', item.id));
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-[#070a12] text-slate-900 dark:text-slate-100 flex flex-col md:flex-row transition-colors duration-200">
@@ -96,12 +104,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
               </span>
             </div>
           </div>
-          {isSuperAdmin && (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
-              <ShieldCheck className="w-3 h-3" />
-              <span>سوبر أدمن</span>
-            </span>
-          )}
+          <RoleBadge role={adminRole} size="sm" />
         </div>
 
         {/* Admin User Mini Card */}
@@ -136,8 +139,8 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
               >
                 <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-white' : 'text-slate-500 dark:text-slate-400'}`} />
                 <span className="truncate">{item.label}</span>
-                {item.id === 'audit-logs' && pendingReportsCount > 0 && (
-                  <span className="mr-auto px-1.5 py-0.5 rounded-full text-[10px] font-black bg-amber-500 text-white shrink-0">
+                {item.id === 'moderation' && pendingReportsCount > 0 && (
+                  <span className="mr-auto px-1.5 py-0.5 rounded-full text-[10px] font-black bg-rose-500 text-white shrink-0">
                     {pendingReportsCount}
                   </span>
                 )}
@@ -243,11 +246,11 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
             </div>
 
             {/* Profile snapshot */}
-            <div className="p-3 mx-3 my-2 rounded-xl bg-slate-100 dark:bg-[#13192a] border border-slate-200 dark:border-slate-800">
+            <div className="p-3 mx-3 my-2 rounded-xl bg-slate-100 dark:bg-[#13192a] border border-slate-200 dark:border-slate-800 space-y-1.5">
               <div className="text-xs font-bold">{adminProfile?.displayName || 'Omar King X99'}</div>
               <div className="text-[10px] text-slate-500">{adminProfile?.email || 'omarkingx99@gmail.com'}</div>
-              <div className="mt-1 text-[10px] font-bold text-amber-600 dark:text-amber-400">
-                الدور: Super Admin
+              <div className="pt-1">
+                <RoleBadge role={adminRole} size="sm" />
               </div>
             </div>
 

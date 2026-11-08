@@ -6,12 +6,13 @@ import {
   PRIMARY_ADMIN_EMAIL,
   isPrimaryAdminEmail
 } from '../lib/adminService';
-import type { AdminProfile, AdminRole } from '../types';
+import type { AdminProfile, AdminRole, StaffRole } from '../types';
 
 interface AdminContextType {
   isAdmin: boolean;
+  isStaff: boolean;
   isSuperAdmin: boolean;
-  adminRole: AdminRole | null;
+  adminRole: StaffRole | null;
   adminProfile: AdminProfile | null;
   isCheckingAdmin: boolean;
   isBootstrapping: boolean;
@@ -25,7 +26,8 @@ const AdminContext = createContext<AdminContextType | undefined>(undefined);
 export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, status } = useAuth();
   const [isAdmin, setIsAdmin] = useState(false);
-  const [adminRole, setAdminRole] = useState<AdminRole | null>(null);
+  const [isStaff, setIsStaff] = useState(false);
+  const [adminRole, setAdminRole] = useState<StaffRole | null>(null);
   const [adminProfile, setAdminProfile] = useState<AdminProfile | null>(null);
   const [isCheckingAdmin, setIsCheckingAdmin] = useState(true);
   const [isBootstrapping, setIsBootstrapping] = useState(false);
@@ -47,14 +49,15 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       const claimsInfo = await checkUserAdminClaims();
       const isPrimary = isPrimaryAdminEmail(user.email);
 
-      if (claimsInfo.isAdmin) {
-        setIsAdmin(true);
-        setAdminRole((claimsInfo.role as AdminRole) || (isPrimary ? 'super_admin' : 'admin'));
+      if (claimsInfo.isStaff || claimsInfo.isAdmin) {
+        setIsAdmin(claimsInfo.isAdmin);
+        setIsStaff(true);
+        setAdminRole(claimsInfo.role || (isPrimary ? 'super_admin' : 'admin'));
         setAdminProfile({
           uid: user.uid,
           email: user.email || PRIMARY_ADMIN_EMAIL,
-          displayName: isPrimary ? (user.displayName || 'Omar King') : (user.displayName || 'مشرف النظام'),
-          role: (claimsInfo.role as AdminRole) || (isPrimary ? 'super_admin' : 'admin'),
+          displayName: isPrimary ? (user.displayName || 'Omar King') : (user.displayName || 'عضو الفريق'),
+          role: claimsInfo.role || (isPrimary ? 'super_admin' : 'admin'),
           photoURL: user.photoURL || undefined,
           createdAt: new Date().toISOString(),
           lastLoginAt: new Date().toISOString(),
@@ -67,6 +70,7 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           await bootstrapAdminBackend();
           const refreshed = await checkUserAdminClaims();
           setIsAdmin(true);
+          setIsStaff(true);
           setAdminRole('super_admin');
           setAdminProfile({
             uid: user.uid,
@@ -79,8 +83,8 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           });
         } catch (bootstrapErr: any) {
           console.warn('[AdminContext] Auto-bootstrap error:', bootstrapErr);
-          // Even if network or API call hiccup occurs, we maintain primary admin identity
           setIsAdmin(true);
+          setIsStaff(true);
           setAdminRole('super_admin');
           setAdminProfile({
             uid: user.uid,
@@ -96,12 +100,14 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         }
       } else {
         setIsAdmin(false);
+        setIsStaff(false);
         setAdminRole(null);
         setAdminProfile(null);
       }
     } catch (err: any) {
       console.error('[AdminContext] Error verifying admin state:', err);
       setIsAdmin(false);
+      setIsStaff(false);
       setAdminRole(null);
       setAdminError(err.message || 'فشل التحقق من صلاحيات الإدارة.');
     } finally {
@@ -130,6 +136,7 @@ export const AdminProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     <AdminContext.Provider
       value={{
         isAdmin,
+        isStaff,
         isSuperAdmin: adminRole === 'super_admin',
         adminRole,
         adminProfile,

@@ -24,6 +24,8 @@ export interface UserProfile {
   disabledReason?: string | null;
   disabledAt?: string | null;
   chatDisabled?: boolean;
+  mutedUntil?: string | null;
+  role?: StaffRole;
   showAgeInPublicProfile?: boolean;
   createdAt: string;
   updatedAt: string;
@@ -199,7 +201,95 @@ export type NavigationTab = 'home' | 'exams' | 'leaderboard' | 'profile';
 // Phase 3: Admin & Security Models
 // ==========================================
 
-export type AdminRole = 'super_admin' | 'admin' | 'editor';
+export type StaffRole = 
+  | 'student' 
+  | 'super_admin' 
+  | 'admin' 
+  | 'moderator' 
+  | 'content_editor' 
+  | 'community_manager' 
+  | 'support_agent';
+
+export interface StaffMember {
+  uid: string;
+  email: string;
+  displayName: string;
+  role: StaffRole;
+  assignedBy: string;
+  assignedByName?: string;
+  assignedAt: string;
+  active: boolean;
+  updatedAt?: string;
+  photoURL?: string;
+}
+
+export interface StaffBadge {
+  uid: string;
+  role: StaffRole;
+  label: string;
+  updatedAt?: string;
+}
+
+export type ReportCategory = 'violation' | 'complaint' | 'support' | 'suggestion';
+
+export type ReportType = 
+  | 'harassment' 
+  | 'cheating' 
+  | 'inappropriate_content' 
+  | 'spam' 
+  | 'technical_issue' 
+  | 'question_error' 
+  | 'complaint' 
+  | 'suggestion' 
+  | 'support' 
+  | 'other';
+
+export type ReportStatus = 'open' | 'under_review' | 'resolved' | 'dismissed';
+export type ReportPriority = 'low' | 'normal' | 'medium' | 'high' | 'urgent';
+
+export interface StudentReportItem {
+  id: string;
+  reporterId: string;
+  reporterName?: string;
+  reporterEmail?: string;
+  targetType: 'user' | 'chat' | 'exam' | 'question' | 'system' | 'general';
+  targetId?: string;
+  targetName?: string;
+  chatId?: string;
+  type: ReportType;
+  category?: ReportCategory;
+  subject?: string;
+  reason: string;
+  description?: string;
+  evidenceCount?: number;
+  status: ReportStatus;
+  priority: ReportPriority;
+  assignedTo?: string;
+  assignedToName?: string;
+  resolution?: string;
+  resolutionNotes?: string;
+  officialReply?: string;
+  createdAt: string;
+  updatedAt: string;
+  resolvedAt?: string;
+  resolvedBy?: string;
+}
+
+export interface ModerationAction {
+  id: string;
+  targetUid: string;
+  targetName?: string;
+  targetEmail?: string;
+  moderatorId: string;
+  moderatorName?: string;
+  action: 'warning' | 'mute_24h' | 'mute_7d' | 'chat_disable' | 'unmute' | 'account_disable' | 'account_enable';
+  reason: string;
+  reportId?: string;
+  timestamp: string;
+  expiresAt?: string | null;
+}
+
+export type AdminRole = 'super_admin' | 'admin' | 'editor' | StaffRole;
 
 export interface AdminProfile {
   uid: string;
@@ -255,7 +345,11 @@ export type AdminAuditAction =
   | 'delete_banner'
   | 'toggle_banner'
   | 'reorder_banners'
-  | 'update_promo_settings';
+  | 'update_promo_settings'
+  | 'assign_staff_role'
+  | 'remove_staff_role'
+  | 'moderation_action'
+  | 'resolve_report';
 
 export interface AdminAuditLog {
   id: string;
@@ -263,7 +357,7 @@ export interface AdminAuditLog {
   adminName: string;
   adminEmail: string;
   action: AdminAuditAction;
-  targetType: 'exam' | 'question' | 'student' | 'announcement' | 'challenge' | 'settings' | 'security' | 'template' | 'banner';
+  targetType: 'exam' | 'question' | 'student' | 'announcement' | 'challenge' | 'settings' | 'security' | 'template' | 'banner' | 'staff' | 'report' | 'moderation';
   targetId: string;
   details: string;
   timestamp: string;
@@ -398,6 +492,8 @@ export type AdminTab =
   | 'exams'
   | 'questions'
   | 'students'
+  | 'team'
+  | 'moderation'
   | 'leaderboard'
   | 'announcements'
   | 'banners'

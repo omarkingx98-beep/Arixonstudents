@@ -21,8 +21,10 @@ import { fetchPublicUserProfile, removeUserAvatar, db } from '../lib/firebase';
 import { sendFriendRequest, getFriendshipStatus, acceptFriendRequest } from '../lib/friendService';
 import { submitStudentReport } from '../lib/reportService';
 import { UserAvatar } from './UserAvatar';
+import { RoleBadge } from './RoleBadge';
+import { getStaffBadge } from '../lib/roleService';
 import { collection, addDoc } from 'firebase/firestore';
-import type { PublicUserProfile } from '../types';
+import type { PublicUserProfile, StaffBadge } from '../types';
 
 interface PublicProfileModalProps {
   targetUserId: string | null;
@@ -35,9 +37,10 @@ export const PublicProfileModal: React.FC<PublicProfileModalProps> = ({
   onClose,
   onOpenChat,
 }) => {
-  const { profile: myProfile } = useAuth();
+  const { profile: myProfile, user } = useAuth();
   const { isAdmin } = useAdmin();
   const [userProfile, setUserProfile] = useState<PublicUserProfile | null>(null);
+  const [staffBadge, setStaffBadge] = useState<StaffBadge | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [friendStatus, setFriendStatus] = useState<'none' | 'friends' | 'pending_sent' | 'pending_received' | 'self'>('none');
   const [isSendingRequest, setIsSendingRequest] = useState(false);
@@ -56,14 +59,16 @@ export const PublicProfileModal: React.FC<PublicProfileModalProps> = ({
     const loadData = async () => {
       setIsLoading(true);
       try {
-        const [profileData, status] = await Promise.all([
+        const [profileData, status, badge] = await Promise.all([
           fetchPublicUserProfile(targetUserId),
           myProfile ? getFriendshipStatus(myProfile.uid, targetUserId) : Promise.resolve('none' as const),
+          getStaffBadge(targetUserId),
         ]);
 
         if (isMounted) {
           setUserProfile(profileData);
           setFriendStatus(status);
+          setStaffBadge(badge);
         }
       } catch (err) {
         console.warn('Error loading public profile:', err);
@@ -119,18 +124,28 @@ export const PublicProfileModal: React.FC<PublicProfileModalProps> = ({
     setIsSubmittingReport(true);
     setReportStatusMessage(null);
     try {
-      const res = await submitStudentReport({
-        reporterId: myProfile.uid,
-        reporterName: myProfile.displayName || myProfile.username,
-        reporterUsername: myProfile.username,
-        reportedId: userProfile.uid,
-        reportedName: userProfile.displayName || userProfile.username,
-        reportedUsername: userProfile.username,
-        reason: reportReason,
-        note: reportNote.trim(),
+      const token = await user?.getIdToken();
+      const res = await fetch('/api/reports', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          action: 'createReport',
+          category: 'violation',
+          type: 'harassment',
+          targetType: 'user',
+          targetId: userProfile.uid,
+          targetName: userProfile.displayName || userProfile.username,
+          reason: reportReason.trim(),
+          description: reportNote.trim() || undefined,
+        }),
       });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'فشل إرسال البلاغ.');
 
-      setReportStatusMessage({ type: 'success', text: res.message });
+      setReportStatusMessage({ type: 'success', text: 'تم استلام بلاغك بنجاح وسيقوم المشرفون بمراجعته.' });
       setTimeout(() => {
         setShowReportDialog(false);
         setReportStatusMessage(null);
@@ -199,6 +214,11 @@ export const PublicProfileModal: React.FC<PublicProfileModalProps> = ({
               <h3 className="text-lg font-black text-slate-900 dark:text-white mt-3">
                 {userProfile.displayName}
               </h3>
+              {staffBadge && (
+                <div className="pt-1">
+                  <RoleBadge role={staffBadge.role} size="sm" />
+                </div>
+              )}
               <span className="text-xs text-blue-600 dark:text-blue-400 font-mono dir-ltr font-semibold">
                 @{userProfile.username}
               </span>

@@ -25,7 +25,9 @@ import {
   markChatAsRead
 } from '../lib/chatService';
 import { UserAvatar } from './UserAvatar';
-import type { ChatMessage, ChatConversation } from '../types';
+import { RoleBadge } from './RoleBadge';
+import { getStaffBadge } from '../lib/roleService';
+import type { ChatMessage, ChatConversation, StaffBadge } from '../types';
 
 interface ChatModalProps {
   isOpen: boolean;
@@ -45,7 +47,8 @@ export const ChatModal: React.FC<ChatModalProps> = ({
   onClose,
   targetUser,
 }) => {
-  const { profile } = useAuth();
+  const { profile, user } = useAuth();
+  const [targetBadge, setTargetBadge] = useState<StaffBadge | null>(null);
   const [conversation, setConversation] = useState<ChatConversation | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
@@ -57,6 +60,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isReportOpen, setIsReportOpen] = useState(false);
   const [reportReason, setReportReason] = useState('');
+  const [isReporting, setIsReporting] = useState(false);
   const [isOtherTyping, setIsOtherTyping] = useState(false);
   const [showScrollBottom, setShowScrollBottom] = useState(false);
   const [keyboardOffset, setKeyboardOffset] = useState(0);
@@ -90,6 +94,15 @@ export const ChatModal: React.FC<ChatModalProps> = ({
       setKeyboardOffset(0);
     };
   }, [isOpen]);
+
+  // Fetch staff badge for target user if exists
+  useEffect(() => {
+    if (targetUser?.uid) {
+      getStaffBadge(targetUser.uid).then((b) => setTargetBadge(b));
+    } else {
+      setTargetBadge(null);
+    }
+  }, [targetUser?.uid]);
 
   // Initialize or fetch conversation
   useEffect(() => {
@@ -251,12 +264,18 @@ export const ChatModal: React.FC<ChatModalProps> = ({
     }
   };
 
+  const isMuted = !!(profile?.mutedUntil && new Date(profile.mutedUntil).getTime() > Date.now());
+  const isChatRestricted = !!(profile?.chatDisabled || isMuted);
+
   const handleSendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!profile || !targetUser || !inputText.trim() || isSending) return;
 
-    if (profile.chatDisabled) {
-      alert('تم إيقاف ميزة الدردشة لحسابك من قِبل إدارة المنصة.');
+    if (isChatRestricted) {
+      const msg = profile?.chatDisabled
+        ? 'تم إيقاف ميزة الدردشة لحسابك من قِبل إدارة المنصة.'
+        : `حسابك مقيد ومكتوم عن إرسال الرسائل حتى: ${new Date(profile!.mutedUntil!).toLocaleString('ar-EG')}`;
+      setErrorMsg(msg);
       return;
     }
 
@@ -316,14 +335,37 @@ export const ChatModal: React.FC<ChatModalProps> = ({
   };
 
   const handleReport = async () => {
-    if (!conversation || !profile || !reportReason.trim()) return;
+    if (!conversation || !profile || !reportReason.trim() || isReporting) return;
+    setIsReporting(true);
     try {
-      await reportChatConversation(conversation.id, profile.uid, reportReason.trim());
+      const token = await user?.getIdToken();
+      const res = await fetch('/api/reports', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          action: 'createReport',
+          category: 'violation',
+          type: 'inappropriate_content',
+          targetType: 'user',
+          targetId: targetUser.uid,
+          targetName: targetUser.displayName || targetUser.username,
+          chatId: conversation.id,
+          reason: reportReason.trim(),
+          description: `بلاغ مخالفة في محادثة من الطالب (${profile.displayName || profile.username}) ضد (${targetUser.displayName})`,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'فشل إرسال البلاغ.');
       setIsReportOpen(false);
       setReportReason('');
-      alert('تم إرسال البلاغ للإدارة للمراجعة والتدقيق.');
+      alert('تم إرسال البلاغ للإدارة وحفظ نسخة موثقة من المحادثة كدليل رسمي.');
     } catch (err: any) {
       alert(err.message || 'فشل إرسال البلاغ.');
+    } finally {
+      setIsReporting(false);
     }
   };
 
@@ -391,7 +433,8 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                 <h3 className="text-sm font-bold text-slate-900 dark:text-white truncate">
                   {targetUser.displayName}
                 </h3>
-                {targetUser.branch && (
+                {targetBadge && <RoleBadge role={targetBadge.role} size="sm" />}
+                {targetUser.branch && !targetBadge && (
                   <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 shrink-0">
                     {targetUser.branch}
                   </span>
@@ -625,38 +668,49 @@ export const ChatModal: React.FC<ChatModalProps> = ({
           className="p-2.5 sm:p-3 bg-white dark:bg-[#0c101c] border-t border-slate-200 dark:border-slate-800 shrink-0"
           style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}
         >
-          <form
-            onSubmit={handleSendMessage}
-            className="flex items-end gap-2"
-          >
-            <div className="flex-1 min-h-[44px] rounded-2xl bg-slate-100 dark:bg-[#13192a] border border-slate-200 dark:border-slate-700/60 focus-within:ring-2 focus-within:ring-blue-500 flex items-center px-3 py-1.5 transition-all">
-              <textarea
-                ref={textareaRef}
-                rows={1}
-                value={inputText}
-                disabled={profile?.chatDisabled || isSending}
-                onChange={handleInputChange}
-                onBlur={handleInputBlur}
-                onKeyDown={handleKeyDown}
-                placeholder={profile?.chatDisabled ? 'الدردشة موقوفة لحسابك' : 'اكتب رسالتك هنا...'}
-                className="w-full text-xs sm:text-sm bg-transparent border-0 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none resize-none max-h-28 overflow-y-auto leading-relaxed py-1"
-              />
+          {isChatRestricted ? (
+            <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-xs text-amber-800 dark:text-amber-300 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 shrink-0 text-amber-600" />
+              <span>
+                {profile?.chatDisabled
+                  ? 'تم إيقاف ميزة الدردشة لحسابك من قِبل إدارة المنصة.'
+                  : `حسابك مقيد ومكتوم عن إرسال الرسائل حتى: ${new Date(profile!.mutedUntil!).toLocaleString('ar-EG')}`}
+              </span>
             </div>
-
-            <button
-              type="submit"
-              disabled={!inputText.trim() || isSending || profile?.chatDisabled}
-              className="min-w-[44px] min-h-[44px] rounded-2xl bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center justify-center cursor-pointer shadow-sm shrink-0"
-              title="إرسال"
-              aria-label="إرسال الرسالة"
+          ) : (
+            <form
+              onSubmit={handleSendMessage}
+              className="flex items-end gap-2"
             >
-              {isSending ? (
-                <Loader2 className="w-5 h-5 animate-spin" />
-              ) : (
-                <Send className="w-5 h-5 rtl:rotate-180" />
-              )}
-            </button>
-          </form>
+              <div className="flex-1 min-h-[44px] rounded-2xl bg-slate-100 dark:bg-[#13192a] border border-slate-200 dark:border-slate-700/60 focus-within:ring-2 focus-within:ring-blue-500 flex items-center px-3 py-1.5 transition-all">
+                <textarea
+                  ref={textareaRef}
+                  rows={1}
+                  value={inputText}
+                  disabled={isSending}
+                  onChange={handleInputChange}
+                  onBlur={handleInputBlur}
+                  onKeyDown={handleKeyDown}
+                  placeholder="اكتب رسالتك هنا..."
+                  className="w-full text-xs sm:text-sm bg-transparent border-0 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none resize-none max-h-28 overflow-y-auto leading-relaxed py-1"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={!inputText.trim() || isSending}
+                className="min-w-[44px] min-h-[44px] rounded-2xl bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center justify-center cursor-pointer shadow-sm shrink-0"
+                title="إرسال"
+                aria-label="إرسال الرسالة"
+              >
+                {isSending ? (
+                  <Loader2 className="w-5 h-5 animate-spin" />
+                ) : (
+                  <Send className="w-5 h-5 rtl:rotate-180" />
+                )}
+              </button>
+            </form>
+          )}
         </div>
 
         {/* Report Dialog Modal Overlay */}

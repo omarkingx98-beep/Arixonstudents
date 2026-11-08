@@ -9,6 +9,14 @@
   },
   "rewrites": [
     {
+      "source": "/auth/action",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/__/auth/action",
+      "destination": "/index.html"
+    },
+    {
       "source": "/__/auth/:path*",
       "destination": "https://arixonstudents-d902a.firebaseapp.com/__/auth/:path*"
     },

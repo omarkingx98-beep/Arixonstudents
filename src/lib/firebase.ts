@@ -9,6 +9,11 @@ import {
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
   sendPasswordResetEmail,
+  verifyPasswordResetCode,
+  confirmPasswordReset,
+  applyActionCode,
+  checkActionCode,
+  ActionCodeInfo,
   signOut,
   setPersistence,
   browserLocalPersistence,
@@ -272,10 +277,88 @@ export async function signUpWithEmail(email: string, password: string): Promise<
 }
 
 /**
- * Send Password Reset Email
+ * Send Password Reset Email with continue URL to Arixon domain
  */
 export async function resetPassword(email: string): Promise<void> {
-  await sendPasswordResetEmail(auth, email.trim().toLowerCase());
+  const cleanEmail = email.trim().toLowerCase();
+  await sendPasswordResetEmail(auth, cleanEmail, {
+    url: 'https://arixonstudents.vercel.app/',
+    handleCodeInApp: false,
+  });
+}
+
+/**
+ * Verify a password reset oobCode and return the associated email address
+ */
+export async function verifyResetCode(oobCode: string): Promise<string> {
+  return await verifyPasswordResetCode(auth, oobCode);
+}
+
+/**
+ * Confirm password reset with new password
+ */
+export async function confirmNewPassword(oobCode: string, newPass: string): Promise<void> {
+  await confirmPasswordReset(auth, oobCode, newPass);
+}
+
+/**
+ * Apply email verification action code
+ */
+export async function applyEmailVerification(oobCode: string): Promise<void> {
+  await applyActionCode(auth, oobCode);
+}
+
+/**
+ * Check and recover email action code
+ */
+export async function recoverUserEmail(oobCode: string): Promise<{ restoredEmail?: string }> {
+  const info = await checkActionCode(auth, oobCode);
+  await applyActionCode(auth, oobCode);
+  return {
+    restoredEmail: info.data?.email || undefined,
+  };
+}
+
+/**
+ * Mask email address for privacy (e.g. omar88x99@gmail.com -> om***9@gmail.com)
+ */
+export function maskEmail(email: string): string {
+  if (!email || !email.includes('@')) return email;
+  const [local, domain] = email.split('@');
+  if (local.length <= 2) {
+    return `${local.charAt(0)}***@${domain}`;
+  }
+  const prefix = local.substring(0, 2);
+  const suffix = local.slice(-1);
+  return `${prefix}***${suffix}@${domain}`;
+}
+
+/**
+ * Helper to map Action Code Firebase errors into clean 1-line Arabic explanations
+ */
+export function getActionErrorMessage(err: any): string {
+  if (!err) return 'حدث خطأ غير متوقع أثناء معالجة الرابط.';
+  const code = typeof err === 'object' && err.code ? err.code : '';
+  console.error('[FirebaseActionCodeError] Code:', code, err);
+
+  switch (code) {
+    case 'auth/expired-action-code':
+      return 'الرابط منتهي الصلاحية. يرجى طلب رابط جديد للمتابعة.';
+    case 'auth/invalid-action-code':
+      return 'الرابط غير صالح أو تم استخدامه مسبقًا.';
+    case 'auth/user-disabled':
+      return 'تم تعطيل هذا الحساب من قِبل إدارة المنصة.';
+    case 'auth/user-not-found':
+      return 'لم يتم العثور على حساب مرتبط بهذا الرابط.';
+    case 'auth/weak-password':
+      return 'كلمة المرور ضعيفة جدًا (يجب أن تتكون من 8 أحرف على الأقل).';
+    case 'auth/network-request-failed':
+      return 'تعذر الاتصال بالخادم، يرجى التحقق من اتصالك بالإنترنت.';
+    default:
+      return err.message && typeof err.message === 'string' && !err.message.includes('Firebase')
+        ? err.message
+        : 'الرابط منتهي أو مستخدم أو غير صالح، يرجى طلب رابط جديد.';
+  }
 }
 
 /**

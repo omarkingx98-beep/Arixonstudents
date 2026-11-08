@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { Logo } from './Logo';
@@ -15,10 +15,15 @@ import {
   CheckCircle2,
   LogIn,
   UserPlus,
-  ArrowRight
+  ArrowRight,
+  Clock
 } from 'lucide-react';
 
-export const WelcomeAuth: React.FC = () => {
+interface WelcomeAuthProps {
+  initialMode?: 'signin' | 'signup' | 'forgot';
+}
+
+export const WelcomeAuth: React.FC<WelcomeAuthProps> = ({ initialMode = 'signin' }) => {
   const { 
     signInWithGoogle, 
     signInWithEmail, 
@@ -31,7 +36,7 @@ export const WelcomeAuth: React.FC = () => {
   const { theme, toggleTheme } = useTheme();
 
   // Mode: 'signin' | 'signup' | 'forgot'
-  const [mode, setMode] = useState<'signin' | 'signup' | 'forgot'>('signin');
+  const [mode, setMode] = useState<'signin' | 'signup' | 'forgot'>(initialMode);
   
   // Form fields
   const [email, setEmail] = useState('');
@@ -44,6 +49,16 @@ export const WelcomeAuth: React.FC = () => {
   const [localError, setLocalError] = useState<string | null>(null);
   const [resetSuccessMessage, setResetSuccessMessage] = useState<string | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
+  const [resendCountdown, setResendCountdown] = useState<number>(0);
+
+  // Resend countdown timer (60s)
+  useEffect(() => {
+    if (resendCountdown <= 0) return;
+    const timer = setInterval(() => {
+      setResendCountdown((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [resendCountdown]);
 
   // In-app browser detection (WhatsApp, Instagram, FB, TikTok, etc.)
   const isInAppBrowser = typeof navigator !== 'undefined' && 
@@ -78,19 +93,34 @@ export const WelcomeAuth: React.FC = () => {
     clearError();
     setResetSuccessMessage(null);
 
-    const cleanEmail = email.trim();
+    const cleanEmail = email.trim().toLowerCase();
     if (!cleanEmail) {
       setLocalError('يرجى إدخال البريد الإلكتروني.');
       return;
     }
 
     if (mode === 'forgot') {
+      if (resendCountdown > 0) {
+        setLocalError(`يرجى الانتظار ${resendCountdown} ثانية قبل إعادة طلب الرابط.`);
+        return;
+      }
+
       try {
         setIsLoading(true);
         await sendPasswordReset(cleanEmail);
-        setResetSuccessMessage(`تم إرسال رابط إعادة تعيين كلمة المرور إلى: ${cleanEmail}`);
-      } catch (err: unknown) {
-        console.error('Password reset failed:', err);
+        setResetSuccessMessage('إذا كان البريد مسجّلًا ستصلك رسالة خلال دقائق. تحقق أيضًا من البريد المزعج (Spam).');
+        setResendCountdown(60);
+      } catch (err: any) {
+        console.error('Password reset failed:', err?.code, err);
+        if (err?.code === 'auth/account-exists-with-different-credential' || (err?.message && err.message.toLowerCase().includes('google'))) {
+          setLocalError('سجّلت بجوجل؟ استخدم زر Google.');
+        } else if (err?.code === 'auth/invalid-email') {
+          setLocalError('صيغة البريد الإلكتروني غير صالحة.');
+        } else {
+          // Privacy invariant: Always display fixed success message so attacker cannot enumerate emails
+          setResetSuccessMessage('إذا كان البريد مسجّلًا ستصلك رسالة خلال دقائق. تحقق أيضًا من البريد المزعج (Spam).');
+          setResendCountdown(60);
+        }
       } finally {
         setIsLoading(false);
       }
@@ -245,22 +275,32 @@ export const WelcomeAuth: React.FC = () => {
                       {email.trim() && (
                         <button
                           type="button"
+                          disabled={isLoading || resendCountdown > 0}
                           onClick={async () => {
                             try {
                               setIsLoading(true);
-                              await sendPasswordReset(email.trim());
-                              setResetSuccessMessage(`تم إرسال رابط تعيين كلمة المرور إلى: ${email.trim()}`);
+                              const cleanEmail = email.trim().toLowerCase();
+                              await sendPasswordReset(cleanEmail);
+                              setResetSuccessMessage('إذا كان البريد مسجّلًا ستصلك رسالة خلال دقائق. تحقق أيضًا من البريد المزعج (Spam).');
+                              setResendCountdown(60);
                               setLocalError(null);
                               clearError();
-                            } catch (err) {
-                              setLocalError('تعذر إرسال الرابط، يرجى التحقق من البريد المدخل.');
+                            } catch (err: any) {
+                              if (err?.code === 'auth/account-exists-with-different-credential' || (err?.message && err.message.toLowerCase().includes('google'))) {
+                                setLocalError('سجّلت بجوجل؟ استخدم زر Google.');
+                              } else if (err?.code === 'auth/invalid-email') {
+                                setLocalError('صيغة البريد الإلكتروني غير صالحة.');
+                              } else {
+                                setResetSuccessMessage('إذا كان البريد مسجّلًا ستصلك رسالة خلال دقائق. تحقق أيضًا من البريد المزعج (Spam).');
+                                setResendCountdown(60);
+                              }
                             } finally {
                               setIsLoading(false);
                             }
                           }}
-                          className="py-1.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs transition-colors cursor-pointer"
+                          className="py-1.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-bold text-xs transition-colors cursor-pointer disabled:opacity-50"
                         >
-                          إرسال رابط تعيين كلمة سر
+                          {resendCountdown > 0 ? `انتظر (${resendCountdown}ث)` : 'إرسال رابط تعيين كلمة سر'}
                         </button>
                       )}
                     </div>
@@ -451,7 +491,7 @@ export const WelcomeAuth: React.FC = () => {
               <button
                 id="email-auth-submit-btn"
                 type="submit"
-                disabled={isLoading}
+                disabled={isLoading || (mode === 'forgot' && resendCountdown > 0)}
                 className="w-full flex items-center justify-center gap-2 py-3 px-5 rounded-2xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-semibold text-xs sm:text-sm shadow-md shadow-blue-600/25 dark:shadow-blue-500/20 transition-all transform active:scale-[0.99] disabled:opacity-75 disabled:cursor-not-allowed cursor-pointer pt-3 mt-1"
               >
                 {isLoading ? (
@@ -468,6 +508,11 @@ export const WelcomeAuth: React.FC = () => {
                   <>
                     <UserPlus className="w-4 h-4" />
                     <span>إنشاء حساب جديد</span>
+                  </>
+                ) : resendCountdown > 0 ? (
+                  <>
+                    <Clock className="w-4 h-4" />
+                    <span>إعادة الإرسال بعد ({resendCountdown} ثانية)</span>
                   </>
                 ) : (
                   <>

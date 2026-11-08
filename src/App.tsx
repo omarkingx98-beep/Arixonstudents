@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { AdminProvider, useAdmin } from './context/AdminContext';
 import { WelcomeAuth } from './components/WelcomeAuth';
+import { AuthActionPage } from './components/AuthActionPage';
 import { OnboardingModal } from './components/OnboardingModal';
 import { MandatoryBranchModal } from './components/MandatoryBranchModal';
 import { AnnouncementTicker } from './components/AnnouncementTicker';
@@ -49,6 +50,15 @@ function MainAppShell() {
   const [isAdminModeActive, setIsAdminModeActive] = useState<boolean>(() => {
     return window.location.hash === '#admin' || window.location.search.includes('admin=true');
   });
+
+  // Check if current URL is a Firebase Auth Action URL (/auth/action or query parameters mode & oobCode)
+  const [isAuthActionView, setIsAuthActionView] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    const path = window.location.pathname;
+    const params = new URLSearchParams(window.location.search);
+    return path.includes('/auth/action') || path.includes('/__/auth/action') || (params.has('mode') && params.has('oobCode'));
+  });
+  const [welcomeInitialMode, setWelcomeInitialMode] = useState<'signin' | 'signup' | 'forgot'>('signin');
 
   // Notifications state
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
@@ -236,6 +246,28 @@ function MainAppShell() {
     setIsAdminModeActive(false);
   };
 
+  // 0. Dedicated Firebase Auth Action Page (Reset Password, Verify Email, Recover Email)
+  if (isAuthActionView) {
+    return (
+      <AuthActionPage
+        onNavigateHome={() => {
+          if (typeof window !== 'undefined') {
+            window.history.replaceState(null, '', '/');
+          }
+          setIsAuthActionView(false);
+          setWelcomeInitialMode('signin');
+        }}
+        onOpenForgotPassword={() => {
+          if (typeof window !== 'undefined') {
+            window.history.replaceState(null, '', '/');
+          }
+          setIsAuthActionView(false);
+          setWelcomeInitialMode('forgot');
+        }}
+      />
+    );
+  }
+
   // 1. Initializing / Loading Auth
   if (status === 'initializing') {
     return (
@@ -253,7 +285,7 @@ function MainAppShell() {
 
   // 2. Unauthenticated -> First visit welcome screen
   if (status === 'unauthenticated') {
-    return <WelcomeAuth />;
+    return <WelcomeAuth initialMode={welcomeInitialMode} />;
   }
 
   // 3. Authenticated but first time (needs onboarding)

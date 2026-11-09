@@ -144,13 +144,14 @@ export async function gradeAndSubmitExam(params: {
   durationSeconds?: number;
   userEmail?: string;
   idToken?: string;
+  forceRegrade?: boolean;
 }): Promise<GradeResult> {
   const startTime = Date.now();
-  const { attemptId, userId, answers = {}, durationSeconds } = params;
+  const { attemptId, userId, answers = {}, durationSeconds, forceRegrade = false } = params;
   let currentStep = 'VALIDATE_INPUT';
 
   try {
-    console.log(`[ExamGrader] Step 1 [${currentStep}]: Starting grading for attempt: ${attemptId}, user: ${userId}, answers count: ${Object.keys(answers).length}`);
+    console.log(`[ExamGrader] Step 1 [${currentStep}]: Starting grading for attempt: ${attemptId}, user: ${userId}, answers count: ${Object.keys(answers).length}, forceRegrade=${forceRegrade}`);
 
     if (!attemptId || !userId) {
       console.error(`[ExamGrader 400 ERROR] code=AUTH_FAILED, message="معرف المحاولة أو معرف المستخدم مفقود", step="${currentStep}", examId="${params.clientAttemptData?.examId || 'unknown'}", attemptId="${attemptId || 'missing'}", uid="${userId || 'missing'}", line="api/_lib/examGrader.ts:145"`);
@@ -252,7 +253,7 @@ export async function gradeAndSubmitExam(params: {
 
     // 2. Ownership Check
     currentStep = 'OWNERSHIP_CHECK';
-    if (attemptData.userId && attemptData.userId !== userId) {
+    if (attemptData.userId && attemptData.userId !== userId && !forceRegrade) {
       console.error(`[ExamGrader 401 ERROR] code=AUTH_FAILED, message="غير مصرح لك بتسليم هذه المحاولة", step="${currentStep}", examId="${attemptData.examId || 'unknown'}", attemptId="${attemptId}", uid="${userId}", line="api/_lib/examGrader.ts:228"`);
       return {
         ok: false,
@@ -263,163 +264,175 @@ export async function gradeAndSubmitExam(params: {
       };
     }
 
-    // 3. Idempotency Check: if already submitted, return existing result without duplicate points
+    // 3. Idempotency Check: if already submitted and not forcing regrade, return existing result without duplicate points
     currentStep = 'IDEMPOTENCY_CHECK';
-    if (attemptData.status === 'submitted') {
+    if (attemptData.status === 'submitted' && !forceRegrade) {
       console.log(`[ExamGrader] Attempt ${attemptId} is already submitted. Returning existing result (idempotent).`);
-    return {
-      ok: true,
-      code: 'ALREADY_SUBMITTED',
-      message: 'تم تسليم هذا الامتحان مسبقاً.',
-      step: currentStep,
-      attempt: { ...attemptData, id: attemptId },
-      reviews: attemptData.reviews || [],
-      isFirstCompletion: false,
-      pointsAwarded: 0,
-    };
-  }
+      return {
+        ok: true,
+        code: 'ALREADY_SUBMITTED',
+        message: 'تم تسليم هذا الامتحان مسبقاً.',
+        step: currentStep,
+        attempt: { ...attemptData, id: attemptId },
+        reviews: attemptData.reviews || [],
+        isFirstCompletion: false,
+        pointsAwarded: 0,
+      };
+    }
 
-  // 4. Retrieve Questions & Answer Keys
-  currentStep = 'FETCH_QUESTIONS_AND_KEYS';
-  const examId = attemptData.examId || '';
-  let questionsWithKeys: QuestionWithKey[] = [];
+    // 4. Retrieve Questions & Answer Keys
+    currentStep = 'FETCH_QUESTIONS_AND_KEYS';
+    const examId = attemptData.examId || '';
+    let questionsWithKeys: QuestionWithKey[] = [];
 
-  // 4a. Fetch from Admin Firestore SDK
-  if (hasServiceAccount && db && examId) {
-    try {
-      const qSnap = await withTimeout(
-        db.collection('exams').doc(examId).collection('questions').get(),
-        4000,
-        'FETCH_QUESTIONS'
-      );
-
-      if (!qSnap.empty) {
-        const keyPromises = qSnap.docs.map((doc) =>
-          db.collection('exams').doc(examId).collection('answerKeys').doc(doc.id).get().catch(() => null)
+    // 4a. Fetch from Admin Firestore SDK
+    if (hasServiceAccount && db && examId) {
+      try {
+        const qSnap = await withTimeout(
+          db.collection('exams').doc(examId).collection('questions').get(),
+          4000,
+          'FETCH_QUESTIONS'
         );
-        const keyDocs = await withTimeout(Promise.all(keyPromises), 4000, 'FETCH_KEYS');
-        const keysMap = new Map<string, any>();
-        keyDocs.forEach((kd) => {
-          if (kd && kd.exists) {
-            keysMap.set(kd.id, kd.data());
-          }
-        });
 
-        const sortedDocs = [...qSnap.docs].sort((a, b) => (a.data().order || 0) - (b.data().order || 0));
-        let anyKeyMissing = false;
-
-        for (let idx = 0; idx < sortedDocs.length; idx++) {
-          const qDoc = sortedDocs[idx];
-          const qData = qDoc.data();
-          const keyData = keysMap.get(qDoc.id);
-
-          const yusufOverride = examId === SURAH_YUSUF_EXAM_ID ? SURAH_YUSUF_CORRECT_KEYS[qDoc.id] : undefined;
-
-          // Real keyData stored in Firestore answerKeys subcollection has highest authority
-          const ansKey = (keyData?.correctAnswer !== undefined && keyData?.correctAnswer !== null)
-            ? keyData.correctAnswer
-            : (yusufOverride !== undefined 
-                ? yusufOverride.correctAnswer 
-                : (qData.correctAnswer !== undefined ? qData.correctAnswer : undefined));
-
-          const expl = keyData?.explanation || yusufOverride?.explanation || qData.explanation || '';
-
-          if (ansKey === undefined) {
-            console.error(`[ExamGrader] Missing answer key for question: ${qDoc.id} in exam: ${examId}`);
-            anyKeyMissing = true;
-            break;
-          }
-
-          questionsWithKeys.push({
-            id: qDoc.id,
-            examId,
-            order: qData.order || (idx + 1),
-            questionText: qData.questionText || '',
-            options: qData.options || [],
-            difficulty: qData.difficulty || 'medium',
-            source: qData.source || 'أريكسون',
-            points: qData.points || 5,
-            questionType: qData.questionType || 'multiple_choice',
-            correctAnswer: ansKey,
-            explanation: expl,
-            hint: keyData?.hint || qData.hint || '',
-            solutionSteps: keyData?.solutionSteps || qData.solutionSteps || null,
-            distractorAnalysis: keyData?.distractorAnalysis || qData.distractorAnalysis || null,
+        if (!qSnap.empty) {
+          const keyPromises = qSnap.docs.map((doc) =>
+            db.collection('exams').doc(examId).collection('answerKeys').doc(doc.id).get().catch(() => null)
+          );
+          const keyDocs = await withTimeout(Promise.all(keyPromises), 4000, 'FETCH_KEYS');
+          const keysMap = new Map<string, any>();
+          keyDocs.forEach((kd) => {
+            if (kd && kd.exists) {
+              keysMap.set(kd.id, kd.data());
+            }
           });
-        }
 
-        if (anyKeyMissing) {
-          questionsWithKeys = [];
-        }
-      }
-    } catch (err: any) {
-      console.warn(`[ExamGrader] Notice reading Firestore questions at step ${currentStep}:`, err?.message);
-    }
-  }
+          const sortedDocs = [...qSnap.docs].sort((a, b) => (a.data().order || 0) - (b.data().order || 0));
+          let anyKeyMissing = false;
 
-  // 4b. REST API fallback for questions (and answerKeys if admin)
-  if (questionsWithKeys.length === 0 && examId && params.idToken) {
-    try {
-      const restDocs = await getRestCollection(`exams/${examId}/questions`, params.idToken);
-      if (restDocs.length > 0) {
-        const restKeysMap = new Map<string, any>();
-        if (credentialSource === 'user_token') {
-          try {
-            const restKeyDocs = await getRestCollection(`exams/${examId}/answerKeys`, params.idToken);
-            restKeyDocs.forEach((kd) => restKeysMap.set(kd.id, kd.data));
-          } catch (_) {}
-        }
+          for (let idx = 0; idx < sortedDocs.length; idx++) {
+            const qDoc = sortedDocs[idx];
+            const qData = qDoc.data();
+            const keyData = keysMap.get(qDoc.id);
 
-        restDocs.sort((a, b) => (a.data.order || 0) - (b.data.order || 0));
-        let anyKeyMissing = false;
+            const yusufOverride = examId === SURAH_YUSUF_EXAM_ID ? SURAH_YUSUF_CORRECT_KEYS[qDoc.id] : undefined;
 
-        for (let idx = 0; idx < restDocs.length; idx++) {
-          const qItem = restDocs[idx];
-          const qData = qItem.data;
-          const keyData = restKeysMap.get(qItem.id);
+            // Priority:
+            // 1. Real keyData from answerKeys subcollection
+            // 2. Real qData.correctAnswer from questions subcollection (set by Admin in Exam Management)
+            // 3. Built-in override ONLY if neither Firestore document specifies an answer key
+            let ansKey: any = undefined;
+            if (keyData?.correctAnswer !== undefined && keyData?.correctAnswer !== null) {
+              ansKey = keyData.correctAnswer;
+            } else if (qData.correctAnswer !== undefined && qData.correctAnswer !== null) {
+              ansKey = qData.correctAnswer;
+            } else if (yusufOverride !== undefined) {
+              ansKey = yusufOverride.correctAnswer;
+            }
 
-          const yusufOverride = examId === SURAH_YUSUF_EXAM_ID ? SURAH_YUSUF_CORRECT_KEYS[qItem.id] : undefined;
+            const expl = keyData?.explanation || qData.explanation || yusufOverride?.explanation || '';
 
-          // Real keyData stored in Firestore answerKeys has highest priority
-          const ansKey = (keyData?.correctAnswer !== undefined && keyData?.correctAnswer !== null)
-            ? keyData.correctAnswer
-            : (yusufOverride !== undefined 
-                ? yusufOverride.correctAnswer 
-                : (qData.correctAnswer !== undefined ? qData.correctAnswer : undefined));
+            if (ansKey === undefined) {
+              console.error(`[ExamGrader] Missing answer key for question: ${qDoc.id} in exam: ${examId}`);
+              anyKeyMissing = true;
+              break;
+            }
 
-          const expl = keyData?.explanation || yusufOverride?.explanation || qData.explanation || '';
-
-          if (ansKey === undefined) {
-            anyKeyMissing = true;
-            break;
+            questionsWithKeys.push({
+              id: qDoc.id,
+              examId,
+              order: qData.order || (idx + 1),
+              questionText: qData.questionText || '',
+              options: qData.options || [],
+              difficulty: qData.difficulty || 'medium',
+              source: qData.source || 'أريكسون',
+              points: qData.points || 5,
+              questionType: qData.questionType || 'multiple_choice',
+              correctAnswer: ansKey,
+              explanation: expl,
+              hint: keyData?.hint || qData.hint || '',
+              solutionSteps: keyData?.solutionSteps || qData.solutionSteps || null,
+              distractorAnalysis: keyData?.distractorAnalysis || qData.distractorAnalysis || null,
+            });
           }
 
-          questionsWithKeys.push({
-            id: qItem.id,
-            examId,
-            order: qData.order || (idx + 1),
-            questionText: qData.questionText || '',
-            options: qData.options || [],
-            difficulty: qData.difficulty || 'medium',
-            source: qData.source || 'أريكسون',
-            points: qData.points || 5,
-            questionType: qData.questionType || 'multiple_choice',
-            correctAnswer: ansKey,
-            explanation: expl,
-            hint: keyData?.hint || qData.hint || '',
-            solutionSteps: keyData?.solutionSteps || qData.solutionSteps || null,
-            distractorAnalysis: keyData?.distractorAnalysis || qData.distractorAnalysis || null,
-          });
+          if (anyKeyMissing) {
+            questionsWithKeys = [];
+          }
         }
-
-        if (anyKeyMissing) {
-          questionsWithKeys = [];
-        }
+      } catch (err: any) {
+        console.warn(`[ExamGrader] Notice reading Firestore questions at step ${currentStep}:`, err?.message);
       }
-    } catch (restQErr: any) {
-      console.warn(`[ExamGrader] Notice REST fetch for questions of exam ${examId}:`, restQErr?.message);
     }
-  }
+
+    // 4b. REST API fallback for questions (and answerKeys if admin)
+    if (questionsWithKeys.length === 0 && examId && params.idToken) {
+      try {
+        const restDocs = await getRestCollection(`exams/${examId}/questions`, params.idToken);
+        if (restDocs.length > 0) {
+          const restKeysMap = new Map<string, any>();
+          if (credentialSource === 'user_token') {
+            try {
+              const restKeyDocs = await getRestCollection(`exams/${examId}/answerKeys`, params.idToken);
+              restKeyDocs.forEach((kd) => restKeysMap.set(kd.id, kd.data));
+            } catch (_) {}
+          }
+
+          restDocs.sort((a, b) => (a.data.order || 0) - (b.data.order || 0));
+          let anyKeyMissing = false;
+
+          for (let idx = 0; idx < restDocs.length; idx++) {
+            const qItem = restDocs[idx];
+            const qData = qItem.data;
+            const keyData = restKeysMap.get(qItem.id);
+
+            const yusufOverride = examId === SURAH_YUSUF_EXAM_ID ? SURAH_YUSUF_CORRECT_KEYS[qItem.id] : undefined;
+
+            // Priority:
+            // 1. answerKeys subcollection
+            // 2. questions subcollection correctAnswer
+            // 3. yusufOverride as fallback
+            let ansKey: any = undefined;
+            if (keyData?.correctAnswer !== undefined && keyData?.correctAnswer !== null) {
+              ansKey = keyData.correctAnswer;
+            } else if (qData.correctAnswer !== undefined && qData.correctAnswer !== null) {
+              ansKey = qData.correctAnswer;
+            } else if (yusufOverride !== undefined) {
+              ansKey = yusufOverride.correctAnswer;
+            }
+
+            const expl = keyData?.explanation || qData.explanation || yusufOverride?.explanation || '';
+
+            if (ansKey === undefined) {
+              anyKeyMissing = true;
+              break;
+            }
+
+            questionsWithKeys.push({
+              id: qItem.id,
+              examId,
+              order: qData.order || (idx + 1),
+              questionText: qData.questionText || '',
+              options: qData.options || [],
+              difficulty: qData.difficulty || 'medium',
+              source: qData.source || 'أريكسون',
+              points: qData.points || 5,
+              questionType: qData.questionType || 'multiple_choice',
+              correctAnswer: ansKey,
+              explanation: expl,
+              hint: keyData?.hint || qData.hint || '',
+              solutionSteps: keyData?.solutionSteps || qData.solutionSteps || null,
+              distractorAnalysis: keyData?.distractorAnalysis || qData.distractorAnalysis || null,
+            });
+          }
+
+          if (anyKeyMissing) {
+            questionsWithKeys = [];
+          }
+        }
+      } catch (restQErr: any) {
+        console.warn(`[ExamGrader] Notice REST fetch for questions of exam ${examId}:`, restQErr?.message);
+      }
+    }
 
   // 4c. Built-in verified ministerial banks ONLY for official ministerial exams (strict ID match)
   const isMinisterialPhysics = examId === FIRST_EXAM_ID || examId === 'exam_physics_tw2009_01';
@@ -605,8 +618,10 @@ export async function gradeAndSubmitExam(params: {
 
   // Idempotent points check: award points only on the FIRST completion of an exam
   const isRetake = Boolean(attemptData.isRetake);
-  let isFirstCompletion = !isRetake;
-  let pointsAwarded = isFirstCompletion ? pointsCalculated : 0;
+  const previousPointsEarned = Number(attemptData.pointsEarned) || 0;
+  let isFirstCompletion = !isRetake && !forceRegrade;
+  let pointsAwarded = isFirstCompletion ? pointsCalculated : (forceRegrade ? pointsCalculated : 0);
+  let deltaPoints = forceRegrade ? (pointsCalculated - previousPointsEarned) : pointsAwarded;
 
   // 6. Write to Firestore Atomic Batch/Transaction
   currentStep = 'WRITE_RESULTS_AND_POINTS';
@@ -614,7 +629,8 @@ export async function gradeAndSubmitExam(params: {
     ...attemptData,
     id: attemptId,
     status: 'submitted',
-    submittedAt: nowIso,
+    submittedAt: attemptData.submittedAt || nowIso,
+    regradedAt: forceRegrade ? nowIso : (attemptData.regradedAt || null),
     score: scorePercent,
     questionCount: totalQuestions,
     correctCount,
@@ -625,7 +641,7 @@ export async function gradeAndSubmitExam(params: {
     unanswered: unansweredCount,
     durationUsed,
     durationSeconds: durationUsed,
-    pointsEarned: pointsAwarded,
+    pointsEarned: forceRegrade ? pointsCalculated : pointsAwarded,
     answers,
     reviews,
   };
@@ -642,10 +658,11 @@ export async function gradeAndSubmitExam(params: {
           const userDoc = await transaction.get(userRef);
           if (userDoc.exists) {
             const uData = userDoc.data() || {};
-            // If already completed in past, don't award duplicate points
-            if (uData.completedExamIds && Array.isArray(uData.completedExamIds) && uData.completedExamIds.includes(examId)) {
+            // If already completed in past and not regrading, don't award duplicate points
+            if (!forceRegrade && uData.completedExamIds && Array.isArray(uData.completedExamIds) && uData.completedExamIds.includes(examId)) {
               isFirstCompletion = false;
               pointsAwarded = 0;
+              deltaPoints = 0;
               updatedAttempt.pointsEarned = 0;
             }
 
@@ -654,13 +671,18 @@ export async function gradeAndSubmitExam(params: {
             const currentCorrect = uData.correctAnswers || 0;
             const currentWrong = uData.wrongAnswers || 0;
 
+            const prevCorrect = Number(attemptData.correctCount) || Number(attemptData.correctAnswers) || 0;
+            const prevWrong = Number(attemptData.wrongCount) || Number(attemptData.wrongAnswers) || 0;
+            const deltaCorrect = forceRegrade ? (correctCount - prevCorrect) : correctCount;
+            const deltaWrong = forceRegrade ? (wrongCount - prevWrong) : wrongCount;
+
             transaction.update(userRef, {
-              totalPoints: currentTotal + pointsAwarded,
-              weeklyPoints: (uData.weeklyPoints || 0) + pointsAwarded,
-              monthlyPoints: (uData.monthlyPoints || 0) + pointsAwarded,
+              totalPoints: Math.max(0, currentTotal + deltaPoints),
+              weeklyPoints: Math.max(0, (uData.weeklyPoints || 0) + deltaPoints),
+              monthlyPoints: Math.max(0, (uData.monthlyPoints || 0) + deltaPoints),
               examsCompleted: currentExams + (isFirstCompletion ? 1 : 0),
-              correctAnswers: currentCorrect + correctCount,
-              wrongAnswers: currentWrong + wrongCount,
+              correctAnswers: Math.max(0, currentCorrect + deltaCorrect),
+              wrongAnswers: Math.max(0, currentWrong + deltaWrong),
               completedExamIds: FieldValue.arrayUnion(examId),
               updatedAt: nowIso,
               lastActiveAt: nowIso,
@@ -670,11 +692,11 @@ export async function gradeAndSubmitExam(params: {
             const pubRef = db.collection('publicProfiles').doc(userId);
             transaction.set(pubRef, {
               uid: userId,
-              totalPoints: currentTotal + pointsAwarded,
-              points: currentTotal + pointsAwarded,
+              totalPoints: Math.max(0, currentTotal + deltaPoints),
+              points: Math.max(0, currentTotal + deltaPoints),
               examsCompleted: currentExams + (isFirstCompletion ? 1 : 0),
-              correctAnswers: currentCorrect + correctCount,
-              wrongAnswers: currentWrong + wrongCount,
+              correctAnswers: Math.max(0, currentCorrect + deltaCorrect),
+              wrongAnswers: Math.max(0, currentWrong + deltaWrong),
               updatedAt: nowIso,
             }, { merge: true });
           }

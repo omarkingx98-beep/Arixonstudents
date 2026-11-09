@@ -48,6 +48,12 @@ import { runTwoStageAiGeneration, runRegenerateSingleQuestion } from './server/a
 import { parseRawExamWithGemini } from './server/aiExamParser';
 import { gradeAndSubmitExam, autoCloseExpiredAttempts } from './server/examGrader';
 import { handleStaffAction, handleReportsAction } from './api/_lib/staffHandler';
+import { 
+  performServiceHealthCheck, 
+  auditExamIntegrity, 
+  migrateEmbeddedExamsToFirestore, 
+  regradeExamAttemptsServer 
+} from './api/_lib/adminIntegrity';
 let geminiClient: GoogleGenAI | null = null;
 function getGeminiClient(): GoogleGenAI {
   if (!geminiClient) {
@@ -293,6 +299,103 @@ async function startServer() {
       });
     } catch (err: any) {
       res.status(500).json({ error: err?.message || 'Verification error' });
+    }
+  });
+
+  /**
+   * Service Health Check Endpoint
+   * Checks environment variable presence, Firestore status, and Gemini connection without leaking secrets.
+   */
+  app.get('/api/admin/health', async (req: Request, res: Response) => {
+    try {
+      const authUser = await verifyAuthToken(req);
+      const isPrimary = isPrimaryAdmin(authUser?.email);
+      if (!authUser || (!authUser.admin && !isPrimary)) {
+        res.status(403).json({ error: 'Access restricted to authorized admins.' });
+        return;
+      }
+
+      const report = await performServiceHealthCheck();
+      res.json(report);
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Failed running service health check.' });
+    }
+  });
+
+  /**
+   * Exam Integrity Audit Endpoint (Dry-Run Only)
+   */
+  app.get('/api/admin/exam-integrity', async (req: Request, res: Response) => {
+    try {
+      const authUser = await verifyAuthToken(req);
+      const isPrimary = isPrimaryAdmin(authUser?.email);
+      if (!authUser || (!authUser.admin && !isPrimary)) {
+        res.status(403).json({ error: 'Access restricted to authorized admins.' });
+        return;
+      }
+
+      const examId = (req.query.examId as string) || 'exam_1792050086667_12ri';
+      const idToken = req.headers.authorization?.split('Bearer ')[1]?.trim();
+      const report = await auditExamIntegrity(examId, idToken, authUser.email);
+      res.json(report);
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Failed running exam integrity audit.' });
+    }
+  });
+
+  /**
+   * Regrade Exam Attempts Endpoint
+   */
+  app.post('/api/admin/regrade-exam', async (req: Request, res: Response) => {
+    try {
+      const authUser = await verifyAuthToken(req);
+      const isPrimary = isPrimaryAdmin(authUser?.email);
+      if (!authUser || (!authUser.admin && !isPrimary)) {
+        res.status(403).json({ error: 'Access restricted to authorized admins.' });
+        return;
+      }
+
+      const { examId } = req.body || {};
+      if (!examId) {
+        res.status(400).json({ error: 'معرف الامتحان (examId) مطلوب.' });
+        return;
+      }
+
+      const idToken = req.headers.authorization?.split('Bearer ')[1]?.trim();
+      const result = await regradeExamAttemptsServer({
+        examId,
+        idToken,
+        callerEmail: authUser.email,
+      });
+
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Failed regrading exam attempts.' });
+    }
+  });
+
+  /**
+   * Migrate Embedded Exams to Firestore Endpoint
+   */
+  app.post('/api/admin/migrate-embedded-exams', async (req: Request, res: Response) => {
+    try {
+      const authUser = await verifyAuthToken(req);
+      const isPrimary = isPrimaryAdmin(authUser?.email);
+      if (!authUser || (!authUser.admin && !isPrimary)) {
+        res.status(403).json({ error: 'Access restricted to authorized admins.' });
+        return;
+      }
+
+      const { dryRun = false } = req.body || {};
+      const idToken = req.headers.authorization?.split('Bearer ')[1]?.trim();
+      const result = await migrateEmbeddedExamsToFirestore({
+        dryRun: Boolean(dryRun),
+        idToken,
+      });
+
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Failed migrating embedded exams.' });
     }
   });
 
@@ -699,7 +802,7 @@ async function startServer() {
   app.post('/api/exams/grade', async (req: Request, res: Response) => {
     try {
       const authUser = await verifyAuthToken(req);
-      const { attemptId, answers, durationSeconds, examId, clientAttemptData } = req.body || {};
+      const { attemptId, answers, durationSeconds, examId, clientAttemptData, forceRegrade } = req.body || {};
       const rawExamId = examId || clientAttemptData?.examId || (attemptId ? (attemptId.split('_').slice(2, -1).join('_') || 'unknown') : 'unknown');
 
       if (!authUser || !authUser.uid) {
@@ -726,16 +829,20 @@ async function startServer() {
         return;
       }
 
-      console.log(`[API /api/exams/grade] Grading request received for attempt: ${attemptId}, user: ${authUser.uid}, examId: ${rawExamId}, answers count: ${Object.keys(answers || {}).length}`);
+      const isCallerAdmin = authUser.admin || isPrimaryAdmin(authUser.email);
+      const effectiveUserId = (isCallerAdmin && clientAttemptData?.userId) ? clientAttemptData.userId : authUser.uid;
+
+      console.log(`[API /api/exams/grade] Grading request received for attempt: ${attemptId}, user: ${effectiveUserId}, caller: ${authUser.uid}, examId: ${rawExamId}, answers count: ${Object.keys(answers || {}).length}, forceRegrade: ${Boolean(forceRegrade)}`);
 
       const gradingResult = await gradeAndSubmitExam({
         attemptId,
-        userId: authUser.uid,
+        userId: effectiveUserId,
         answers: answers || {},
-        clientAttemptData: clientAttemptData || (examId ? { examId, userId: authUser.uid } : undefined),
+        clientAttemptData: clientAttemptData || (examId ? { examId, userId: effectiveUserId } : undefined),
         durationSeconds: durationSeconds ? Number(durationSeconds) : undefined,
         userEmail: authUser.email,
         idToken: req.headers.authorization?.split('Bearer ')[1]?.trim(),
+        forceRegrade: Boolean(forceRegrade),
       });
 
       if (!gradingResult.ok) {

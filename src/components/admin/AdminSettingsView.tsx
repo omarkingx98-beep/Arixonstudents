@@ -8,7 +8,16 @@ import {
   AlertTriangle,
   CheckCircle2,
   Lock,
+  Activity,
+  Server,
+  Cpu,
+  Database,
+  Key,
+  RefreshCw,
+  Loader2,
+  XCircle,
 } from 'lucide-react';
+import { auth } from '../../lib/firebase';
 import { fetchAdminSettings, saveAdminSettings } from '../../lib/adminService';
 import {
   fetchCommunitySettings,
@@ -46,6 +55,36 @@ export const AdminSettingsView: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  // Health check state (Part P)
+  const [healthData, setHealthData] = useState<any | null>(null);
+  const [isCheckingHealth, setIsCheckingHealth] = useState(false);
+  const [healthError, setHealthError] = useState<string | null>(null);
+
+  const runHealthCheck = async () => {
+    setIsCheckingHealth(true);
+    setHealthError(null);
+    try {
+      const user = auth.currentUser;
+      if (!user) throw new Error('يرجى تسجيل الدخول كمسؤول أولاً');
+      const token = await user.getIdToken();
+
+      const res = await fetch('/api/admin/health', {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'فشل فحص الخدمات');
+      }
+      setHealthData(data);
+    } catch (err: any) {
+      setHealthError(err.message || 'حدث خطأ أثناء فحص الخدمات');
+    } finally {
+      setIsCheckingHealth(false);
+    }
+  };
 
   useEffect(() => {
     const load = async () => {
@@ -393,6 +432,148 @@ export const AdminSettingsView: React.FC = () => {
             placeholder="مثال: مرحباً بكم في منصة أريكسون - تم إطلاق نماذج الفيزياء الوزارية الجديدة لتوجيهي 2009"
             className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-[#13192a] text-xs"
           />
+        </div>
+        {/* Service Health & Connectivity Check (Part P) */}
+        <div className="bg-white dark:bg-[#0c101c] p-6 rounded-3xl border border-slate-200/80 dark:border-slate-800/80 shadow-xs space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-indigo-50 dark:bg-indigo-950/50 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
+                <Activity className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <span>فحص سلامة الخدمات والاتصال (Service Health Check)</span>
+                  <span className="text-[10px] bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 font-bold px-2 py-0.5 rounded-full">
+                    خادم Arixon • تشخيص فوري
+                  </span>
+                </h2>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  فحص اتصال قاعدة بيانات Firestore، جاهزية ذكاء Gemini، وتوافر متغيرات البيئة الأساسية دون كشف أي أسرار.
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={runHealthCheck}
+              disabled={isCheckingHealth}
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition-colors flex items-center gap-2 cursor-pointer self-start sm:self-auto shadow-sm"
+            >
+              {isCheckingHealth ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <RefreshCw className="w-4 h-4" />
+              )}
+              <span>فحص الاتصال الآن</span>
+            </button>
+          </div>
+
+          {healthError && (
+            <div className="p-3.5 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 text-xs flex items-center gap-2.5">
+              <AlertTriangle className="w-4 h-4 shrink-0" />
+              <span>{healthError}</span>
+            </div>
+          )}
+
+          {healthData && (
+            <div className="space-y-4 pt-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {/* Firestore Status */}
+                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#13192a] border border-slate-200 dark:border-slate-800 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                      <Database className="w-4 h-4 text-amber-500" />
+                      <span>قاعدة بيانات Firestore</span>
+                    </span>
+                    {healthData.services?.firestore?.status === 'healthy' ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                    ) : (
+                      <XCircle className="w-4 h-4 text-rose-500" />
+                    )}
+                  </div>
+                  <div className="text-sm font-black text-slate-900 dark:text-white">
+                    {healthData.services?.firestore?.status === 'healthy' ? 'متصلة وجاهزة' : 'فشل الاتصال'}
+                  </div>
+                  <div className="text-[11px] text-slate-500 flex items-center gap-2">
+                    <span>زمن الاستجابة: {healthData.services?.firestore?.latencyMs}ms</span>
+                    <span>•</span>
+                    <span>{healthData.services?.firestore?.details}</span>
+                  </div>
+                </div>
+
+                {/* Gemini Status */}
+                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#13192a] border border-slate-200 dark:border-slate-800 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                      <Cpu className="w-4 h-4 text-purple-500" />
+                      <span>خدمة الذكاء الاصطناعي (Gemini)</span>
+                    </span>
+                    {healthData.services?.gemini?.status === 'healthy' ? (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                    ) : healthData.services?.gemini?.status === 'degraded' ? (
+                      <AlertTriangle className="w-4 h-4 text-amber-500" />
+                    ) : (
+                      <XCircle className="w-4 h-4 text-rose-500" />
+                    )}
+                  </div>
+                  <div className="text-sm font-black text-slate-900 dark:text-white">
+                    {healthData.services?.gemini?.status === 'healthy' ? 'جاهز للاستخدام' : 'غير متوفر'}
+                  </div>
+                  <div className="text-[11px] text-slate-500 flex items-center gap-2">
+                    <span>زمن الاستجابة: {healthData.services?.gemini?.latencyMs}ms</span>
+                    <span>•</span>
+                    <span className="truncate" title={healthData.services?.gemini?.details}>
+                      {healthData.services?.gemini?.details}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Overall Server Status */}
+                <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#13192a] border border-slate-200 dark:border-slate-800 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                      <Server className="w-4 h-4 text-blue-500" />
+                      <span>حالة الخادم الشاملة</span>
+                    </span>
+                    <span className="text-[10px] font-mono text-slate-400">
+                      {new Date(healthData.timestamp).toLocaleTimeString('ar-EG')}
+                    </span>
+                  </div>
+                  <div className="text-sm font-black text-emerald-600 dark:text-emerald-400">
+                    {healthData.status === 'healthy' ? 'كافة الخدمات تعمل بنجاح' : 'تنبيه في بعض الخدمات'}
+                  </div>
+                  <div className="text-[11px] text-slate-500">
+                    بيئة التشغيل: {healthData.environment}
+                  </div>
+                </div>
+              </div>
+
+              {/* Env Vars Presence Table */}
+              <div className="p-4 rounded-2xl bg-slate-50/70 dark:bg-[#101524] border border-slate-200 dark:border-slate-800 space-y-2">
+                <div className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-300">
+                  <Key className="w-4 h-4 text-slate-400" />
+                  <span>تأكيد توافر متغيرات البيئة (Environment Variables Presence - بدون كشف قيم):</span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 pt-1 text-[11px]">
+                  {Object.entries(healthData.services?.environmentVariables || {}).map(([key, isPresent]) => (
+                    <div
+                      key={key}
+                      className="p-2 rounded-xl bg-white dark:bg-[#0c101c] border border-slate-200 dark:border-slate-800 flex items-center justify-between"
+                    >
+                      <span className="font-mono text-[10px] text-slate-600 dark:text-slate-400 truncate" title={key}>
+                        {key}
+                      </span>
+                      {isPresent ? (
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0 mr-1" />
+                      ) : (
+                        <XCircle className="w-3.5 h-3.5 text-rose-400 shrink-0 mr-1" />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </form>
     </div>

@@ -42,6 +42,7 @@ import {
 import { useAdmin } from '../../context/AdminContext';
 import { AdminCreateExamModal } from './AdminCreateExamModal';
 import { AdminExamResultsModal } from './AdminExamResultsModal';
+import { AdminExamIntegrityModal } from './AdminExamIntegrityModal';
 import type { Exam, Question, SubjectId } from '../../types';
 
 interface AdminExamsViewProps {
@@ -84,6 +85,10 @@ export const AdminExamsView: React.FC<AdminExamsViewProps> = ({
   const [isValidatingReadiness, setIsValidatingReadiness] = useState(false);
   const [isRepairingKeys, setIsRepairingKeys] = useState(false);
   const [isRegrading, setIsRegrading] = useState(false);
+
+  // Integrity & Dry-Run Diagnostic Modal (Part P)
+  const [isIntegrityModalOpen, setIsIntegrityModalOpen] = useState(false);
+  const [integrityExamId, setIntegrityExamId] = useState<string | undefined>(undefined);
 
   const loadExams = async () => {
     setIsLoading(true);
@@ -328,6 +333,17 @@ export const AdminExamsView: React.FC<AdminExamsViewProps> = ({
           )}
 
           <button
+            onClick={() => {
+              setIntegrityExamId('exam_1792050086667_12ri');
+              setIsIntegrityModalOpen(true);
+            }}
+            className="px-3.5 py-2.5 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 text-xs font-bold hover:bg-blue-100 transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
+          >
+            <ShieldCheck className="w-4 h-4 text-blue-600" />
+            <span>فحص سلامة الامتحانات (Dry-Run)</span>
+          </button>
+
+          <button
             disabled={isRepairingKeys}
             onClick={() => handleRepairAnswerKeys()}
             className="px-3.5 py-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-300 text-xs font-bold hover:bg-amber-100 transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
@@ -531,6 +547,20 @@ export const AdminExamsView: React.FC<AdminExamsViewProps> = ({
                           >
                             <ShieldCheck className="w-3.5 h-3.5 text-blue-500" />
                             <span>فحص جاهزية الامتحان</span>
+                          </button>
+
+                          {/* Exam Integrity & Grading Dry-Run Audit (Part P) */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActiveMenuExamId(null);
+                              setIntegrityExamId(exam.id);
+                              setIsIntegrityModalOpen(true);
+                            }}
+                            className="w-full px-3.5 py-2 text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 flex items-center gap-2 cursor-pointer"
+                          >
+                            <ShieldCheck className="w-3.5 h-3.5 text-indigo-500" />
+                            <span>فحص سلامة التصحيح (Dry-Run)</span>
                           </button>
 
                           {/* 2. Publish / Unpublish Toggle */}
@@ -999,6 +1029,14 @@ export const AdminExamsView: React.FC<AdminExamsViewProps> = ({
           </div>
         </div>
       )}
+
+      {/* EXAM INTEGRITY DRY-RUN AUDIT MODAL (Part P) */}
+      <AdminExamIntegrityModal
+        isOpen={isIntegrityModalOpen}
+        onClose={() => setIsIntegrityModalOpen(false)}
+        exams={exams}
+        initialExamId={integrityExamId}
+      />
     </div>
   );
 };

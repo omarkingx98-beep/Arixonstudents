@@ -184,7 +184,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const handleSignOut = async () => {
     try {
-      localStorage.removeItem('arixon_demo_session');
+      if (typeof window !== 'undefined' && window.location.hash) {
+        window.history.replaceState(null, '', window.location.pathname);
+      }
       setError(null);
       await logOut();
       setUser(null);

@@ -213,11 +213,23 @@ function MainAppShell() {
     const handleHashChange = () => {
       if (window.location.hash === '#admin') {
         setIsAdminModeActive(true);
+      } else {
+        setIsAdminModeActive(false);
       }
     };
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
+
+  // Account Isolation: If student is not an admin, ensure they never get trapped in admin mode
+  useEffect(() => {
+    if (status === 'authenticated' && !isCheckingAdmin && !isAdmin && isAdminModeActive) {
+      setIsAdminModeActive(false);
+      if (window.location.hash === '#admin') {
+        window.history.replaceState(null, '', window.location.pathname);
+      }
+    }
+  }, [status, isCheckingAdmin, isAdmin, isAdminModeActive]);
 
   // Seed default Tawjihi 2009 Physics Exam into Firestore once user profile is ready
   useEffect(() => {

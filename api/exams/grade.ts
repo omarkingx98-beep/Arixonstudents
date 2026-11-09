@@ -66,7 +66,7 @@ export default async function handler(req: any, res: any) {
       }
     }
 
-    const { attemptId, answers, clientAttemptData } = body || {};
+    const { attemptId, answers, clientAttemptData, forceRegrade } = body || {};
     const rawExamId = clientAttemptData?.examId || (attemptId ? (attemptId.split('_').slice(2, -1).join('_') || 'unknown') : 'unknown');
 
     if (!attemptId) {
@@ -100,7 +100,7 @@ export default async function handler(req: any, res: any) {
       });
     }
 
-    console.log(`[API /api/exams/grade] Grading attempt: ${attemptId}, user: ${effectiveUserId}, examId: ${rawExamId}, answers count: ${Object.keys(answers || {}).length}`);
+    console.log(`[API /api/exams/grade] Grading attempt: ${attemptId}, user: ${effectiveUserId}, examId: ${rawExamId}, answers count: ${Object.keys(answers || {}).length}, forceRegrade: ${Boolean(forceRegrade)}`);
 
     const result = await gradeAndSubmitExam({
       attemptId,
@@ -109,6 +109,7 @@ export default async function handler(req: any, res: any) {
       answers: answers || {},
       clientAttemptData,
       idToken: rawToken,
+      forceRegrade: Boolean(forceRegrade),
     });
 
     if (!result.ok) {

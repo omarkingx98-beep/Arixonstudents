@@ -580,7 +580,16 @@ export async function logOut(): Promise<void> {
       const keysToRemove: string[] = [];
       for (let i = 0; i < localStorage.length; i++) {
         const k = localStorage.key(i);
-        if (k && (k.startsWith('arixon_completed_') || k.startsWith('arixon_attempt_') || k.startsWith('arixon_cached_profile_'))) {
+        if (k && (
+          k.startsWith('arixon_completed_') || 
+          k.startsWith('arixon_attempt_') || 
+          k.startsWith('arixon_cached_profile_') ||
+          k.startsWith('arixon_notif_state_') ||
+          k.startsWith('arixon_has_seen_tutorial_') ||
+          k.startsWith('arixon_daily_goals_') ||
+          k.startsWith('arixon_admin_') ||
+          k === 'arixon_demo_session'
+        )) {
           keysToRemove.push(k);
         }
       }

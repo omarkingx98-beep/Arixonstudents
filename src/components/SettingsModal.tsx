@@ -23,12 +23,18 @@ import {
   Code,
   KeyRound,
   Eye,
-  EyeOff
+  EyeOff,
+  Smartphone,
+  Download,
+  Share2,
+  ExternalLink,
+  Copy
 } from 'lucide-react';
 import { DailyGoals } from './DailyGoals';
 import { getFriendsList } from '../lib/friendService';
 import { updateStudentBranch } from '../lib/firebase';
 import { fetchCommunitySettings } from '../lib/communityService';
+import { usePWAInstall } from '../hooks/usePWAInstall';
 import type { FriendItem, CommunitySettings } from '../types';
 
 const WhatsAppIcon: React.FC<{ className?: string }> = ({ className = 'w-4 h-4 fill-current' }) => (
@@ -64,13 +70,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const { theme, setTheme } = useTheme();
   const { isAdmin } = useAdmin();
 
-  const [activeSubView, setActiveSubView] = useState<'main' | 'privacy' | 'about' | 'goals' | 'friends' | 'developer' | 'security' | 'support'>(initialSubView || 'main');
+  const [activeSubView, setActiveSubView] = useState<'main' | 'privacy' | 'about' | 'goals' | 'friends' | 'developer' | 'security' | 'support' | 'install'>(initialSubView || 'main');
   const [selectedLanguage, setSelectedLanguage] = useState<'ar' | 'en'>('ar');
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [friends, setFriends] = useState<FriendItem[]>([]);
   const [isLoadingFriends, setIsLoadingFriends] = useState(false);
   const [isSwitchingBranch, setIsSwitchingBranch] = useState(false);
   const [communitySettings, setCommunitySettings] = useState<CommunitySettings | null>(null);
+
+  // PWA Install hook and helpers
+  const { isInstallable, isInstalled, isIOS, isInAppBrowser, triggerInstall } = usePWAInstall();
+  const [pwaInstallSuccess, setPwaInstallSuccess] = useState<string | null>(null);
+  const [pwaCopied, setPwaCopied] = useState<boolean>(false);
 
   // Security & Password states
   const [securityPassword, setSecurityPassword] = useState('');
@@ -332,6 +343,38 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <span>قائمة أصدقائي على أريكسون</span>
                 </div>
                 <ChevronLeft className="w-4 h-4 text-slate-400" />
+              </button>
+
+              {/* PWA App Install Button */}
+              <button
+                id="open-pwa-install-btn"
+                type="button"
+                onClick={() => {
+                  if (isInstallable) {
+                    triggerInstall();
+                  } else {
+                    setActiveSubView('install');
+                  }
+                }}
+                className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors text-sm font-semibold cursor-pointer"
+              >
+                <div className="flex items-center gap-2.5 text-slate-700 dark:text-slate-300">
+                  <Smartphone className="w-4 h-4 text-purple-500" />
+                  <span>تثبيت تطبيق Arixon على جهازك</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  {isInstalled ? (
+                    <span className="text-[10px] bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-400 px-2.5 py-0.5 rounded-full font-bold">
+                      مثبّت ✅
+                    </span>
+                  ) : (
+                    <span className="text-[10px] bg-purple-100 text-purple-700 dark:bg-purple-950/70 dark:text-purple-400 px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
+                      <Download className="w-3 h-3" />
+                      تثبيت
+                    </span>
+                  )}
+                  <ChevronLeft className="w-4 h-4 text-slate-400" />
+                </div>
               </button>
 
               <button
@@ -1123,6 +1166,163 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               type="button"
               onClick={() => setActiveSubView('main')}
               className="w-full py-2 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-xs hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer mt-1"
+            >
+              العودة للإعدادات
+            </button>
+          </div>
+        )}
+
+        {/* SUB-VIEW: PWA Install Guide & Trigger */}
+        {activeSubView === 'install' && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 pb-2 border-b border-slate-100 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => setActiveSubView('main')}
+                className="p-1 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 cursor-pointer"
+              >
+                <ChevronLeft className="w-5 h-5 rotate-180" />
+              </button>
+              <h3 className="font-bold text-sm sm:text-base text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                <Smartphone className="w-4 h-4 text-purple-500" />
+                <span>تثبيت تطبيق Arixon على جهازك</span>
+              </h3>
+            </div>
+
+            {/* If Already Installed */}
+            {isInstalled ? (
+              <div className="p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 space-y-2 text-center">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-100 dark:bg-emerald-900/60 text-emerald-600 flex items-center justify-center mx-auto">
+                  <Check className="w-5 h-5" />
+                </div>
+                <h4 className="font-bold text-sm text-emerald-900 dark:text-emerald-200">
+                  التطبيق مثبّت بنجاح على جهازك ✅
+                </h4>
+                <p className="text-xs text-emerald-800/80 dark:text-emerald-300 leading-relaxed">
+                  أنت تستخدم المنصة كتطبيق مثبت (PWA). يمكنك تشغيله في أي وقت مباشرة من شاشتك الرئيسية للحصول على أقصى سرعة وأداء مستقر.
+                </p>
+              </div>
+            ) : isInAppBrowser ? (
+              /* In-App Browser Warning */
+              <div className="p-4 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 space-y-3">
+                <div className="flex items-center gap-2 text-amber-800 dark:text-amber-300 font-bold text-xs">
+                  <Info className="w-4 h-4 text-amber-600" />
+                  <span>تنبيه: متصفح داخلي (تطبيق وسائط)</span>
+                </div>
+                <p className="text-xs text-amber-900/80 dark:text-amber-200/90 leading-relaxed">
+                  أنت تتصفح أريكسون حالياً من داخل متصفح تطبيق مثل (Instagram أو TikTok أو WhatsApp). هذه المتصفحات تمنع تثبيت التطبيقات وحفظ الجلسات تلقائياً.
+                </p>
+                <div className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-amber-200 dark:border-amber-900 text-[11px] text-slate-600 dark:text-slate-300 space-y-1">
+                  <p className="font-bold">الحل السريع:</p>
+                  <p>1. اضغط على أيقونة النقاط الثلاث (⋮) أو (···) أعلى أو أسفل الشاشة.</p>
+                  <p>2. اختر "فتح في Chrome" أو "فتح في Safari".</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (navigator.clipboard) {
+                      navigator.clipboard.writeText(window.location.origin);
+                      setPwaCopied(true);
+                      setTimeout(() => setPwaCopied(false), 2500);
+                    }
+                  }}
+                  className="w-full py-2 px-3 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>{pwaCopied ? 'تم نسخ الرابط بنجاح!' : 'نسخ رابط المنصة'}</span>
+                </button>
+              </div>
+            ) : isIOS ? (
+              /* iOS Safari Guide */
+              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 space-y-3">
+                <div className="flex items-center gap-2 text-slate-900 dark:text-white font-bold text-xs">
+                  <Share2 className="w-4 h-4 text-blue-500" />
+                  <span>طريقة التثبيت على أجهزة iPhone و iPad (Safari):</span>
+                </div>
+                <div className="space-y-2 text-xs text-slate-600 dark:text-slate-300">
+                  <div className="flex items-start gap-2.5 p-2 rounded-xl bg-white dark:bg-slate-900/80 border border-slate-100 dark:border-slate-800">
+                    <span className="w-5 h-5 rounded-full bg-blue-100 dark:bg-blue-900/50 text-blue-600 font-bold text-[11px] flex items-center justify-center shrink-0">1</span>
+                    <span>اضغط على زر <strong>المشاركة (Share ⎋)</strong> في أسفل شاشة متصفح Safari.</span>
+                  </div>
+                  <div className="flex items-start gap-2.5 p-2 rounded-xl bg-white dark:bg-slate-900/80 border border-slate-100 dark:border-slate-800">
+                    <span className="w-5 h-5 rounded-full bg-blue-100 dark:bg-blue-900/50 text-blue-600 font-bold text-[11px] flex items-center justify-center shrink-0">2</span>
+                    <span>مرر القائمة لأسفل واختر <strong>"إضافة إلى الشاشة الرئيسية" (Add to Home Screen ⊞)</strong>.</span>
+                  </div>
+                  <div className="flex items-start gap-2.5 p-2 rounded-xl bg-white dark:bg-slate-900/80 border border-slate-100 dark:border-slate-800">
+                    <span className="w-5 h-5 rounded-full bg-blue-100 dark:bg-blue-900/50 text-blue-600 font-bold text-[11px] flex items-center justify-center shrink-0">3</span>
+                    <span>اضغط <strong>"إضافة" (Add)</strong> في أعلى الزاوية ليظهر تطبيق Arixon مباشرة بجانب تطبيقاتك.</span>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              /* Android / Desktop Install */
+              <div className="p-4 rounded-2xl bg-purple-50/60 dark:bg-purple-950/30 border border-purple-200/80 dark:border-purple-900/50 space-y-3">
+                <div className="text-center space-y-1">
+                  <div className="w-12 h-12 rounded-2xl bg-purple-100 dark:bg-purple-900/50 text-purple-600 dark:text-purple-300 flex items-center justify-center mx-auto mb-2">
+                    <Download className="w-6 h-6" />
+                  </div>
+                  <h4 className="font-bold text-sm text-slate-900 dark:text-white">
+                    تثبيت تطبيق Arixon الآن
+                  </h4>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    احصل على تجربة سريعة وخفيفة بحجم أقل من 1 ميجابايت مع شاشة كاملة وتنبيهات دراسية.
+                  </p>
+                </div>
+
+                {isInstallable ? (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const res = await triggerInstall();
+                      if (res === 'accepted') {
+                        setPwaInstallSuccess('تم بدء تثبيت التطبيق بنجاح!');
+                      }
+                    }}
+                    className="w-full py-3 px-4 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-all shadow-md shadow-purple-500/20 cursor-pointer active:scale-[0.98]"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>تثبيت التطبيق على هاتفك</span>
+                  </button>
+                ) : (
+                  <div className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs text-slate-600 dark:text-slate-300 space-y-1 text-center">
+                    <p className="font-semibold">إذا لم يظهر زر التثبيت المباشر:</p>
+                    <p className="text-[11px] text-slate-400">
+                      اضغط على قائمة المتصفح (⋮) في أعلى زاوية الشاشة، ثم اختر <strong>"تثبيت التطبيق"</strong> أو <strong>"إضافة إلى الشاشة الرئيسية"</strong>.
+                    </p>
+                  </div>
+                )}
+
+                {pwaInstallSuccess && (
+                  <div className="p-2.5 rounded-xl bg-emerald-100 text-emerald-800 text-xs text-center font-bold">
+                    {pwaInstallSuccess}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Features of App */}
+            <div className="p-3.5 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-800 space-y-2 text-xs">
+              <span className="font-bold text-slate-800 dark:text-slate-200 block">مميزات تثبيت تطبيق أريكسون:</span>
+              <ul className="space-y-1.5 text-slate-600 dark:text-slate-400 text-[11px]">
+                <li className="flex items-center gap-1.5">
+                  <Check className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                  <span>شاشة كاملة مريحة للعين بدون أشرطة المتصفح المزدحمة.</span>
+                </li>
+                <li className="flex items-center gap-1.5">
+                  <Check className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                  <span>سرعة استجابة أعلى وتخزين مؤقت ذكي لواجهة الامتحانات.</span>
+                </li>
+                <li className="flex items-center gap-1.5">
+                  <Check className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                  <span>تنبيهات فورية بجديد الامتحانات الوزارية والتحديات التنافسية.</span>
+                </li>
+              </ul>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setActiveSubView('main')}
+              className="w-full py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 font-bold text-xs hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors cursor-pointer mt-1"
             >
               العودة للإعدادات
             </button>

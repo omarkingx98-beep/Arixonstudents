@@ -310,9 +310,9 @@ export async function saveExamWithValidation(
     }
   }
 
-  // 1. Write exam document
+  // 1. Write exam document (strictly stripping any student attempt fields)
   const examDocRef = doc(db, 'exams', examId);
-  const cleanExam = sanitizeFirestoreData({
+  const examPayload: any = sanitizeFirestoreData({
     ...examData,
     id: examId,
     questionCount: questions.length,
@@ -320,7 +320,12 @@ export async function saveExamWithValidation(
     createdAt: examData.createdAt || now,
     createdBy: examData.createdBy || auth.currentUser?.email || 'admin',
   });
-  await setDoc(examDocRef, cleanExam, { merge: true });
+  delete examPayload.userAttemptStatus;
+  delete examPayload.userScore;
+  delete examPayload.userLastAttemptId;
+  delete examPayload.score;
+  delete examPayload.completed;
+  await setDoc(examDocRef, examPayload, { merge: true });
 
   // 2. Write questions & protected answer keys subcollections
   for (let i = 0; i < questions.length; i++) {

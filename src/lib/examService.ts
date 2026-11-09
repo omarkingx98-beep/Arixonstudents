@@ -223,6 +223,16 @@ export async function getExamsList(
         id: docSnapshot.id,
       };
 
+      // Account Isolation: Strictly purge any user attempt status or score leaked on exam documents
+      delete (examObj as any).userAttemptStatus;
+      delete (examObj as any).userScore;
+      delete (examObj as any).userLastAttemptId;
+      delete (examObj as any).score;
+      delete (examObj as any).completed;
+      examObj.userAttemptStatus = 'not_started';
+      examObj.userScore = undefined;
+      examObj.userLastAttemptId = undefined;
+
       // Canonical override for official ministerial exams to ensure 100% accurate subject and points
       if (examObj.id === ISLAMIC_EXAM_ID || examObj.id === 'exam_islamic_tw2009_01' || examObj.title?.includes('التربية الإسلامية')) {
         examObj.subject = 'islamic_studies';
@@ -366,6 +376,13 @@ export async function getExamsList(
       }
 
       const examObj: Exam = { ...officialExam };
+      delete (examObj as any).userAttemptStatus;
+      delete (examObj as any).userScore;
+      delete (examObj as any).userLastAttemptId;
+      examObj.userAttemptStatus = 'not_started';
+      examObj.userScore = undefined;
+      examObj.userLastAttemptId = undefined;
+
       if (currentUserId) {
         let att = userSubmittedAttempts[examObj.id];
         if (!att && typeof window !== 'undefined') {

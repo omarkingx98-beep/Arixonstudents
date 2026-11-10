@@ -1,14 +1,18 @@
 {
-  "name": "Arixon",
+  "id": "/",
+  "name": "Arixon - توجيهي 2009",
   "short_name": "Arixon",
   "description": "منصة الامتحانات والمسابقات التعليمية التنافسية لطلبة التوجيهي 2009",
-  "start_url": "/",
+  "start_url": "/?source=pwa",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#090d16",
   "theme_color": "#090d16",
   "orientation": "portrait-primary",
   "lang": "ar",
   "dir": "rtl",
+  "prefer_related_applications": false,
+  "categories": ["education"],
   "icons": [
     {
       "src": "/favicon-32x32.png",
@@ -31,19 +35,19 @@
       "type": "image/png"
     },
     {
-      "src": "/favicon-192x192.png",
+      "src": "/icons/icon-192x192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/favicon-512x512.png",
+      "src": "/icons/icon-512x512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/favicon-512x512.png",
+      "src": "/icons/icon-maskable-512x512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"

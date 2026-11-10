@@ -55,6 +55,25 @@ export const INITIAL_DYNAMIC_ANNOUNCEMENTS: DynamicAnnouncement[] = [
     createdBy: 'admin',
   },
   {
+    id: 'ad_banner_pwa_install',
+    type: 'image_ad',
+    title: 'حمّل تطبيق Arixon',
+    content: 'ادخل بضغطة واحدة من شاشة جوالك — تجربة تطبيق متكاملة وتصفح سريع.',
+    imageUrl: '/banners/pwa_install_banner.webp',
+    imageAlt: 'حمّل تطبيق Arixon',
+    linkUrl: '/install',
+    linkType: 'internal',
+    linkLabel: 'اضغط للتثبيت',
+    openInNewTab: false,
+    priority: 'high',
+    active: true,
+    order: 1,
+    targetAudience: 'مشترك',
+    createdAt: '2026-10-25T11:00:00.000Z',
+    updatedAt: new Date().toISOString(),
+    createdBy: 'admin',
+  },
+  {
     id: 'ad_banner_whatsapp_community',
     type: 'image_ad',
     title: 'انضم لمجتمع Arixon على واتساب',
@@ -67,7 +86,7 @@ export const INITIAL_DYNAMIC_ANNOUNCEMENTS: DynamicAnnouncement[] = [
     openInNewTab: true,
     priority: 'high',
     active: true,
-    order: 1,
+    order: 2,
     targetAudience: 'مشترك',
     createdAt: '2026-10-25T12:00:00.000Z',
     updatedAt: new Date().toISOString(),
@@ -279,6 +298,17 @@ export function subscribeToActiveImageAds(
       snapshot.forEach((d) => {
         list.push({ ...(d.data() as DynamicAnnouncement), id: d.id });
       });
+
+      const hasPwaBanner = list.some(
+        (i) => i.id === 'ad_banner_pwa_install' || (i.linkUrl && i.linkUrl.includes('install')) || (i.imageAlt && i.imageAlt.includes('تطبيق Arixon'))
+      );
+      if (!hasPwaBanner) {
+        const pwaBanner = INITIAL_DYNAMIC_ANNOUNCEMENTS.find((i) => i.id === 'ad_banner_pwa_install');
+        if (pwaBanner) {
+          list.unshift(pwaBanner);
+        }
+      }
+
       list.sort((a, b) => (a.order ?? 99) - (b.order ?? 99));
       callback(filterUnexpired(list));
     },

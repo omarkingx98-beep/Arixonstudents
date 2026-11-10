@@ -4,6 +4,7 @@ import { ThemeProvider } from './context/ThemeContext';
 import { AdminProvider, useAdmin } from './context/AdminContext';
 import { WelcomeAuth } from './components/WelcomeAuth';
 import { AuthActionPage } from './components/AuthActionPage';
+import { InstallPage } from './components/InstallPage';
 import { OnboardingModal } from './components/OnboardingModal';
 import { MandatoryBranchModal } from './components/MandatoryBranchModal';
 import { AnnouncementTicker } from './components/AnnouncementTicker';
@@ -57,6 +58,13 @@ function MainAppShell() {
     const path = window.location.pathname;
     const params = new URLSearchParams(window.location.search);
     return path.includes('/auth/action') || path.includes('/__/auth/action') || (params.has('mode') && params.has('oobCode'));
+  });
+
+  // Dedicated PWA /install view state
+  const [isInstallPage, setIsInstallPage] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    const path = window.location.pathname.replace(/\/$/, '');
+    return path === '/install' || window.location.hash === '#install';
   });
   const [welcomeInitialMode, setWelcomeInitialMode] = useState<'signin' | 'signup' | 'forgot'>('signin');
 
@@ -208,17 +216,29 @@ function MainAppShell() {
     }
   };
 
-  // URL hash sync for admin navigation
+  // URL sync for navigation (Admin and /install PWA page)
   useEffect(() => {
-    const handleHashChange = () => {
+    const handleUrlChange = () => {
       if (window.location.hash === '#admin') {
         setIsAdminModeActive(true);
       } else {
         setIsAdminModeActive(false);
       }
+
+      const path = window.location.pathname.replace(/\/$/, '');
+      if (path === '/install' || window.location.hash === '#install') {
+        setIsInstallPage(true);
+      } else {
+        setIsInstallPage(false);
+      }
     };
-    window.addEventListener('hashchange', handleHashChange);
-    return () => window.removeEventListener('hashchange', handleHashChange);
+
+    window.addEventListener('hashchange', handleUrlChange);
+    window.addEventListener('popstate', handleUrlChange);
+    return () => {
+      window.removeEventListener('hashchange', handleUrlChange);
+      window.removeEventListener('popstate', handleUrlChange);
+    };
   }, []);
 
   // Account Isolation: If student is not an admin, ensure they never get trapped in admin mode
@@ -258,6 +278,21 @@ function MainAppShell() {
     setIsAdminModeActive(false);
   };
 
+  const handleNavigate = (tab: NavigationTab) => {
+    if (tab === 'install') {
+      if (typeof window !== 'undefined') {
+        window.history.pushState(null, '', '/install');
+      }
+      setIsInstallPage(true);
+      return;
+    }
+    if (tab !== 'exams') {
+      setExamInitialAttempt(null);
+      setExamInitialViewMode('list');
+    }
+    setCurrentTab(tab);
+  };
+
   // 0. Dedicated Firebase Auth Action Page (Reset Password, Verify Email, Recover Email)
   if (isAuthActionView) {
     return (
@@ -275,6 +310,20 @@ function MainAppShell() {
           }
           setIsAuthActionView(false);
           setWelcomeInitialMode('forgot');
+        }}
+      />
+    );
+  }
+
+  // 0b. Dedicated PWA /install Page (Public, accessible without login)
+  if (isInstallPage) {
+    return (
+      <InstallPage
+        onBackToApp={() => {
+          if (typeof window !== 'undefined') {
+            window.history.replaceState(null, '', '/');
+          }
+          setIsInstallPage(false);
         }}
       />
     );
@@ -383,13 +432,7 @@ function MainAppShell() {
       {/* Top Header */}
       <Header 
         currentTab={currentTab} 
-        onTabChange={(tab) => {
-          if (tab !== 'exams') {
-            setExamInitialAttempt(null);
-            setExamInitialViewMode('list');
-          }
-          setCurrentTab(tab);
-        }} 
+        onTabChange={handleNavigate} 
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenTutorial={() => setIsTutorialOpen(true)}
         onOpenAdmin={handleOpenAdmin}
@@ -403,13 +446,7 @@ function MainAppShell() {
       <SideMenuDrawer
         isOpen={isSideMenuOpen}
         onClose={() => setIsSideMenuOpen(false)}
-        onNavigate={(tab) => {
-          if (tab !== 'exams') {
-            setExamInitialAttempt(null);
-            setExamInitialViewMode('list');
-          }
-          setCurrentTab(tab);
-        }}
+        onNavigate={handleNavigate}
         onOpenTutorial={() => setIsTutorialOpen(true)}
         onOpenUserSearch={() => setIsUserSearchOpen(true)}
         onOpenSettings={() => setIsSettingsOpen(true)}
@@ -428,7 +465,7 @@ function MainAppShell() {
       <main className="flex-1 w-full max-w-5xl mx-auto px-4 sm:px-6 pt-6 pb-24 md:pb-12">
         {currentTab === 'home' && (
           <HomeDashboard 
-            onNavigate={setCurrentTab} 
+            onNavigate={handleNavigate} 
             onOpenTutorial={() => setIsTutorialOpen(true)}
             onOpenUserSearch={() => setIsUserSearchOpen(true)}
             onOpenSecuritySettings={() => {
@@ -468,13 +505,7 @@ function MainAppShell() {
       {/* Bottom Navigation for Mobile */}
       <BottomNavigation 
         currentTab={currentTab} 
-        onTabChange={(tab) => {
-          if (tab !== 'exams') {
-            setExamInitialAttempt(null);
-            setExamInitialViewMode('list');
-          }
-          setCurrentTab(tab);
-        }} 
+        onTabChange={handleNavigate} 
       />
 
       {/* Global Settings Modal */}

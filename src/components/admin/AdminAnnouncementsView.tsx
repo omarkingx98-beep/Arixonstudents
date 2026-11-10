@@ -84,6 +84,7 @@ export const AdminAnnouncementsView: React.FC = () => {
 
   // Preset images
   const PRESET_IMAGES = [
+    { label: 'تثبيت تطبيق Arixon (PWA)', url: '/banners/pwa_install_banner.webp' },
     { label: 'مجتمع واتساب الرسمي', url: '/banners/whatsapp_community_banner.webp' },
     { label: 'امتحان الفيزياء (الزخم)', url: '/banners/banner_1.jpg' },
     { label: 'امتحان اللغة العربية', url: '/banners/banner_2.jpg' },

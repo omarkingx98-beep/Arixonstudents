@@ -7,6 +7,46 @@
     <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#090d16" media="(prefers-color-scheme: dark)" />
 
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Arixon" />
+
+    <!-- PWA Global Early Listener (Captures beforeinstallprompt immediately on boot) -->
+    <script>
+      (function() {
+        var isStandalone = window.matchMedia('(display-mode: standalone)').matches ||
+          (window.navigator && window.navigator.standalone === true) ||
+          document.referrer.includes('android-app://');
+
+        window.__arixonPwaState = {
+          deferredPrompt: null,
+          isInstalled: isStandalone,
+          promptTimestamp: null,
+          listeners: new Set(),
+        };
+
+        window.addEventListener('beforeinstallprompt', function(e) {
+          e.preventDefault();
+          window.__arixonPwaState.deferredPrompt = e;
+          window.__arixonPwaState.promptTimestamp = Date.now();
+          window.dispatchEvent(new CustomEvent('arixon:pwa-prompt-ready', { detail: e }));
+          window.__arixonPwaState.listeners.forEach(function(fn) {
+            try { fn(e); } catch(err) {}
+          });
+        });
+
+        window.addEventListener('appinstalled', function() {
+          window.__arixonPwaState.isInstalled = true;
+          window.__arixonPwaState.deferredPrompt = null;
+          window.dispatchEvent(new CustomEvent('arixon:pwa-app-installed'));
+          window.__arixonPwaState.listeners.forEach(function(fn) {
+            try { fn(null); } catch(err) {}
+          });
+        });
+      })();
+    </script>
+
     <!-- Site Identity -->
     <title>Arixon</title>
     <meta name="description" content="Arixon - منصة الامتحانات والمسابقات التعليمية التنافسية لطلبة التوجيهي 2009" />
@@ -18,14 +58,20 @@
     <link rel="icon" type="image/png" sizes="48x48" href="/favicon-48x48.png" />
     <link rel="icon" type="image/png" sizes="96x96" href="/favicon-96x96.png" />
     <link rel="icon" type="image/png" sizes="144x144" href="/favicon-144x144.png" />
-    <link rel="icon" type="image/png" sizes="192x192" href="/favicon-192x192.png" />
-    <link rel="icon" type="image/png" sizes="512x512" href="/favicon-512x512.png" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192x192.png" />
+    <link rel="icon" type="image/png" sizes="512x512" href="/icons/icon-512x512.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <script>
       if ('serviceWorker' in navigator && window.location.protocol.startsWith('http')) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js').catch(() => {});
+        window.addEventListener('load', function() {
+          navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' })
+            .then(function(reg) {
+              if (reg && reg.update) reg.update();
+            })
+            .catch(function(err) {
+              console.warn('[SW Registration Error]', err);
+            });
         });
       }
     </script>

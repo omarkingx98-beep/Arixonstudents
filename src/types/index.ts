@@ -195,7 +195,7 @@ export interface LeaderboardEntry {
   isCurrentUser?: boolean;
 }
 
-export type NavigationTab = 'home' | 'exams' | 'leaderboard' | 'profile';
+export type NavigationTab = 'home' | 'exams' | 'leaderboard' | 'profile' | 'install';
 
 // ==========================================
 // Phase 3: Admin & Security Models

@@ -22,12 +22,22 @@ export const PROMO_SETTINGS_CACHE_KEY = 'arixon_promo_settings_cache_v1';
 // Initial default banners from the user's provided images in public/banners/
 export const INITIAL_PROMO_BANNERS: PromoBanner[] = [
   {
+    id: 'initial_banner_pwa_install',
+    imageUrl: '/banners/pwa_install_banner.webp',
+    alt: 'حمّل تطبيق Arixon',
+    linkType: 'internal',
+    linkTarget: '/install',
+    order: 1,
+    active: true,
+    createdAt: new Date().toISOString(),
+  },
+  {
     id: 'initial_banner_1',
     imageUrl: '/banners/banner_1.jpg',
     alt: 'امتحان الفيزياء متاح الآن — الزخم الخطي والدفع لجيل 2009',
     linkType: 'internal',
     linkTarget: 'exams',
-    order: 1,
+    order: 2,
     active: true,
     createdAt: new Date().toISOString(),
   },
@@ -37,7 +47,7 @@ export const INITIAL_PROMO_BANNERS: PromoBanner[] = [
     alt: 'انضم لمجتمع Arixon على واتساب',
     linkType: 'external',
     linkTarget: 'https://chat.whatsapp.com/FQ39q5zXeZq8DJeeuPJNpu',
-    order: 2,
+    order: 3,
     active: true,
     createdAt: new Date().toISOString(),
   },
@@ -148,15 +158,23 @@ export async function getActivePromoBanners(): Promise<PromoBanner[]> {
         banners.push({ ...(d.data() as PromoBanner), id: d.id });
       });
 
+      const hasPwaBanner = banners.some(
+        (b) => b.id === 'initial_banner_pwa_install' || (b.linkTarget && b.linkTarget.includes('install')) || (b.alt && b.alt.includes('تطبيق Arixon'))
+      );
+      if (!hasPwaBanner) {
+        banners.unshift(INITIAL_PROMO_BANNERS[0]);
+      }
+
       const hasCommunityBanner = banners.some(
         (b) => b.id === 'initial_banner_whatsapp_community' || (b.alt && b.alt.includes('مجتمع Arixon'))
       );
       if (!hasCommunityBanner) {
-        banners.splice(1, 0, INITIAL_PROMO_BANNERS[1]);
-        banners.forEach((b, idx) => {
-          b.order = idx + 1;
-        });
+        banners.splice(1, 0, INITIAL_PROMO_BANNERS[2]);
       }
+
+      banners.forEach((b, idx) => {
+        b.order = idx + 1;
+      });
 
       const sanitized = banners.map(b => {
         if (

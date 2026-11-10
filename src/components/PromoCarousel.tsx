@@ -215,7 +215,12 @@ export const PromoCarousel: React.FC<PromoCarouselProps> = ({ onNavigate }) => {
     }
 
     if (banner.linkType === 'internal') {
-      const target = banner.linkTarget.trim().replace(/^\//, '') as NavigationTab;
+      const clean = banner.linkTarget.trim().replace(/^\//, '');
+      if (clean === 'install' || clean.endsWith('/install')) {
+        if (onNavigate) onNavigate('install');
+        return;
+      }
+      const target = clean as NavigationTab;
       if (onNavigate) {
         onNavigate(target);
       }

@@ -947,6 +947,21 @@ async function startServer() {
     }
   });
 
+  // Serve public directory statically so icons, manifest, sw.js, and banners always return correct MIME types
+  const publicDir = path.join(process.cwd(), 'public');
+  app.use(express.static(publicDir, {
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith('sw.js')) {
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+        res.setHeader('Service-Worker-Allowed', '/');
+      } else if (filePath.endsWith('manifest.webmanifest') || filePath.endsWith('manifest.json')) {
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        res.setHeader('Content-Type', 'application/manifest+json; charset=utf-8');
+      }
+    }
+  }));
+
   // Vite middleware in dev or static files in production
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({

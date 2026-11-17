@@ -93,34 +93,105 @@ export async function getRestDoc(docPath: string, idToken?: string): Promise<Rec
 }
 
 /**
- * Fetch a subcollection of documents via REST API
+ * Fetch a subcollection or collection of documents via REST API (paginated, up to 1500 docs)
  */
 export async function getRestCollection(
   collectionPath: string,
   idToken?: string
 ): Promise<Array<{ id: string; data: Record<string, any> }>> {
-  const url = buildRestUrl(collectionPath);
   const headers: Record<string, string> = {
     'Accept': 'application/json',
   };
   if (idToken) headers['Authorization'] = `Bearer ${idToken}`;
 
+  const results: Array<{ id: string; data: Record<string, any> }> = [];
+  let pageToken: string | undefined = undefined;
+  let pages = 0;
+
   try {
-    const res = await fetch(url, { headers });
-    if (!res.ok) {
-      console.warn(`[firestoreRest] Failed listing ${collectionPath}, status: ${res.status}`);
-      return [];
-    }
-    const json = await res.json();
-    const rawDocs = json.documents || [];
-    const results: Array<{ id: string; data: Record<string, any> }> = [];
-    for (const d of rawDocs) {
-      const parsed = parseFirestoreDoc(d);
-      if (parsed) results.push(parsed);
-    }
+    do {
+      const extraParts = ['pageSize=300'];
+      if (pageToken) {
+        extraParts.push(`pageToken=${encodeURIComponent(pageToken)}`);
+      }
+      const url = buildRestUrl(collectionPath, extraParts.join('&'));
+      const res = await fetch(url, { headers });
+      if (!res.ok) {
+        console.warn(`[firestoreRest] Failed listing ${collectionPath}, status: ${res.status}`);
+        break;
+      }
+      const json: any = await res.json();
+      const rawDocs = json.documents || [];
+      for (const d of rawDocs) {
+        const parsed = parseFirestoreDoc(d);
+        if (parsed) results.push(parsed);
+      }
+      pageToken = json.nextPageToken;
+      pages++;
+    } while (pageToken && pages < 5);
+
     return results;
   } catch (err: any) {
     console.warn(`[firestoreRest] Error listing collection ${collectionPath}:`, err?.message);
+    return results;
+  }
+}
+
+/**
+ * Query a root collection by single field equality via Firestore REST :runQuery
+ */
+export async function queryRestByField(
+  collectionId: string,
+  fieldPath: string,
+  value: string,
+  idToken?: string,
+  limit = 100
+): Promise<Array<{ id: string; data: Record<string, any> }>> {
+  const apiKey = firebaseAppConfig.apiKey;
+  const qs = apiKey ? `?key=${encodeURIComponent(apiKey)}` : '';
+  const url = `${BASE_URL}:runQuery${qs}`;
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'Accept': 'application/json',
+  };
+  if (idToken) headers['Authorization'] = `Bearer ${idToken}`;
+
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        structuredQuery: {
+          from: [{ collectionId }],
+          where: {
+            fieldFilter: {
+              field: { fieldPath },
+              op: 'EQUAL',
+              value: { stringValue: value },
+            },
+          },
+          limit,
+        },
+      }),
+    });
+
+    if (!res.ok) {
+      console.warn(`[firestoreRest] runQuery failed for ${collectionId}.${fieldPath}, status: ${res.status}`);
+      return [];
+    }
+
+    const json: any = await res.json();
+    const rows = Array.isArray(json) ? json : [];
+    const results: Array<{ id: string; data: Record<string, any> }> = [];
+    for (const row of rows) {
+      if (row && row.document) {
+        const parsed = parseFirestoreDoc(row.document);
+        if (parsed) results.push(parsed);
+      }
+    }
+    return results;
+  } catch (err: any) {
+    console.warn(`[firestoreRest] Error runQuery ${collectionId}:`, err?.message);
     return [];
   }
 }
@@ -160,3 +231,61 @@ export async function patchRestDoc(
     return false;
   }
 }
+
+export interface RestBatchWriteItem {
+  docPath: string; // relative to documents/
+  data: Record<string, any>;
+  fieldPaths?: string[]; // if provided, acts as partial updateMask; if omitted, full overwrite
+}
+
+/**
+ * Commit multiple writes atomically in a single Firestore REST :commit batch
+ */
+export async function commitRestBatch(
+  writes: RestBatchWriteItem[],
+  idToken?: string
+): Promise<{ ok: boolean; error?: string }> {
+  if (writes.length === 0) return { ok: true };
+  const apiKey = firebaseAppConfig.apiKey;
+  const qs = apiKey ? `?key=${encodeURIComponent(apiKey)}` : '';
+  const url = `https://firestore.googleapis.com/v1/projects/${firebaseAppConfig.projectId}/databases/(default)/documents:commit${qs}`;
+
+  const docPrefix = `projects/${firebaseAppConfig.projectId}/databases/(default)/documents`;
+  const formattedWrites = writes.map((w) => {
+    const fields: Record<string, any> = {};
+    for (const k of Object.keys(w.data)) {
+      fields[k] = encodeFirestoreValue(w.data[k]);
+    }
+    const writeObj: any = {
+      update: {
+        name: `${docPrefix}/${w.docPath}`,
+        fields,
+      },
+    };
+    if (w.fieldPaths && w.fieldPaths.length > 0) {
+      writeObj.updateMask = { fieldPaths: w.fieldPaths };
+    }
+    return writeObj;
+  });
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (idToken) headers['Authorization'] = `Bearer ${idToken}`;
+
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ writes: formattedWrites }),
+    });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => '');
+      return { ok: false, error: `HTTP ${res.status}: ${txt.slice(0, 200)}` };
+    }
+    return { ok: true };
+  } catch (err: any) {
+    return { ok: false, error: err?.message || 'Batch commit error' };
+  }
+}
+

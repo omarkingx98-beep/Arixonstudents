@@ -1,6 +1,7 @@
 import { FIRST_EXAM_ID, FIRST_EXAM_QUESTIONS, type QuestionWithKey } from './firstExamData.js';
 import { LITERARY_EXAM_ID, LITERARY_EXAM_QUESTIONS } from './literaryExamData.js';
 import { ISLAMIC_EXAM_ID, ISLAMIC_EXAM, ISLAMIC_EXAM_QUESTIONS } from './islamicExamData.js';
+import { CHEMISTRY_EXAM_ID, CHEMISTRY_EXAM, CHEMISTRY_EXAM_QUESTIONS } from './chemistryExamData.js';
 
 export const SURAH_YUSUF_EXAM_ID = 'exam_1792050086667_12ri';
 
@@ -36,4 +37,7 @@ export {
   ISLAMIC_EXAM_ID,
   ISLAMIC_EXAM,
   ISLAMIC_EXAM_QUESTIONS,
+  CHEMISTRY_EXAM_ID,
+  CHEMISTRY_EXAM,
+  CHEMISTRY_EXAM_QUESTIONS,
 };

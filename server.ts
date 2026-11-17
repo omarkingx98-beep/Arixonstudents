@@ -48,11 +48,14 @@ import { runTwoStageAiGeneration, runRegenerateSingleQuestion } from './server/a
 import { parseRawExamWithGemini } from './server/aiExamParser';
 import { gradeAndSubmitExam, autoCloseExpiredAttempts } from './server/examGrader';
 import { handleStaffAction, handleReportsAction } from './api/_lib/staffHandler';
+import { handleOfflinePackageRequest } from './api/_lib/offlinePackage';
 import { 
   performServiceHealthCheck, 
   auditExamIntegrity, 
   migrateEmbeddedExamsToFirestore, 
-  regradeExamAttemptsServer 
+  regradeExamAttemptsServer,
+  getExamGradingTrace,
+  syncExamKeysFromAdminReference,
 } from './api/_lib/adminIntegrity';
 let geminiClient: GoogleGenAI | null = null;
 function getGeminiClient(): GoogleGenAI {
@@ -396,6 +399,64 @@ async function startServer() {
       res.json(result);
     } catch (err: any) {
       res.status(500).json({ error: err?.message || 'Failed migrating embedded exams.' });
+    }
+  });
+
+  /**
+   * Read-Only Grading Trace Endpoint (تتبّع التصحيح)
+   */
+  app.get('/api/admin/grading-trace', async (req: Request, res: Response) => {
+    try {
+      const authUser = await verifyAuthToken(req);
+      const isPrimary = isPrimaryAdmin(authUser?.email);
+      const hasAdminRole = authUser?.role === 'super_admin' || authUser?.role === 'admin' || authUser?.role === 'content_editor';
+      if (!authUser || (!authUser.admin && !isPrimary && !hasAdminRole)) {
+        res.status(403).json({ error: 'Access restricted to authorized admins.' });
+        return;
+      }
+
+      const examId = (req.query.examId as string) || 'exam_1792050086667_12ri';
+      const attemptId = (req.query.attemptId as string) || undefined;
+      const idToken = req.headers.authorization?.split('Bearer ')[1]?.trim();
+      const trace = await getExamGradingTrace({ examId, attemptId, idToken });
+      res.json(trace);
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Failed running grading trace.' });
+    }
+  });
+
+  /**
+   * Sync Exam Answer Keys from Admin Reference Endpoint (Preview & Atomic Batch Confirm)
+   */
+  app.post('/api/admin/sync-exam-keys', async (req: Request, res: Response) => {
+    try {
+      const authUser = await verifyAuthToken(req);
+      const isPrimary = isPrimaryAdmin(authUser?.email);
+      const hasAdminRole = authUser?.role === 'super_admin' || authUser?.role === 'admin' || authUser?.role === 'content_editor';
+      if (!authUser || (!authUser.admin && !isPrimary && !hasAdminRole)) {
+        res.status(403).json({ error: 'Access restricted to authorized admins.' });
+        return;
+      }
+
+      const { examId, confirm = false, regradeAttempts = false, overrides = {} } = req.body || {};
+      if (!examId) {
+        res.status(400).json({ error: 'معرف الامتحان (examId) مطلوب.' });
+        return;
+      }
+
+      const idToken = req.headers.authorization?.split('Bearer ')[1]?.trim();
+      const result = await syncExamKeysFromAdminReference({
+        examId,
+        confirm: Boolean(confirm),
+        regradeAttempts: Boolean(regradeAttempts),
+        overrides,
+        idToken,
+        callerEmail: authUser.email,
+      });
+
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || 'Failed syncing exam keys.' });
     }
   });
 
@@ -795,6 +856,33 @@ async function startServer() {
   });
 
   /**
+   * Offline Exam Package Download Endpoint
+   */
+  app.all('/api/exams/offline-package', async (req: Request, res: Response) => {
+    try {
+      const authUser = await verifyAuthToken(req);
+      const idToken = req.headers.authorization?.split('Bearer ')[1]?.trim();
+      const examId = String(req.body?.examId || req.query?.examId || '');
+      const result = await handleOfflinePackageRequest({
+        examId,
+        authUser: authUser
+          ? {
+              uid: authUser.uid,
+              email: authUser.email,
+              admin: Boolean(authUser.admin || isPrimaryAdmin(authUser.email)),
+              role: authUser.role,
+            }
+          : null,
+        idToken,
+      });
+      res.status(result.status).json(result.body);
+    } catch (err: any) {
+      console.error('[API /api/exams/offline-package] Error:', err);
+      res.status(500).json({ ok: false, code: 'FIRESTORE_ERROR', message: err?.message || 'تعذر تنزيل حزمة الامتحان.' });
+    }
+  });
+
+  /**
    * Server-Side Exam Grading Endpoint
    * Fully authoritative: reads answerKeys, computes accurate score, handles idempotent points,
    * writes submitted status, correctCount, wrongCount, unansweredCount, durationUsed.
@@ -802,7 +890,18 @@ async function startServer() {
   app.post('/api/exams/grade', async (req: Request, res: Response) => {
     try {
       const authUser = await verifyAuthToken(req);
-      const { attemptId, answers, durationSeconds, examId, clientAttemptData, forceRegrade } = req.body || {};
+      const {
+        attemptId,
+        answers,
+        durationSeconds,
+        examId,
+        clientAttemptData,
+        forceRegrade,
+        source,
+        examVersion,
+        startedAt,
+        endedAt,
+      } = req.body || {};
       const rawExamId = examId || clientAttemptData?.examId || (attemptId ? (attemptId.split('_').slice(2, -1).join('_') || 'unknown') : 'unknown');
 
       if (!authUser || !authUser.uid) {
@@ -829,10 +928,24 @@ async function startServer() {
         return;
       }
 
-      const isCallerAdmin = authUser.admin || isPrimaryAdmin(authUser.email);
-      const effectiveUserId = (isCallerAdmin && clientAttemptData?.userId) ? clientAttemptData.userId : authUser.uid;
+      const isCallerAdmin = Boolean(authUser.admin || isPrimaryAdmin(authUser.email));
+      if (
+        clientAttemptData?.userId &&
+        clientAttemptData.userId !== authUser.uid &&
+        !(isCallerAdmin && forceRegrade)
+      ) {
+        res.status(403).json({
+          ok: false,
+          code: 'AUTH_FAILED',
+          message: 'غير مصرح لك بتسليم محاولة تعود لمستخدم آخر.',
+          step: 'OWNERSHIP_CHECK',
+        });
+        return;
+      }
 
-      console.log(`[API /api/exams/grade] Grading request received for attempt: ${attemptId}, user: ${effectiveUserId}, caller: ${authUser.uid}, examId: ${rawExamId}, answers count: ${Object.keys(answers || {}).length}, forceRegrade: ${Boolean(forceRegrade)}`);
+      const effectiveUserId = (isCallerAdmin && forceRegrade && clientAttemptData?.userId) ? clientAttemptData.userId : authUser.uid;
+
+      console.log(`[API /api/exams/grade] Grading request received for attempt: ${attemptId}, user: ${effectiveUserId}, caller: ${authUser.uid}, examId: ${rawExamId}, source: ${source || 'online'}, answers count: ${Object.keys(answers || {}).length}, forceRegrade: ${Boolean(forceRegrade)}`);
 
       const gradingResult = await gradeAndSubmitExam({
         attemptId,
@@ -843,6 +956,10 @@ async function startServer() {
         userEmail: authUser.email,
         idToken: req.headers.authorization?.split('Bearer ')[1]?.trim(),
         forceRegrade: Boolean(forceRegrade),
+        source: source === 'offline' ? 'offline' : 'online',
+        examVersion: examVersion !== undefined ? Number(examVersion) : undefined,
+        startedAt: typeof startedAt === 'string' ? startedAt : undefined,
+        endedAt: typeof endedAt === 'string' ? endedAt : undefined,
       });
 
       if (!gradingResult.ok) {

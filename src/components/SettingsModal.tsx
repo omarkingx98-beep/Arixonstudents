@@ -28,7 +28,9 @@ import {
   Download,
   Share2,
   ExternalLink,
-  Copy
+  Copy,
+  RefreshCw,
+  AlertTriangle
 } from 'lucide-react';
 import { DailyGoals } from './DailyGoals';
 import { getFriendsList } from '../lib/friendService';
@@ -36,6 +38,8 @@ import { updateStudentBranch } from '../lib/firebase';
 import { fetchCommunitySettings } from '../lib/communityService';
 import { usePWAInstall } from '../hooks/usePWAInstall';
 import { PWAInstallCard } from './PWAInstallCard';
+import { useOffline } from '../context/OfflineContext';
+import { getPendingSubmissionsForUser, type PendingSubmissionRecord } from '../lib/offlineDb';
 import type { FriendItem, CommunitySettings } from '../types';
 
 const WhatsAppIcon: React.FC<{ className?: string }> = ({ className = 'w-4 h-4 fill-current' }) => (
@@ -70,10 +74,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const { user, profile, signOut, refreshProfile, hasPasswordProvider, isGoogleUser, linkPassword, sendPasswordReset } = useAuth();
   const { theme, setTheme } = useTheme();
   const { isAdmin } = useAdmin();
+  const { isOnline, isSyncing, syncNow } = useOffline();
 
   const [activeSubView, setActiveSubView] = useState<'main' | 'privacy' | 'about' | 'goals' | 'friends' | 'developer' | 'security' | 'support' | 'install'>(initialSubView || 'main');
   const [selectedLanguage, setSelectedLanguage] = useState<'ar' | 'en'>('ar');
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [pendingLogoutList, setPendingLogoutList] = useState<PendingSubmissionRecord[] | null>(null);
+  const [logoutSyncMessage, setLogoutSyncMessage] = useState<string | null>(null);
   const [friends, setFriends] = useState<FriendItem[]>([]);
   const [isLoadingFriends, setIsLoadingFriends] = useState(false);
   const [isSwitchingBranch, setIsSwitchingBranch] = useState(false);
@@ -137,7 +144,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   };
 
-  const handleLogout = async () => {
+  const performSignOut = async () => {
     try {
       setIsLoggingOut(true);
       await signOut();
@@ -145,6 +152,37 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     } catch (err) {
       console.error(err);
       setIsLoggingOut(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    const uid = profile?.uid || user?.uid;
+    if (uid) {
+      const pending = await getPendingSubmissionsForUser(uid);
+      if (pending.length > 0) {
+        setLogoutSyncMessage(null);
+        setPendingLogoutList(pending);
+        return;
+      }
+    }
+    await performSignOut();
+  };
+
+  const handleSyncBeforeLogout = async () => {
+    if (!isOnline) {
+      setLogoutSyncMessage('أنت غير متصل بالإنترنت حالياً. يمكنك تسجيل الخروج وستبقى إجاباتك محفوظة ومعلّقة لحين عودة الاتصال.');
+      return;
+    }
+    setLogoutSyncMessage(null);
+    await syncNow(true);
+    const uid = profile?.uid || user?.uid;
+    const remaining = uid ? await getPendingSubmissionsForUser(uid) : [];
+    if (remaining.length === 0) {
+      setPendingLogoutList(null);
+      await performSignOut();
+    } else {
+      setPendingLogoutList(remaining);
+      setLogoutSyncMessage('تعذّرت مزامنة بعض المحاولات الآن. يمكنك إبقاءها معلّقة وتسجيل الخروج بأمان.');
     }
   };
 
@@ -1181,6 +1219,70 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           />
         )}
       </div>
+
+      {/* Pending Offline Submissions Guard Modal before Logout */}
+      {pendingLogoutList && pendingLogoutList.length > 0 && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/75 backdrop-blur-xs">
+          <div className="w-full max-w-sm rounded-3xl bg-white dark:bg-[#111625] border border-slate-200 dark:border-slate-800 p-6 shadow-2xl space-y-4 text-right">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-2xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div>
+                <h4 className="font-black text-sm text-slate-900 dark:text-white">
+                  توجد محاولات غير متزامنة ({pendingLogoutList.length})
+                </h4>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                  لديك نتائج امتحانات حُلّت بدون إنترنت ولم تُرسل للخادم بعد
+                </p>
+              </div>
+            </div>
+
+            {logoutSyncMessage && (
+              <div className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-[11px] text-amber-800 dark:text-amber-300 font-semibold">
+                {logoutSyncMessage}
+              </div>
+            )}
+
+            <div className="space-y-2 pt-1">
+              <button
+                type="button"
+                disabled={!isOnline || isSyncing || isLoggingOut}
+                onClick={handleSyncBeforeLogout}
+                className="w-full py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-bold flex items-center justify-center gap-2 cursor-pointer"
+              >
+                {isSyncing ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="w-4 h-4" />
+                )}
+                <span>مزامنة الآن ثم تسجيل الخروج</span>
+              </button>
+
+              <button
+                type="button"
+                disabled={isLoggingOut || isSyncing}
+                onClick={async () => {
+                  setPendingLogoutList(null);
+                  await performSignOut();
+                }}
+                className="w-full py-2.5 px-4 rounded-xl bg-red-50 hover:bg-red-100 dark:bg-red-950/40 dark:hover:bg-red-950/70 border border-red-200 dark:border-red-900/50 text-red-600 dark:text-red-400 text-xs font-bold cursor-pointer"
+              >
+                تسجيل الخروج مع إبقائها معلّقة
+              </button>
+
+              <button
+                type="button"
+                disabled={isLoggingOut || isSyncing}
+                onClick={() => setPendingLogoutList(null)}
+                className="w-full py-2 px-4 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-xs font-bold cursor-pointer"
+              >
+                إلغاء
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

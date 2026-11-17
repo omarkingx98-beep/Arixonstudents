@@ -15,7 +15,8 @@ import {
   AlertCircle,
   Megaphone,
   Radio,
-  ArrowLeft
+  ArrowLeft,
+  WifiOff
 } from 'lucide-react';
 import { 
   markNotificationAsRead, 
@@ -25,6 +26,8 @@ import {
 import { acceptFriendRequest, rejectFriendRequest, getFriendsList } from '../lib/friendService';
 import { subscribeToUserChats } from '../lib/chatService';
 import { useAuth } from '../context/AuthContext';
+import { useOffline } from '../context/OfflineContext';
+import { formatCachedTimeAr, getViewCache, saveViewCache } from '../lib/offlineDb';
 import { UserAvatar } from './UserAvatar';
 import type { AppNotification, BroadcastNotification, FriendItem, ChatConversation } from '../types';
 
@@ -51,6 +54,7 @@ export const NotificationsDrawer: React.FC<NotificationsDrawerProps> = ({
   onOpenExam,
 }) => {
   const { profile } = useAuth();
+  const { isOnline } = useOffline();
   const [activeTab, setActiveTab] = useState<'notifications' | 'messages' | 'friends'>('notifications');
   const [processingId, setProcessingId] = useState<string | null>(null);
 
@@ -62,20 +66,75 @@ export const NotificationsDrawer: React.FC<NotificationsDrawerProps> = ({
   const [friends, setFriends] = useState<FriendItem[]>([]);
   const [loadingFriends, setLoadingFriends] = useState(false);
 
-  // Subscribe to user chats for "الرسائل" tab
+  // Offline cached snapshot
+  const [cachedSnapshot, setCachedSnapshot] = useState<{
+    notifications: AppNotification[];
+    broadcasts: BroadcastNotification[];
+    chats: ChatConversation[];
+    friends: FriendItem[];
+  } | null>(null);
+  const [cachedUpdatedAt, setCachedUpdatedAt] = useState<string | null>(null);
+
+  // Save viewCache when online and data arrives
+  useEffect(() => {
+    if (!profile?.uid || !isOnline) return;
+    if (notifications.length > 0 || broadcasts.length > 0 || chats.length > 0 || friends.length > 0) {
+      void saveViewCache(profile.uid, 'notifications_drawer', {
+        notifications,
+        broadcasts,
+        chats,
+        friends,
+      });
+    }
+  }, [profile?.uid, isOnline, notifications, broadcasts, chats, friends]);
+
+  // Load offline snapshot when offline
   useEffect(() => {
     if (!isOpen || !profile?.uid) return;
+    if (isOnline) {
+      setCachedSnapshot(null);
+      setCachedUpdatedAt(null);
+      return;
+    }
+    let mounted = true;
+    getViewCache<{
+      notifications: AppNotification[];
+      broadcasts: BroadcastNotification[];
+      chats: ChatConversation[];
+      friends: FriendItem[];
+    }>(profile.uid, 'notifications_drawer').then((entry) => {
+      if (!mounted) return;
+      if (entry?.data) {
+        setCachedSnapshot(entry.data);
+        setCachedUpdatedAt(entry.updatedAt);
+        if (entry.data.chats?.length) setChats(entry.data.chats);
+        if (entry.data.friends?.length) setFriends(entry.data.friends);
+      } else {
+        setCachedSnapshot(null);
+        setCachedUpdatedAt(null);
+      }
+      setLoadingChats(false);
+      setLoadingFriends(false);
+    });
+    return () => {
+      mounted = false;
+    };
+  }, [isOpen, profile?.uid, isOnline]);
+
+  // Subscribe to user chats for "الرسائل" tab
+  useEffect(() => {
+    if (!isOpen || !profile?.uid || !isOnline) return;
     setLoadingChats(true);
     const unsub = subscribeToUserChats(profile.uid, (chatList) => {
       setChats(chatList);
       setLoadingChats(false);
     });
     return () => unsub();
-  }, [isOpen, profile?.uid]);
+  }, [isOpen, profile?.uid, isOnline]);
 
   // Load friends list for "الأصدقاء" tab
   useEffect(() => {
-    if (!isOpen || !profile?.uid) return;
+    if (!isOpen || !profile?.uid || !isOnline) return;
     let isMounted = true;
     setLoadingFriends(true);
 
@@ -91,7 +150,16 @@ export const NotificationsDrawer: React.FC<NotificationsDrawerProps> = ({
     return () => {
       isMounted = false;
     };
-  }, [isOpen, profile?.uid, activeTab]);
+  }, [isOpen, profile?.uid, activeTab, isOnline]);
+
+  const effectiveNotifications =
+    !isOnline && notifications.length === 0 && cachedSnapshot?.notifications
+      ? cachedSnapshot.notifications
+      : notifications;
+  const effectiveBroadcasts =
+    !isOnline && broadcasts.length === 0 && cachedSnapshot?.broadcasts
+      ? cachedSnapshot.broadcasts
+      : broadcasts;
 
   if (!isOpen) return null;
 
@@ -155,8 +223,8 @@ export const NotificationsDrawer: React.FC<NotificationsDrawerProps> = ({
     } catch {}
   };
 
-  const unreadDirectCount = notifications.filter((n) => !n.read).length;
-  const unreadBroadcastsCount = broadcasts.filter((b) => {
+  const unreadDirectCount = effectiveNotifications.filter((n) => !n.read).length;
+  const unreadBroadcastsCount = effectiveBroadcasts.filter((b) => {
     if (!lastReadBroadcastAt) return true;
     return new Date(b.createdAt).getTime() > new Date(lastReadBroadcastAt).getTime();
   }).length;
@@ -270,13 +338,29 @@ export const NotificationsDrawer: React.FC<NotificationsDrawerProps> = ({
           </div>
         </div>
 
+        {/* Offline Notice Banner */}
+        {!isOnline && (
+          <div className="px-4 py-2 bg-amber-50 dark:bg-amber-950/40 border-b border-amber-200 dark:border-amber-900/50 text-xs text-amber-800 dark:text-amber-300 flex items-center justify-between gap-2 shrink-0">
+            <span className="flex items-center gap-1.5 font-bold">
+              <WifiOff className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+              <span>يتطلب اتصالًا بالإنترنت</span>
+            </span>
+            {cachedUpdatedAt && (
+              <span className="text-[11px] flex items-center gap-1">
+                <Clock className="w-3 h-3" />
+                <span>آخر تحديث: {formatCachedTimeAr(cachedUpdatedAt)}</span>
+              </span>
+            )}
+          </div>
+        )}
+
         {/* Tab Content Area */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           {/* TAB 1: الإشعارات */}
           {activeTab === 'notifications' && (
             <div className="space-y-4">
               {/* Mark all as read button */}
-              {(unreadDirectCount > 0 || unreadBroadcastsCount > 0) && (
+              {isOnline && (unreadDirectCount > 0 || unreadBroadcastsCount > 0) && (
                 <div className="flex justify-end pb-1">
                   <button
                     onClick={handleMarkAllRead}
@@ -289,14 +373,14 @@ export const NotificationsDrawer: React.FC<NotificationsDrawerProps> = ({
               )}
 
               {/* SECTION A: Official Announcements & Broadcasts */}
-              {broadcasts.length > 0 && (
+              {effectiveBroadcasts.length > 0 && (
                 <div className="space-y-2.5">
                   <div className="flex items-center gap-1.5 text-xs font-bold text-amber-600 dark:text-amber-400 px-1">
                     <Megaphone className="w-3.5 h-3.5" />
                     <span>التعميمات والإعلانات الإدارية</span>
                   </div>
 
-                  {broadcasts.map((b) => {
+                  {effectiveBroadcasts.map((b) => {
                     const isUnread = !lastReadBroadcastAt || new Date(b.createdAt).getTime() > new Date(lastReadBroadcastAt).getTime();
                     return (
                       <div
@@ -359,14 +443,14 @@ export const NotificationsDrawer: React.FC<NotificationsDrawerProps> = ({
               )}
 
               {/* SECTION B: Direct Notifications */}
-              {notifications.length > 0 && (
+              {effectiveNotifications.length > 0 && (
                 <div className="space-y-2.5">
                   <div className="flex items-center gap-1.5 text-xs font-bold text-slate-600 dark:text-slate-400 px-1">
                     <Bell className="w-3.5 h-3.5" />
                     <span>التنبيهات المباشرة</span>
                   </div>
 
-                  {notifications.map((notif) => {
+                  {effectiveNotifications.map((notif) => {
                     const isFriendReq = notif.type === 'friend_request';
                     const isProcessing = processingId === notif.id;
 
@@ -461,16 +545,18 @@ export const NotificationsDrawer: React.FC<NotificationsDrawerProps> = ({
               )}
 
               {/* Empty state when NO broadcasts and NO notifications */}
-              {notifications.length === 0 && broadcasts.length === 0 && (
+              {effectiveNotifications.length === 0 && effectiveBroadcasts.length === 0 && (
                 <div className="py-24 text-center text-slate-400 text-xs space-y-3">
                   <div className="w-14 h-14 mx-auto rounded-3xl bg-slate-100 dark:bg-slate-800/60 flex items-center justify-center text-slate-400">
-                    <Bell className="w-7 h-7" />
+                    {!isOnline ? <WifiOff className="w-7 h-7 text-amber-500" /> : <Bell className="w-7 h-7" />}
                   </div>
                   <p className="font-bold text-slate-700 dark:text-slate-300 text-sm">
-                    لا توجد إشعارات حالياً
+                    {!isOnline ? 'يتطلب اتصالًا بالإنترنت' : 'لا توجد إشعارات حالياً'}
                   </p>
                   <p className="text-slate-400 text-xs max-w-xs mx-auto">
-                    ستظهر هنا كافة التعميمات الرسمية ونتائج الامتحانات وطلبات الصداقة الجديدة.
+                    {!isOnline
+                      ? 'لا توجد إشعارات محفوظة محلياً. سيتم تحميل التعميمات والتنبيهات فور عودة الاتصال.'
+                      : 'ستظهر هنا كافة التعميمات الرسمية ونتائج الامتحانات وطلبات الصداقة الجديدة.'}
                   </p>
                 </div>
               )}

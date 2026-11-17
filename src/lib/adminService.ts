@@ -47,6 +47,11 @@ import {
   ISLAMIC_EXAM_ID,
   ISLAMIC_EXAM_QUESTIONS,
 } from '../data/islamicExamData';
+import {
+  CHEMISTRY_EXAM,
+  CHEMISTRY_EXAM_ID,
+  CHEMISTRY_EXAM_QUESTIONS,
+} from '../data/chemistryQuantumExamData';
 
 export const PRIMARY_ADMIN_EMAIL = 'omarkingx99@gmail.com';
 export const PRIMARY_ADMIN_EMAILS = [
@@ -245,11 +250,14 @@ export async function fetchAllAdminExams(): Promise<Exam[]> {
     if (!exams.some(e => e.id === LITERARY_EXAM_ID)) {
       exams.push(LITERARY_EXAM);
     }
+    if (!exams.some(e => e.id === CHEMISTRY_EXAM_ID)) {
+      exams.push(CHEMISTRY_EXAM);
+    }
 
     return exams;
   } catch (err) {
     console.error('Error fetching admin exams:', err);
-    return [ISLAMIC_EXAM, FIRST_EXAM, LITERARY_EXAM];
+    return [ISLAMIC_EXAM, FIRST_EXAM, LITERARY_EXAM, CHEMISTRY_EXAM];
   }
 }
 
@@ -390,7 +398,7 @@ export async function getAdminExamQuestions(examId: string): Promise<Question[]>
 
   try {
     const qCol = collection(db, 'exams', examId, 'questions');
-    const qSnap = await getDocs(query(qCol, orderBy('order', 'asc')));
+    const qSnap = await getDocs(qCol);
 
     // Read answerKeys subcollection
     const keysMap = new Map<string, any>();
@@ -402,37 +410,53 @@ export async function getAdminExamQuestions(examId: string): Promise<Question[]>
       console.warn('[adminService] Notice reading answerKeys in getAdminExamQuestions:', kErr);
     }
 
+    const sortedDocs = [...qSnap.docs].sort((a, b) => {
+      const oa = typeof a.data().order === 'number' ? a.data().order : 999999;
+      const ob = typeof b.data().order === 'number' ? b.data().order : 999999;
+      return oa - ob;
+    });
+
+    const parseKey = (raw: any, opts: string[]): number | null => {
+      if (typeof raw === 'number' && Number.isInteger(raw) && raw >= 0) return raw;
+      if (typeof raw === 'string') {
+        const t = raw.trim();
+        if (/^opt_\d+$/i.test(t)) return parseInt(t.replace(/^opt_/i, ''), 10);
+        if (/^\d+$/.test(t)) return parseInt(t, 10);
+        const f = opts.findIndex((o) => String(o).trim() === t);
+        if (f !== -1) return f;
+      }
+      return null;
+    };
+
     const questions: Question[] = [];
 
-    qSnap.forEach((d) => {
+    sortedDocs.forEach((d, idx) => {
       const data = d.data() as any;
       const keyData = keysMap.get(d.id);
+      const opts = Array.isArray(data.options) ? data.options : [];
 
-      // Check Surah Yusuf override if applicable
+      // Unified priority: answerKeys -> questions.correctAnswer -> yusufOverride fallback
       const yusufOverride = examId === SURAH_YUSUF_EXAM_ID ? SURAH_YUSUF_CORRECT_KEYS[d.id] : undefined;
 
-      let correctAns = 0;
-      if (keyData?.correctAnswer !== undefined && keyData?.correctAnswer !== null) {
-        correctAns = keyData.correctAnswer;
-      } else if (yusufOverride !== undefined) {
-        correctAns = yusufOverride.correctAnswer;
-      } else if (data.correctAnswer !== undefined) {
-        correctAns = data.correctAnswer;
-      }
+      const parsedKey =
+        (keyData?.correctAnswer !== undefined && keyData?.correctAnswer !== null ? parseKey(keyData.correctAnswer, opts) : null) ??
+        (data.correctAnswer !== undefined && data.correctAnswer !== null ? parseKey(data.correctAnswer, opts) : null) ??
+        (yusufOverride !== undefined ? yusufOverride.correctAnswer : null);
 
-      const expl = keyData?.explanation || yusufOverride?.explanation || data.explanation || '';
+      const correctAns = parsedKey !== null ? parsedKey : 0;
+      const expl = keyData?.explanation || data.explanation || yusufOverride?.explanation || '';
 
       questions.push({
         id: d.id,
         examId,
         questionText: data.questionText || '',
-        options: data.options || [],
+        options: opts,
         correctAnswer: correctAns,
         explanation: expl,
         difficulty: data.difficulty || 'medium',
         source: data.source || 'أريكسون',
         points: data.points || 5,
-        order: data.order || (questions.length + 1),
+        order: typeof data.order === 'number' ? data.order : (idx + 1),
         questionType: data.questionType || 'multiple_choice',
         media: data.media || undefined,
         hint: keyData?.hint || data.hint || undefined,
@@ -445,7 +469,7 @@ export async function getAdminExamQuestions(examId: string): Promise<Question[]>
       return questions;
     }
 
-    // Fallbacks for ministerial exams if subcollection not populated
+    // Fallbacks for built-in exams if subcollection not populated
     if (isMinisterialPhysics) {
       return FIRST_EXAM_QUESTIONS;
     }
@@ -455,6 +479,9 @@ export async function getAdminExamQuestions(examId: string): Promise<Question[]>
     if (isMinisterialIslamic) {
       return ISLAMIC_EXAM_QUESTIONS;
     }
+    if (examId === CHEMISTRY_EXAM_ID) {
+      return CHEMISTRY_EXAM_QUESTIONS;
+    }
 
     return [];
   } catch (err: any) {
@@ -462,8 +489,33 @@ export async function getAdminExamQuestions(examId: string): Promise<Question[]>
     if (isMinisterialPhysics) return FIRST_EXAM_QUESTIONS;
     if (isMinisterialArabic) return LITERARY_EXAM_QUESTIONS;
     if (isMinisterialIslamic) return ISLAMIC_EXAM_QUESTIONS;
+    if (examId === CHEMISTRY_EXAM_ID) return CHEMISTRY_EXAM_QUESTIONS;
     return [];
   }
+}
+
+export async function toggleExamAllowOffline(
+  examId: string,
+  allowOffline: boolean,
+  title: string
+): Promise<void> {
+  const examDocRef = doc(db, 'exams', examId);
+  const now = new Date().toISOString();
+  await setDoc(
+    examDocRef,
+    {
+      allowOffline,
+      updatedAt: now,
+    },
+    { merge: true }
+  );
+
+  await recordAdminAuditLog({
+    action: 'edit_exam',
+    targetType: 'exam',
+    targetId: examId,
+    details: `${allowOffline ? 'تفعيل' : 'إيقاف'} وضع بدون إنترنت لامتحان: "${title}"`,
+  }).catch(() => {});
 }
 
 export async function setExamPublishStatus(
@@ -1897,7 +1949,11 @@ export async function regradeSingleAttempt(attemptId: string): Promise<RegradeAt
       kSnap.docs.forEach(kd => keysMap.set(kd.id, kd.data()));
     }
 
-    const sortedDocs = [...qSnap.docs].sort((a, b) => (a.data().order || 0) - (b.data().order || 0));
+    const sortedDocs = [...qSnap.docs].sort((a, b) => {
+      const oa = typeof a.data().order === 'number' ? a.data().order : 999999;
+      const ob = typeof b.data().order === 'number' ? b.data().order : 999999;
+      return oa - ob;
+    });
     for (let idx = 0; idx < sortedDocs.length; idx++) {
       const qDoc = sortedDocs[idx];
       const qd = qDoc.data();
@@ -1905,19 +1961,19 @@ export async function regradeSingleAttempt(attemptId: string): Promise<RegradeAt
 
       const yusufOverride = examId === SURAH_YUSUF_EXAM_ID ? SURAH_YUSUF_CORRECT_KEYS[qDoc.id] : undefined;
 
-      // Real keyData stored in Firestore answerKeys has highest priority
+      // Unified priority: answerKeys -> questions.correctAnswer -> yusufOverride fallback
       const ansKey = (kd?.correctAnswer !== undefined && kd?.correctAnswer !== null)
         ? kd.correctAnswer
-        : (yusufOverride !== undefined 
-            ? yusufOverride.correctAnswer 
-            : (qd.correctAnswer !== undefined ? qd.correctAnswer : 0));
+        : (qd.correctAnswer !== undefined && qd.correctAnswer !== null
+            ? qd.correctAnswer
+            : (yusufOverride !== undefined ? yusufOverride.correctAnswer : 0));
 
-      const expl = kd?.explanation || yusufOverride?.explanation || qd.explanation || '';
+      const expl = kd?.explanation || qd.explanation || yusufOverride?.explanation || '';
 
       questionsWithKeys.push({
         id: qDoc.id,
         examId,
-        order: qd.order || (idx + 1),
+        order: typeof qd.order === 'number' ? qd.order : (idx + 1),
         questionText: qd.questionText || '',
         options: qd.options || [],
         points: qd.points || 5,
@@ -1971,8 +2027,10 @@ export async function regradeSingleAttempt(attemptId: string): Promise<RegradeAt
     let correctIdx = 0;
     if (typeof q.correctAnswer === 'number') {
       correctIdx = q.correctAnswer;
-    } else if (typeof q.correctAnswer === 'string' && /^opt_\d+$/i.test(q.correctAnswer)) {
-      correctIdx = parseInt(q.correctAnswer.replace(/^opt_/i, ''), 10);
+    } else if (typeof q.correctAnswer === 'string' && /^opt_\d+$/i.test(q.correctAnswer.trim())) {
+      correctIdx = parseInt(q.correctAnswer.trim().replace(/^opt_/i, ''), 10);
+    } else if (typeof q.correctAnswer === 'string' && /^\d+$/.test(q.correctAnswer.trim())) {
+      correctIdx = parseInt(q.correctAnswer.trim(), 10);
     } else if (typeof q.correctAnswer === 'string') {
       const found = options.findIndex((o: string) => o.trim() === String(q.correctAnswer).trim());
       correctIdx = found !== -1 ? found : 0;

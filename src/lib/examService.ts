@@ -7,7 +7,6 @@ import {
   updateDoc, 
   query, 
   where, 
-  orderBy,
   runTransaction
 } from 'firebase/firestore';
 import { db, auth } from './firebase';
@@ -34,6 +33,19 @@ import {
   ISLAMIC_EXAM_ID,
   ISLAMIC_EXAM_QUESTIONS,
 } from '../data/islamicExamData';
+import {
+  CHEMISTRY_EXAM,
+  CHEMISTRY_EXAM_ID,
+  CHEMISTRY_EXAM_QUESTIONS,
+} from '../data/chemistryQuantumExamData';
+import {
+  getActiveOfflineAttemptById,
+  getActiveOfflineAttemptsForUser,
+  getDownloadedPackagesForUser,
+  getOfflinePackage,
+  getPendingSubmissionById,
+  getPendingSubmissionsForUser,
+} from './offlineDb';
 
 /**
  * Ensures initial ministerial exams and questions exist in Firestore for all branches.
@@ -133,6 +145,47 @@ export async function seedFirstExamIfMissing(): Promise<void> {
 
         // Also seed answerKeys subcollection
         const keyRef = doc(db, 'exams', ISLAMIC_EXAM_ID, 'answerKeys', q.id);
+        await setDoc(keyRef, {
+          id: q.id,
+          correctAnswer: q.correctAnswer,
+          explanation: q.explanation,
+          hint: q.hint || null,
+        }, { merge: true });
+      }
+    }
+
+    // 4. Seed Offline-Ready Chemistry Exam (Quantum Numbers & Atomic Orbitals)
+    const chemDocRef = doc(db, 'exams', CHEMISTRY_EXAM_ID);
+    const chemSnap = await getDoc(chemDocRef);
+    const chemData = chemSnap.exists() ? chemSnap.data() : null;
+
+    const needsChemSeeding =
+      !chemSnap.exists() ||
+      chemData?.allowOffline !== true ||
+      chemData?.questionCount !== 10 ||
+      chemData?.totalPoints !== 100;
+
+    if (needsChemSeeding) {
+      console.log('Seeding offline-ready 10-question Chemistry Exam into Firestore...');
+      await setDoc(chemDocRef, CHEMISTRY_EXAM, { merge: true });
+
+      for (const q of CHEMISTRY_EXAM_QUESTIONS) {
+        const qRef = doc(db, 'exams', CHEMISTRY_EXAM_ID, 'questions', q.id);
+        const publicQuestionData: Question = {
+          id: q.id,
+          examId: CHEMISTRY_EXAM_ID,
+          order: q.order,
+          questionText: q.questionText,
+          options: q.options,
+          difficulty: q.difficulty,
+          source: q.source,
+          points: q.points,
+          questionType: q.questionType,
+          hint: q.hint,
+        };
+        await setDoc(qRef, publicQuestionData, { merge: true });
+
+        const keyRef = doc(db, 'exams', CHEMISTRY_EXAM_ID, 'answerKeys', q.id);
         await setDoc(keyRef, {
           id: q.id,
           correctAnswer: q.correctAnswer,
@@ -334,6 +387,7 @@ export async function getExamsList(
           if (!isExpired) {
             examObj.userAttemptStatus = 'in_progress';
             examObj.userLastAttemptId = inProgressAtt.id;
+            examObj.userAttemptExpectedEndAt = inProgressAtt.expectedEndAt;
           } else {
             // Expired attempt -> locked as completed
             examObj.userAttemptStatus = 'completed';
@@ -414,6 +468,7 @@ export async function getExamsList(
           if (!isExpired) {
             examObj.userAttemptStatus = 'in_progress';
             examObj.userLastAttemptId = inProgressAtt.id;
+            examObj.userAttemptExpectedEndAt = inProgressAtt.expectedEndAt;
           } else {
             examObj.userAttemptStatus = 'completed';
             examObj.userLastAttemptId = inProgressAtt.id;
@@ -432,6 +487,31 @@ export async function getExamsList(
     ensureOfficialExam(ISLAMIC_EXAM);
     ensureOfficialExam(FIRST_EXAM);
     ensureOfficialExam(LITERARY_EXAM);
+    ensureOfficialExam(CHEMISTRY_EXAM);
+
+    // Enrich with pending or active offline attempts so status badges reflect offline work before sync completes
+    if (currentUserId) {
+      const [pendingOffline, activeOffline] = await Promise.all([
+        getPendingSubmissionsForUser(currentUserId),
+        getActiveOfflineAttemptsForUser(currentUserId),
+      ]);
+      for (const p of pendingOffline) {
+        const ex = exams.find((e) => e.id === p.examId);
+        if (ex && ex.userAttemptStatus !== 'completed') {
+          ex.userAttemptStatus = 'submitted_pending';
+          ex.userLastAttemptId = p.id;
+          ex.userScore = p.provisionalAttempt.score ?? undefined;
+        }
+      }
+      for (const a of activeOffline) {
+        const ex = exams.find((e) => e.id === a.examId);
+        if (ex && ex.userAttemptStatus === 'not_started') {
+          ex.userAttemptStatus = 'in_progress';
+          ex.userLastAttemptId = a.id;
+          ex.userAttemptExpectedEndAt = a.expectedEndAt;
+        }
+      }
+    }
 
     // Sort by createdAt descending
     exams.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
@@ -439,7 +519,38 @@ export async function getExamsList(
     return exams;
   } catch (error) {
     console.error('Error in getExamsList:', error);
-    return [ISLAMIC_EXAM, FIRST_EXAM, LITERARY_EXAM];
+    // Offline fallback: read user's downloaded exam packages + pending/active offline attempts from IndexedDB
+    if (currentUserId) {
+      try {
+        const [pkgs, pendingOffline, activeOffline] = await Promise.all([
+          getDownloadedPackagesForUser(currentUserId),
+          getPendingSubmissionsForUser(currentUserId),
+          getActiveOfflineAttemptsForUser(currentUserId),
+        ]);
+        if (pkgs.length > 0) {
+          return pkgs
+            .map((p) => {
+              const ex: Exam = { ...p.exam, allowOffline: true };
+              const pending = pendingOffline.find((item) => item.examId === ex.id);
+              const active = activeOffline.find((item) => item.examId === ex.id);
+              if (pending) {
+                ex.userAttemptStatus = 'submitted_pending';
+                ex.userLastAttemptId = pending.id;
+                ex.userScore = pending.provisionalAttempt.score ?? undefined;
+              } else if (active) {
+                ex.userAttemptStatus = 'in_progress';
+                ex.userLastAttemptId = active.id;
+                ex.userAttemptExpectedEndAt = active.expectedEndAt;
+              } else {
+                ex.userAttemptStatus = 'not_started';
+              }
+              return ex;
+            })
+            .filter((ex) => !subjectFilter || subjectFilter === 'all' || ex.subject === subjectFilter);
+        }
+      } catch {}
+    }
+    return [];
   }
 }
 
@@ -461,9 +572,17 @@ export async function getExamById(examId: string): Promise<Exam | null> {
     if (examId === LITERARY_EXAM_ID || examId === 'exam_arabic_tw2009_01') {
       return LITERARY_EXAM;
     }
+    if (examId === CHEMISTRY_EXAM_ID) {
+      return CHEMISTRY_EXAM;
+    }
     return null;
   } catch (error) {
     console.error('Error fetching exam by ID:', error);
+    const uid = auth.currentUser?.uid;
+    if (uid) {
+      const pkg = await getOfflinePackage(uid, examId).catch(() => null);
+      if (pkg) return pkg.exam;
+    }
     if (examId === ISLAMIC_EXAM_ID || examId === 'exam_islamic_tw2009_01') {
       return ISLAMIC_EXAM;
     }
@@ -472,6 +591,9 @@ export async function getExamById(examId: string): Promise<Exam | null> {
     }
     if (examId === LITERARY_EXAM_ID || examId === 'exam_arabic_tw2009_01') {
       return LITERARY_EXAM;
+    }
+    if (examId === CHEMISTRY_EXAM_ID) {
+      return CHEMISTRY_EXAM;
     }
     return null;
   }
@@ -506,7 +628,7 @@ export async function getExamQuestions(examId: string): Promise<Question[]> {
 
   try {
     const qCol = collection(db, 'exams', examId, 'questions');
-    const snap = await getDocs(query(qCol, orderBy('order', 'asc')));
+    const snap = await getDocs(qCol);
     const questions: Question[] = [];
 
     snap.forEach((d) => {
@@ -519,12 +641,14 @@ export async function getExamQuestions(examId: string): Promise<Question[]> {
         difficulty: data.difficulty,
         source: data.source,
         points: data.points,
-        order: data.order,
+        order: typeof data.order === 'number' ? data.order : 999999,
         questionType: data.questionType,
         media: data.media,
         hint: data.hint,
       });
     });
+
+    questions.sort((a, b) => a.order - b.order);
 
     // If subcollection returned questions, ALWAYS return them intact
     if (questions.length > 0) {
@@ -577,9 +701,29 @@ export async function getExamQuestions(examId: string): Promise<Question[]> {
       }));
     }
 
+    if (examId === CHEMISTRY_EXAM_ID) {
+      return CHEMISTRY_EXAM_QUESTIONS.map(q => ({
+        id: q.id,
+        examId,
+        questionText: q.questionText,
+        options: q.options,
+        difficulty: q.difficulty,
+        source: q.source,
+        points: q.points,
+        order: q.order,
+        questionType: q.questionType,
+        hint: q.hint,
+      }));
+    }
+
     return [];
   } catch (error) {
     console.error('Error fetching exam questions:', error);
+    const uid = auth.currentUser?.uid;
+    if (uid) {
+      const pkg = await getOfflinePackage(uid, examId).catch(() => null);
+      if (pkg && pkg.questions.length > 0) return pkg.questions;
+    }
     if (isMinisterialArabic) {
       return LITERARY_EXAM_QUESTIONS.map(q => ({
         id: q.id,
@@ -610,6 +754,20 @@ export async function getExamQuestions(examId: string): Promise<Question[]> {
     }
     if (isMinisterialIslamic) {
       return ISLAMIC_EXAM_QUESTIONS.map(q => ({
+        id: q.id,
+        examId,
+        questionText: q.questionText,
+        options: q.options,
+        difficulty: q.difficulty,
+        source: q.source,
+        points: q.points,
+        order: q.order,
+        questionType: q.questionType,
+        hint: q.hint,
+      }));
+    }
+    if (examId === CHEMISTRY_EXAM_ID) {
+      return CHEMISTRY_EXAM_QUESTIONS.map(q => ({
         id: q.id,
         examId,
         questionText: q.questionText,
@@ -670,13 +828,24 @@ export async function startOrResumeAttempt(
     const now = Date.now();
     const end = new Date(inProg.expectedEndAt).getTime();
     if (now < end && !isRetake) {
+      let cachedLastQ: number | undefined = typeof inProg.lastQuestionIndex === 'number' ? inProg.lastQuestionIndex : undefined;
+      try {
+        const rawIdx = localStorage.getItem(`arixon_attempt_last_q_${inProg.id}`);
+        if (rawIdx !== null) {
+          const parsedIdx = parseInt(rawIdx, 10);
+          if (!isNaN(parsedIdx) && parsedIdx >= 0) {
+            cachedLastQ = parsedIdx;
+          }
+        }
+      } catch {}
       const questions = await getExamQuestions(examId);
-      return { attempt: inProg, questions, isResumed: true };
+      return { attempt: { ...inProg, lastQuestionIndex: cachedLastQ ?? 0 }, questions, isResumed: true };
     } else if (now >= end) {
       // Auto-submit expired attempt so it transitions to submitted and never hangs
       console.log(`[ExamService] In-progress attempt ${inProg.id} has expired. Auto-submitting...`);
       try {
-        const autoSub = await submitExamAttempt(inProg.id, userId);
+        const savedAns = await getSavedAnswersForAttempt(inProg.id);
+        const autoSub = await submitExamAttempt(inProg.id, userId, savedAns);
         completedAttempt = autoSub;
         inProgressAttempt = null;
       } catch (autoErr) {
@@ -697,7 +866,7 @@ export async function startOrResumeAttempt(
   const expectedEndAt = new Date(startedAt.getTime() + durationMs);
 
   const attemptId = `att_${userId.slice(0, 8)}_${examId}_${Date.now()}`;
-  const newAttempt: ExamAttempt = {
+  const firestoreAttemptPayload = {
     id: attemptId,
     userId,
     examId,
@@ -710,25 +879,37 @@ export async function startOrResumeAttempt(
     startedAt: startedAt.toISOString(),
     expectedEndAt: expectedEndAt.toISOString(),
     submittedAt: null,
-    status: 'in_progress',
+    status: 'in_progress' as const,
+    lastSavedAt: startedAt.toISOString(),
+    lastQuestionIndex: 0,
+    userDisplayName: userDisplayName || undefined,
+    isRetake: !!completedAttempt || isRetake,
+  };
+
+  const newAttempt: ExamAttempt = {
+    ...firestoreAttemptPayload,
     score: null,
     pointsEarned: 0,
     correctAnswers: 0,
     wrongAnswers: 0,
     unanswered: 0,
     durationSeconds: 0,
-    lastSavedAt: startedAt.toISOString(),
-    isRetake: !!completedAttempt || isRetake,
   };
 
   const attemptDocRef = doc(db, 'attempts', attemptId);
   try {
-    await setDoc(attemptDocRef, newAttempt);
+    // Strip undefined fields and obey firestore.rules create constraint (no score/pointsEarned/reviews on create)
+    const cleanPayload: Record<string, any> = {};
+    for (const [k, v] of Object.entries(firestoreAttemptPayload)) {
+      if (v !== undefined) cleanPayload[k] = v;
+    }
+    await setDoc(attemptDocRef, cleanPayload);
   } catch (err: any) {
     console.warn('Could not save attempt to Firestore, saving to local cache:', err?.message);
   }
   try {
     localStorage.setItem(`arixon_attempt_${attemptId}`, JSON.stringify(newAttempt));
+    localStorage.setItem(`arixon_attempt_last_q_${attemptId}`, '0');
   } catch {}
 
   const questions = await getExamQuestions(examId);
@@ -775,36 +956,111 @@ export async function saveQuestionAnswer(
 }
 
 /**
- * Fetch all saved answers for an active attempt
+ * Persist current question index so resuming opens on the exact last question
+ */
+export async function updateAttemptLastQuestionIndex(
+  attemptId: string,
+  questionIndex: number
+): Promise<void> {
+  try {
+    localStorage.setItem(`arixon_attempt_last_q_${attemptId}`, String(questionIndex));
+  } catch {}
+
+  try {
+    const attemptRef = doc(db, 'attempts', attemptId);
+    await updateDoc(attemptRef, {
+      lastQuestionIndex: questionIndex,
+      lastSavedAt: new Date().toISOString(),
+    });
+  } catch {}
+}
+
+/**
+ * Best-effort flush of all in-memory answers + lastQuestionIndex to Firestore (used on Save & Exit, visibilitychange, pagehide)
+ */
+export async function flushAttemptState(
+  attemptId: string,
+  answers: Record<string, number | null>,
+  lastQuestionIndex?: number
+): Promise<void> {
+  try {
+    localStorage.setItem(`arixon_attempt_answers_${attemptId}`, JSON.stringify(answers));
+    if (typeof lastQuestionIndex === 'number') {
+      localStorage.setItem(`arixon_attempt_last_q_${attemptId}`, String(lastQuestionIndex));
+    }
+  } catch {}
+
+  const now = new Date().toISOString();
+  const entries = Object.entries(answers).filter(([_, val]) => val !== null && val !== undefined);
+  const ops: Promise<any>[] = entries.map(([qId, val]) =>
+    setDoc(
+      doc(db, 'attempts', attemptId, 'answers', qId),
+      {
+        questionId: qId,
+        selectedAnswer: val,
+        answeredAt: now,
+        updatedAt: now,
+      },
+      { merge: true }
+    ).catch(() => null)
+  );
+
+  const attemptPatch: Record<string, any> = { lastSavedAt: now };
+  if (typeof lastQuestionIndex === 'number') {
+    attemptPatch.lastQuestionIndex = lastQuestionIndex;
+  }
+  ops.push(updateDoc(doc(db, 'attempts', attemptId), attemptPatch).catch(() => null));
+
+  await Promise.race([
+    Promise.allSettled(ops),
+    new Promise((resolve) => setTimeout(resolve, 1800)),
+  ]);
+}
+
+/**
+ * Fetch all saved answers for an active attempt (merges Firestore & localStorage fallback)
  */
 export async function getSavedAnswersForAttempt(attemptId: string): Promise<Record<string, number | null>> {
+  let localAnswers: Record<string, number | null> = {};
+  try {
+    const localAnswersKey = `arixon_attempt_answers_${attemptId}`;
+    const raw = localStorage.getItem(localAnswersKey);
+    if (raw) localAnswers = JSON.parse(raw) || {};
+  } catch {}
+
   try {
     const answersCol = collection(db, 'attempts', attemptId, 'answers');
     const snap = await getDocs(answersCol);
-    const answers: Record<string, number | null> = {};
+    const firestoreAnswers: Record<string, number | null> = {};
     snap.forEach((d) => {
       const data = d.data();
-      answers[data.questionId] = data.selectedAnswer;
+      const key = data.questionId || d.id;
+      if (data.selectedAnswer !== undefined) {
+        firestoreAnswers[key] = data.selectedAnswer;
+      }
     });
-    if (Object.keys(answers).length > 0) {
-      return answers;
+    const merged = { ...localAnswers, ...firestoreAnswers };
+    if (Object.keys(merged).length > 0) {
+      return merged;
     }
   } catch (error) {
     console.warn('Could not fetch saved answers from Firestore, falling back to local storage:', error);
   }
 
-  try {
-    const localAnswersKey = `arixon_attempt_answers_${attemptId}`;
-    const raw = localStorage.getItem(localAnswersKey);
-    if (raw) return JSON.parse(raw);
-  } catch {}
-  return {};
+  return localAnswers;
 }
 
 /**
  * Get an attempt by ID
  */
 export async function getAttemptById(attemptId: string, userId: string): Promise<ExamAttempt | null> {
+  if (attemptId.startsWith('offline_')) {
+    const pending = await getPendingSubmissionById(userId, attemptId);
+    if (pending) return pending.provisionalAttempt;
+    const active = await getActiveOfflineAttemptById(userId, attemptId);
+    if (active) return active.attemptMeta;
+  }
+
   try {
     const attemptDoc = await getDoc(doc(db, 'attempts', attemptId));
     if (attemptDoc.exists()) {
@@ -829,6 +1085,12 @@ export async function getAttemptById(attemptId: string, userId: string): Promise
  * Fetch student's completed exam attempts history
  */
 export async function getUserExamHistory(userId: string): Promise<ExamAttempt[]> {
+  const pendingOffline = await getPendingSubmissionsForUser(userId).catch(() => []);
+  const pendingMap = new Map<string, ExamAttempt>();
+  for (const p of pendingOffline) {
+    pendingMap.set(p.id, p.provisionalAttempt);
+  }
+
   try {
     const attemptsRef = collection(db, 'attempts');
     const q = query(
@@ -838,14 +1100,21 @@ export async function getUserExamHistory(userId: string): Promise<ExamAttempt[]>
     );
     const snap = await getDocs(q);
     const history: ExamAttempt[] = [];
+    const seenIds = new Set<string>();
     snap.forEach((d) => {
+      seenIds.add(d.id);
       history.push({ ...(d.data() as ExamAttempt), id: d.id });
     });
+    for (const [id, att] of pendingMap.entries()) {
+      if (!seenIds.has(id)) {
+        history.push(att);
+      }
+    }
     history.sort((a, b) => new Date(b.submittedAt || b.startedAt).getTime() - new Date(a.submittedAt || a.startedAt).getTime());
     return history;
   } catch (error) {
     console.error('Error fetching exam history:', error);
-    return [];
+    return Array.from(pendingMap.values());
   }
 }
 

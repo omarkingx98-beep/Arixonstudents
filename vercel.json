@@ -46,6 +46,10 @@
       "destination": "https://arixonstudents-d902a.firebaseapp.com/__/firebase/init.json"
     },
     {
+      "source": "/api/exams/offline-package",
+      "destination": "/api/exams/grade?action=offline-package"
+    },
+    {
       "source": "/api/(.*)",
       "destination": "/api/$1"
     },

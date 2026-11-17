@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useOffline } from '../context/OfflineContext';
 import { fetchLeaderboard } from '../lib/firebase';
+import { formatCachedTimeAr, getViewCache, saveViewCache } from '../lib/offlineDb';
 import type { LeaderboardEntry } from '../types';
-import { Trophy, Medal, Award, Flame, Sparkles, Loader2 } from 'lucide-react';
+import { Trophy, Medal, Award, Flame, Sparkles, Loader2, WifiOff, Clock } from 'lucide-react';
 
 interface LeaderboardViewProps {
   onSelectUser?: (userId: string) => void;
@@ -10,27 +12,76 @@ interface LeaderboardViewProps {
 
 export const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onSelectUser }) => {
   const { profile, user } = useAuth();
+  const { isOnline } = useOffline();
   const [period, setPeriod] = useState<'all' | 'weekly' | 'monthly'>('all');
   const [branchFilter, setBranchFilter] = useState<'all' | 'علمي' | 'أدبي'>('all');
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [cachedUpdatedAt, setCachedUpdatedAt] = useState<string | null>(null);
+  const [offlineNoCache, setOfflineNoCache] = useState<boolean>(false);
 
   useEffect(() => {
     let isMounted = true;
+    const uid = user?.uid || profile?.uid || '';
+    const cacheId = `leaderboard_${period}_${branchFilter}`;
+
     async function loadLeaderboard() {
       setIsLoading(true);
+      setOfflineNoCache(false);
+
+      if (!isOnline) {
+        const cached = uid ? await getViewCache<LeaderboardEntry[]>(uid, cacheId) : null;
+        if (isMounted) {
+          if (cached && Array.isArray(cached.data)) {
+            setEntries(
+              cached.data.map((entry) => ({
+                ...entry,
+                isCurrentUser: user ? entry.uid === user.uid : false,
+              }))
+            );
+            setCachedUpdatedAt(cached.updatedAt);
+            setOfflineNoCache(false);
+          } else {
+            setEntries([]);
+            setCachedUpdatedAt(null);
+            setOfflineNoCache(true);
+          }
+          setIsLoading(false);
+        }
+        return;
+      }
+
       try {
         const data = await fetchLeaderboard(period, branchFilter);
         if (isMounted) {
-          // Flag current user
           const mapped = data.map((entry) => ({
             ...entry,
             isCurrentUser: user ? entry.uid === user.uid : false,
           }));
           setEntries(mapped);
+          setCachedUpdatedAt(null);
+          setOfflineNoCache(false);
+          if (uid) {
+            void saveViewCache(uid, cacheId, mapped);
+          }
         }
       } catch (err) {
         console.error('Leaderboard query error:', err);
+        const cached = uid ? await getViewCache<LeaderboardEntry[]>(uid, cacheId) : null;
+        if (isMounted) {
+          if (cached && Array.isArray(cached.data)) {
+            setEntries(
+              cached.data.map((entry) => ({
+                ...entry,
+                isCurrentUser: user ? entry.uid === user.uid : false,
+              }))
+            );
+            setCachedUpdatedAt(cached.updatedAt);
+            setOfflineNoCache(false);
+          } else {
+            setOfflineNoCache(true);
+          }
+        }
       } finally {
         if (isMounted) {
           setIsLoading(false);
@@ -41,7 +92,7 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onSelectUser }
     return () => {
       isMounted = false;
     };
-  }, [period, branchFilter, user]);
+  }, [period, branchFilter, user, profile?.uid, isOnline]);
 
   return (
     <div className="space-y-6 pb-20 md:pb-8">
@@ -64,6 +115,29 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onSelectUser }
           تنافس بنزاهة مع نخبة طلبة التوجيهي واصعد نحو القمة مع كل إجابة صحيحة
         </p>
       </div>
+
+      {/* Offline / Cached Notice Banner */}
+      {(!isOnline || cachedUpdatedAt) && (
+        <div
+          id="leaderboard-offline-banner"
+          className="rounded-2xl border border-amber-200 dark:border-amber-800/70 bg-amber-50/90 dark:bg-amber-950/30 px-4 py-3 flex flex-wrap items-center justify-between gap-2 text-xs text-amber-800 dark:text-amber-200"
+        >
+          <div className="flex items-center gap-2 font-bold">
+            <WifiOff className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>
+              {cachedUpdatedAt
+                ? 'تعرض هذه القائمة آخر نسخة محفوظة على جهازك'
+                : 'يتطلب اتصالًا بالإنترنت لعرض الترتيب المباشر'}
+            </span>
+          </div>
+          {cachedUpdatedAt && (
+            <span className="inline-flex items-center gap-1 text-[11px] font-semibold bg-white/80 dark:bg-slate-900/70 px-2.5 py-1 rounded-lg border border-amber-200/70 dark:border-amber-800">
+              <Clock className="w-3 h-3" />
+              <span>آخر تحديث: {formatCachedTimeAr(cachedUpdatedAt)}</span>
+            </span>
+          )}
+        </div>
+      )}
 
       {/* Control Tabs: Time Period & Academic Track */}
       <div className="space-y-3">
@@ -127,8 +201,26 @@ export const LeaderboardView: React.FC<LeaderboardViewProps> = ({ onSelectUser }
         </div>
       )}
 
+      {/* Offline with no cached entries */}
+      {!isLoading && offlineNoCache && entries.length === 0 && (
+        <div
+          id="leaderboard-offline-empty"
+          className="rounded-3xl border border-slate-200/90 dark:border-slate-800/90 bg-white dark:bg-[#111625] p-8 sm:p-12 text-center shadow-xs max-w-xl mx-auto my-4 space-y-3"
+        >
+          <div className="w-16 h-16 mx-auto rounded-2xl bg-amber-50 dark:bg-amber-950/50 border border-amber-100 dark:border-amber-900/50 flex items-center justify-center text-amber-500">
+            <WifiOff className="w-8 h-8" />
+          </div>
+          <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-white">
+            يتطلب اتصالًا بالإنترنت
+          </h2>
+          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 leading-relaxed">
+            لا توجد نسخة محفوظة مسبقاً لهذا التصنيف على جهازك. عند عودة الاتصال بالإنترنت سيتم تحديث الترتيب والاحتفاظ بآخر نسخة للعرض لاحقاً.
+          </p>
+        </div>
+      )}
+
       {/* Empty State when no real scores exist yet */}
-      {!isLoading && entries.length === 0 && (
+      {!isLoading && !offlineNoCache && entries.length === 0 && (
         <div
           id="leaderboard-empty-state"
           className="rounded-3xl border border-slate-200/90 dark:border-slate-800/90 bg-white dark:bg-[#111625] p-8 sm:p-12 text-center shadow-xs max-w-xl mx-auto my-4"

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import type { ExamAttempt, QuestionReview } from '../types';
 import { getAttemptReviews } from '../lib/examService';
+import { getPendingSubmissionById } from '../lib/offlineDb';
 import { 
   CheckCircle2, 
   XCircle, 
@@ -32,6 +33,12 @@ export const ExamReviewView: React.FC<ExamReviewViewProps> = ({
     (attempt.examId !== 'exam_arabic_tw2009_01' && 
      initialReviews.some((r: any) => r.questionId?.startsWith('lit_') || r.questionText?.includes('كم الاستفهامية') || r.questionText?.includes('البحر الخفيف')));
 
+  const isProvisional = Boolean(
+    attempt.isProvisional ||
+    attempt.status === 'submitted_pending' ||
+    (attempt.id.startsWith('offline_') && attempt.status !== 'submitted')
+  );
+
   const [reviews, setReviews] = useState<QuestionReview[]>(hasMismatch ? [] : initialReviews);
   const [isLoading, setIsLoading] = useState<boolean>(hasMismatch || !initialReviews.length);
   const [filterMode, setFilterMode] = useState<'all' | 'correct' | 'wrong' | 'unanswered'>('all');
@@ -42,6 +49,13 @@ export const ExamReviewView: React.FC<ExamReviewViewProps> = ({
       async function loadReviews() {
         setIsLoading(true);
         try {
+          if (attempt.id.startsWith('offline_')) {
+            const pending = await getPendingSubmissionById(userId, attempt.id);
+            if (pending?.provisionalAttempt?.reviews && isMounted) {
+              setReviews(pending.provisionalAttempt.reviews);
+              return;
+            }
+          }
           const loaded = await getAttemptReviews(attempt.id, userId);
           if (isMounted) {
             setReviews(loaded);
@@ -82,7 +96,7 @@ export const ExamReviewView: React.FC<ExamReviewViewProps> = ({
             مراجعة الإجابات والحل النموذجي
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-            {attempt.examTitle} • درجتك: {totalCount === 20 ? `${correctCount} من 20 علامة (${calculatedScore}%)` : `${calculatedScore}% (${correctCount} من ${totalCount})`} • +{earnedPoints} نقطة
+            {attempt.examTitle} • درجتك: {totalCount === 20 ? `${correctCount} من 20 علامة (${calculatedScore}%)` : `${calculatedScore}% (${correctCount} من ${totalCount})`} • {isProvisional ? 'النقاط قيد المزامنة (نتيجة مبدئية، تُثبَّت عند الاتصال)' : `+${earnedPoints} نقطة`}
           </p>
         </div>
 

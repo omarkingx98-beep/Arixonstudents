@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { AdminProvider, useAdmin } from './context/AdminContext';
+import { ActiveExamProvider, useActiveExam } from './context/ActiveExamContext';
+import { OfflineProvider, useOffline } from './context/OfflineContext';
 import { WelcomeAuth } from './components/WelcomeAuth';
 import { AuthActionPage } from './components/AuthActionPage';
 import { InstallPage } from './components/InstallPage';
@@ -22,7 +24,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { StudentTutorialModal } from './components/StudentTutorialModal';
 import { AdminPanel } from './components/admin/AdminPanel';
 import { Logo } from './components/Logo';
-import { Loader2, AlertTriangle, RefreshCw, ShieldAlert } from 'lucide-react';
+import { Loader2, AlertTriangle, RefreshCw, ShieldAlert, WifiOff, CheckCircle2, X } from 'lucide-react';
 import { seedFirstExamIfMissing, getExamById } from './lib/examService';
 import { markTutorialAsSeen } from './lib/firebase';
 import { subscribeToNotifications } from './lib/notificationService';
@@ -44,7 +46,17 @@ import type { NavigationTab, ExamAttempt, AppNotification, BroadcastNotification
 function MainAppShell() {
   const { status, error, profile, refreshProfile, signOut } = useAuth();
   const { isAdmin, isCheckingAdmin } = useAdmin();
+  const { guardNavigation } = useActiveExam();
+  const {
+    isOnline,
+    pendingSubmissions,
+    isSyncing,
+    lastSyncNotification,
+    dismissSyncNotification,
+    syncNow,
+  } = useOffline();
   const [currentTab, setCurrentTab] = useState<NavigationTab>('home');
+  const [examsResetSignal, setExamsResetSignal] = useState<number>(0);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [settingsInitialSubView, setSettingsInitialSubView] = useState<'main' | 'security'>('main');
   const [isTutorialOpen, setIsTutorialOpen] = useState(false);
@@ -286,12 +298,20 @@ function MainAppShell() {
       setIsInstallPage(true);
       return;
     }
-    if (tab !== 'exams') {
+    if (tab === 'exams') {
+      setExamsResetSignal((s) => s + 1);
+    } else {
       setExamInitialAttempt(null);
       setExamInitialViewMode('list');
     }
     setCurrentTab(tab);
   };
+
+  // Central navigation wrappers: intercept any attempt to exit active in_progress exam
+  const guardedNavigate = (tab: NavigationTab) => guardNavigation(() => handleNavigate(tab));
+  const guardedOpenAdmin = () => guardNavigation(handleOpenAdmin);
+  const guardedOpenSettings = () => guardNavigation(() => setIsSettingsOpen(true));
+  const guardedOpenSideMenu = () => guardNavigation(() => setIsSideMenuOpen(true));
 
   // 0. Dedicated Firebase Auth Action Page (Reset Password, Verify Email, Recover Email)
   if (isAuthActionView) {
@@ -432,13 +452,13 @@ function MainAppShell() {
       {/* Top Header */}
       <Header 
         currentTab={currentTab} 
-        onTabChange={handleNavigate} 
-        onOpenSettings={() => setIsSettingsOpen(true)}
-        onOpenTutorial={() => setIsTutorialOpen(true)}
-        onOpenAdmin={handleOpenAdmin}
+        onTabChange={guardedNavigate} 
+        onOpenSettings={guardedOpenSettings}
+        onOpenTutorial={() => guardNavigation(() => setIsTutorialOpen(true))}
+        onOpenAdmin={guardedOpenAdmin}
         onOpenNotifications={handleOpenNotifications}
-        onOpenUserSearch={() => setIsUserSearchOpen(true)}
-        onOpenSideMenu={() => setIsSideMenuOpen(true)}
+        onOpenUserSearch={() => guardNavigation(() => setIsUserSearchOpen(true))}
+        onOpenSideMenu={guardedOpenSideMenu}
         unreadNotificationsCount={totalUnreadCount}
       />
 
@@ -446,15 +466,78 @@ function MainAppShell() {
       <SideMenuDrawer
         isOpen={isSideMenuOpen}
         onClose={() => setIsSideMenuOpen(false)}
-        onNavigate={handleNavigate}
-        onOpenTutorial={() => setIsTutorialOpen(true)}
-        onOpenUserSearch={() => setIsUserSearchOpen(true)}
-        onOpenSettings={() => setIsSettingsOpen(true)}
-        onOpenAdmin={handleOpenAdmin}
+        onNavigate={guardedNavigate}
+        onOpenTutorial={() => guardNavigation(() => setIsTutorialOpen(true))}
+        onOpenUserSearch={() => guardNavigation(() => setIsUserSearchOpen(true))}
+        onOpenSettings={guardedOpenSettings}
+        onOpenAdmin={guardedOpenAdmin}
       />
 
       {/* Ticker Announcements bar immediately below Header (C2) */}
       <AnnouncementTicker />
+
+      {/* Offline Status Banner */}
+      {!isOnline && (
+        <div
+          id="offline-status-banner"
+          dir="rtl"
+          className="bg-amber-500/95 dark:bg-amber-900/90 text-slate-950 dark:text-amber-50 border-b border-amber-600/30 px-4 py-2 text-xs font-bold flex items-center justify-center gap-2 flex-wrap shadow-xs"
+        >
+          <WifiOff className="w-4 h-4 shrink-0" />
+          <span>أنت غير متصل</span>
+          {pendingSubmissions.length > 0 && (
+            <span className="px-2 py-0.5 rounded-lg bg-black/10 dark:bg-white/15 text-[11px]">
+              لديك {pendingSubmissions.length} امتحان بانتظار المزامنة عند عودة الاتصال
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Pending Submissions Sync Bar when Online */}
+      {isOnline && pendingSubmissions.length > 0 && (
+        <div
+          id="offline-pending-sync-banner"
+          dir="rtl"
+          className="bg-blue-50 dark:bg-blue-950/60 border-b border-blue-200 dark:border-blue-800 px-4 py-2 text-xs font-bold text-blue-800 dark:text-blue-200 flex items-center justify-center gap-3 flex-wrap"
+        >
+          <span>
+            {isSyncing
+              ? `جارٍ مزامنة ${pendingSubmissions.length} نتيجة معلّقة مع الخادم...`
+              : `يوجد ${pendingSubmissions.length} امتحان محلول بدون إنترنت بانتظار المزامنة`}
+          </span>
+          <button
+            type="button"
+            onClick={() => syncNow(true)}
+            disabled={isSyncing}
+            className="px-3 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+          >
+            <RefreshCw className={`w-3 h-3 ${isSyncing ? 'animate-spin' : ''}`} />
+            <span>مزامنة الآن</span>
+          </button>
+        </div>
+      )}
+
+      {/* Sync Completion Toast / Banner */}
+      {lastSyncNotification && (
+        <div
+          id="offline-sync-success-banner"
+          dir="rtl"
+          className="bg-emerald-600 text-white px-4 py-2.5 text-xs sm:text-sm font-bold flex items-center justify-between gap-3 shadow-md"
+        >
+          <div className="flex items-center gap-2 mx-auto">
+            <CheckCircle2 className="w-4 h-4 shrink-0" />
+            <span>{lastSyncNotification.message}</span>
+          </div>
+          <button
+            type="button"
+            onClick={dismissSyncNotification}
+            className="p-1 rounded-lg hover:bg-white/20 transition-colors cursor-pointer"
+            aria-label="إغلاق"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       {/* Mandatory Academic Branch Modal for existing students missing a branch (C1) */}
       {profile && (!profile.branch || profile.branch.trim() === '') && (
@@ -465,7 +548,7 @@ function MainAppShell() {
       <main className="flex-1 w-full max-w-5xl mx-auto px-4 sm:px-6 pt-6 pb-24 md:pb-12">
         {currentTab === 'home' && (
           <HomeDashboard 
-            onNavigate={handleNavigate} 
+            onNavigate={guardedNavigate} 
             onOpenTutorial={() => setIsTutorialOpen(true)}
             onOpenUserSearch={() => setIsUserSearchOpen(true)}
             onOpenSecuritySettings={() => {
@@ -478,6 +561,7 @@ function MainAppShell() {
           <ExamsView 
             initialAttempt={examInitialAttempt}
             initialViewMode={examInitialViewMode}
+            resetSignal={examsResetSignal}
             onResetView={() => {
               setExamInitialAttempt(null);
               setExamInitialViewMode('list');
@@ -505,7 +589,7 @@ function MainAppShell() {
       {/* Bottom Navigation for Mobile */}
       <BottomNavigation 
         currentTab={currentTab} 
-        onTabChange={handleNavigate} 
+        onTabChange={guardedNavigate} 
       />
 
       {/* Global Settings Modal */}
@@ -514,7 +598,7 @@ function MainAppShell() {
           initialSubView={settingsInitialSubView}
           onClose={() => setIsSettingsOpen(false)} 
           onOpenTutorial={() => setIsTutorialOpen(true)}
-          onOpenAdmin={handleOpenAdmin}
+          onOpenAdmin={guardedOpenAdmin}
           onSelectUser={(uid) => setInspectedUserId(uid)}
           onOpenChatWithUser={(target) => setActiveChatUser(target)}
         />
@@ -527,7 +611,7 @@ function MainAppShell() {
         notifications={notifications}
         broadcasts={broadcasts}
         lastReadBroadcastAt={lastReadBroadcastAt}
-        onOpenExam={handleOpenExamFromBroadcast}
+        onOpenExam={(examId) => guardNavigation(() => handleOpenExamFromBroadcast(examId))}
         onOpenChatWithUser={(uid, details) => {
           setIsNotificationsOpen(false);
           setActiveChatUser({
@@ -591,9 +675,13 @@ export default function App() {
   return (
     <ThemeProvider>
       <AuthProvider>
-        <AdminProvider>
-          <MainAppShell />
-        </AdminProvider>
+        <OfflineProvider>
+          <AdminProvider>
+            <ActiveExamProvider>
+              <MainAppShell />
+            </ActiveExamProvider>
+          </AdminProvider>
+        </OfflineProvider>
       </AuthProvider>
     </ThemeProvider>
   );

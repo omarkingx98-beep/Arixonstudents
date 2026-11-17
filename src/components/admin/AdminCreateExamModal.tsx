@@ -12,6 +12,7 @@ import {
   HelpCircle,
   Layers,
   AlertTriangle,
+  WifiOff,
 } from 'lucide-react';
 import { saveExamWithValidation, fetchQuestionBank, getAdminExamQuestions } from '../../lib/adminService';
 import { auth } from '../../lib/firebase';
@@ -54,6 +55,7 @@ export const AdminCreateExamModal: React.FC<AdminCreateExamModalProps> = ({
   const [branch, setBranch] = useState<'مشترك' | 'علمي' | 'أدبي'>((examToEdit as any)?.branch || 'مشترك');
   const [published, setPublished] = useState(examToEdit?.published || false);
   const [allowRetake, setAllowRetake] = useState(examToEdit?.allowRetake ?? false);
+  const [allowOffline, setAllowOffline] = useState<boolean>(Boolean(examToEdit?.allowOffline));
 
   // Questions List
   const [questions, setQuestions] = useState<EditableQuestion[]>([]);
@@ -193,8 +195,14 @@ export const AdminCreateExamModal: React.FC<AdminCreateExamModalProps> = ({
         arabic: 'اللغة العربية',
         chemistry: 'الكيمياء',
         biology: 'العلوم الحياتية',
+        geology: 'علوم الأرض والبيئة',
         english: 'اللغة الإنجليزية',
         islamic: 'التربية الإسلامية',
+        islamic_studies: 'التربية الإسلامية',
+        history: 'تاريخ الأردن والعرب',
+        geography: 'الجغرافيا',
+        financial_culture: 'الثقافة المالية',
+        computer: 'الحاسوب',
         other: 'مبحث آخر',
       };
 
@@ -217,6 +225,7 @@ export const AdminCreateExamModal: React.FC<AdminCreateExamModalProps> = ({
           published: publishIntent,
           version: nextVersion,
           allowRetake,
+          allowOffline,
           questionCount: questions.length,
           createdAt: examToEdit?.createdAt || new Date().toISOString(),
           updatedAt: new Date().toISOString(),
@@ -530,6 +539,32 @@ export const AdminCreateExamModal: React.FC<AdminCreateExamModalProps> = ({
                     الامتحانات مخصصة لمحاولة واحدة معتمدة لكل طالب لضمان نزاهة الترتيب والتقييم، مع إتاحة مراجعة الحل النموذجي دائماً بعد انتهاء الامتحان.
                   </div>
                 </div>
+              </div>
+
+              {/* Allow Offline Mode Toggle */}
+              <div className="p-4 rounded-2xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200/80 dark:border-amber-800/60 space-y-2">
+                <label className="flex items-center justify-between gap-3 cursor-pointer">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 flex items-center justify-center shrink-0">
+                      <WifiOff className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="text-xs font-bold text-slate-900 dark:text-white">
+                        السماح بالتنزيل والحل بدون إنترنت (Offline Mode)
+                      </div>
+                      <div className="text-[11px] text-amber-800 dark:text-amber-300 font-semibold mt-0.5">
+                        تفعيل هذا يضع مفاتيح الإجابة على أجهزة الطلاب، استخدمه لامتحانات التدريب فقط
+                      </div>
+                    </div>
+                  </div>
+                  <input
+                    id="admin-create-allow-offline-toggle"
+                    type="checkbox"
+                    checked={allowOffline}
+                    onChange={(e) => setAllowOffline(e.target.checked)}
+                    className="w-4 h-4 accent-amber-600 rounded cursor-pointer shrink-0"
+                  />
+                </label>
               </div>
             </div>
           )}

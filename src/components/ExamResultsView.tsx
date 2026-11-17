@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import type { ExamAttempt } from '../types';
 import { fetchLeaderboard } from '../lib/firebase';
+import { useOffline } from '../context/OfflineContext';
 import { 
   Trophy, 
   CheckCircle2, 
@@ -10,8 +11,8 @@ import {
   Award, 
   ArrowRight, 
   FileText, 
-  Share2,
-  TrendingUp,
+  RefreshCw,
+  WifiOff,
   Sparkles
 } from 'lucide-react';
 
@@ -28,34 +29,35 @@ export const ExamResultsView: React.FC<ExamResultsViewProps> = ({
   onReviewAnswers,
   onBackToExams,
 }) => {
+  const { isOnline, isSyncing, syncNow } = useOffline();
   const [userRank, setUserRank] = useState<number | null>(null);
-  const [isLoadingRank, setIsLoadingRank] = useState<boolean>(true);
 
-  // Fetch real rank from leaderboard
+  const isProvisional = Boolean(
+    attempt.isProvisional ||
+    attempt.status === 'submitted_pending' ||
+    attempt.id.startsWith('offline_') && attempt.status !== 'submitted'
+  );
+
+  // Fetch real rank from leaderboard only when online and confirmed
   useEffect(() => {
+    if (isProvisional || !isOnline) return;
     let isMounted = true;
     async function loadRank() {
       try {
         const entries = await fetchLeaderboard('all');
         if (isMounted) {
           const matchIndex = entries.findIndex(e => e.uid === userId);
-          if (matchIndex !== -1) {
-            setUserRank(matchIndex + 1);
-          } else {
-            setUserRank(null);
-          }
+          setUserRank(matchIndex !== -1 ? matchIndex + 1 : null);
         }
       } catch (err) {
         console.warn('Could not fetch user rank:', err);
-      } finally {
-        if (isMounted) setIsLoadingRank(false);
       }
     }
     loadRank();
     return () => {
       isMounted = false;
     };
-  }, [userId]);
+  }, [userId, isProvisional, isOnline]);
 
   const score = attempt.score ?? 0;
   const correctCount = (attempt as any).correctCount ?? attempt.correctAnswers ?? 0;
@@ -72,10 +74,8 @@ export const ExamResultsView: React.FC<ExamResultsViewProps> = ({
     (totalCountFromAnswers > 0 ? totalCountFromAnswers : 0) ||
     20;
 
-  // Exact mathematically sound percentage: (correctCount / totalExamQuestions) * 100
   const accuratePercentage = totalExamQuestions > 0 ? Math.round((correctCount / totalExamQuestions) * 100) : score;
 
-  // Format time spent
   const formatTimeSpent = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -83,7 +83,6 @@ export const ExamResultsView: React.FC<ExamResultsViewProps> = ({
     return `${mins} دقيقة و ${secs} ثانية`;
   };
 
-  // Performance tier evaluation
   const getPerformanceMessage = (scoreValue: number) => {
     if (scoreValue >= 90) return { title: 'أداء أسطوري استثنائي!', badge: 'ممتاز مرتفع', color: 'text-emerald-600 dark:text-emerald-400' };
     if (scoreValue >= 75) return { title: 'أداء رائع ومتقدم جداً!', badge: 'جيد جداً', color: 'text-blue-600 dark:text-blue-400' };
@@ -97,10 +96,17 @@ export const ExamResultsView: React.FC<ExamResultsViewProps> = ({
     <div className="max-w-2xl mx-auto px-4 py-8 space-y-6 animate-fadeIn pb-24 md:pb-12">
       {/* Header Badge */}
       <div className="text-center space-y-2">
-        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 font-bold text-xs">
-          <Sparkles className="w-3.5 h-3.5" />
-          <span>تم تسجيل نتيجة الامتحان بنجاح</span>
-        </div>
+        {isProvisional ? (
+          <div className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-800 font-bold text-xs">
+            <WifiOff className="w-3.5 h-3.5" />
+            <span>نتيجة مبدئية، تُثبَّت عند الاتصال</span>
+          </div>
+        ) : (
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 dark:bg-blue-950/60 text-blue-600 dark:text-blue-400 font-bold text-xs">
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>تم تسجيل نتيجة الامتحان بنجاح</span>
+          </div>
+        )}
         <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 dark:text-white">
           نتيجة الامتحان
         </h1>
@@ -115,7 +121,6 @@ export const ExamResultsView: React.FC<ExamResultsViewProps> = ({
         className="p-6 sm:p-8 rounded-3xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm text-center space-y-5"
       >
         <div className="relative w-36 h-36 mx-auto flex items-center justify-center">
-          {/* Circular SVG gauge */}
           <svg className="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
             <circle
               cx="50"
@@ -129,7 +134,7 @@ export const ExamResultsView: React.FC<ExamResultsViewProps> = ({
               cx="50"
               cy="50"
               r="42"
-              className="stroke-blue-600 transition-all duration-1000 ease-out"
+              className={`${isProvisional ? 'stroke-amber-500' : 'stroke-blue-600'} transition-all duration-1000 ease-out`}
               strokeWidth="8"
               strokeDasharray="264"
               strokeDashoffset={264 - (264 * accuratePercentage) / 100}
@@ -201,9 +206,15 @@ export const ExamResultsView: React.FC<ExamResultsViewProps> = ({
               <Award className="w-4 h-4" />
               <span className="text-xs font-bold">النقاط</span>
             </div>
-            <div className="text-lg font-bold text-amber-700 dark:text-amber-300">
-              +{pointsEarned}
-            </div>
+            {isProvisional ? (
+              <div className="text-xs font-bold text-amber-700 dark:text-amber-300 pt-1">
+                النقاط قيد المزامنة
+              </div>
+            ) : (
+              <div className="text-lg font-bold text-amber-700 dark:text-amber-300">
+                +{pointsEarned}
+              </div>
+            )}
           </div>
         </div>
 
@@ -212,6 +223,20 @@ export const ExamResultsView: React.FC<ExamResultsViewProps> = ({
           <Clock className="w-4 h-4 text-slate-400" />
           <span>الوقت المستغرق: {formatTimeSpent(durationSeconds)}</span>
         </div>
+
+        {isProvisional && isOnline && (
+          <div className="pt-2">
+            <button
+              type="button"
+              onClick={() => syncNow(true)}
+              disabled={isSyncing}
+              className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-60"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+              <span>مزامنة الآن</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Real Ranking Section */}
@@ -234,7 +259,15 @@ export const ExamResultsView: React.FC<ExamResultsViewProps> = ({
         </div>
 
         <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
-          {userRank !== null ? (
+          {isProvisional ? (
+            <p className="text-xs sm:text-sm text-amber-700 dark:text-amber-300 text-center py-1 font-medium">
+              الترتيب الرسمي والنقاط تُحتسب وتُحدَّث تلقائياً على الخادم فور المزامنة عند الاتصال.
+            </p>
+          ) : !isOnline ? (
+            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 text-center py-1">
+              يتطلب اتصالًا بالإنترنت لعرض ترتيبك الحالي.
+            </p>
+          ) : userRank !== null ? (
             <div className="flex items-center justify-between">
               <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">
                 أنت الآن في المركز:

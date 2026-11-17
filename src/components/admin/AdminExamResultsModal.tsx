@@ -11,10 +11,13 @@ import {
   RefreshCw,
   Loader2,
   Sparkles,
+  WifiOff,
+  AlertTriangle,
+  GitBranch,
 } from 'lucide-react';
 import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
-import { regradeSingleAttempt, regradeAllExamAttempts, fixYusufExamAnswerKeys, SURAH_YUSUF_EXAM_ID } from '../../lib/adminService';
+import { regradeSingleAttempt, regradeAllExamAttempts } from '../../lib/adminService';
 import type { Exam, ExamAttempt } from '../../types';
 
 interface AdminExamResultsModalProps {
@@ -61,9 +64,6 @@ export const AdminExamResultsModal: React.FC<AdminExamResultsModalProps> = ({
     setRegradingAttemptId(attemptId);
     setStatusMessage(null);
     try {
-      if (exam.id === SURAH_YUSUF_EXAM_ID) {
-        await fixYusufExamAnswerKeys();
-      }
       const res = await regradeSingleAttempt(attemptId);
       setStatusMessage(`تمت إعادة التصحيح بنجاح! العلامة الجديدة: ${res.newScore}% (${res.deltaPoints >= 0 ? '+' : ''}${res.deltaPoints} نقطة للمستخدم)`);
       await fetchResults();
@@ -81,9 +81,6 @@ export const AdminExamResultsModal: React.FC<AdminExamResultsModalProps> = ({
     setIsRegradingAll(true);
     setStatusMessage(null);
     try {
-      if (exam.id === SURAH_YUSUF_EXAM_ID) {
-        await fixYusufExamAnswerKeys();
-      }
       const res = await regradeAllExamAttempts(exam.id);
       setStatusMessage(`اكتملت إعادة تصحيح جميع المحاولات! عدد المحاولات: ${res.succeeded}، إجمالي فرق النقاط المعدلة: ${res.totalPointsAdjusted}`);
       await fetchResults();
@@ -195,8 +192,34 @@ export const AdminExamResultsModal: React.FC<AdminExamResultsModalProps> = ({
                       {att.userDisplayName ? att.userDisplayName.charAt(0) : 'S'}
                     </div>
                     <div>
-                      <div className="text-xs font-bold text-slate-800 dark:text-slate-200">
-                        {att.userDisplayName || 'طالب مجهول'}
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                          {att.userDisplayName || 'طالب مجهول'}
+                        </span>
+                        {att.source === 'offline' && (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-teal-50 dark:bg-teal-950/50 text-teal-700 dark:text-teal-300 border border-teal-200 dark:border-teal-800">
+                            <WifiOff className="w-2.5 h-2.5" />
+                            <span>بدون إنترنت</span>
+                          </span>
+                        )}
+                        {att.flagged && (
+                          <span
+                            title={att.flagReason || 'سرعة حل غير طبيعية'}
+                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-red-50 dark:bg-red-950/50 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800"
+                          >
+                            <AlertTriangle className="w-2.5 h-2.5" />
+                            <span>مشتبه به</span>
+                          </span>
+                        )}
+                        {att.versionMismatch && (
+                          <span
+                            title={`إصدار الطالب v${att.clientExamVersion ?? '?'} مقابل إصدار الخادم v${att.serverExamVersion ?? '?'}`}
+                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-amber-50 dark:bg-amber-950/50 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800"
+                          >
+                            <GitBranch className="w-2.5 h-2.5" />
+                            <span>اختلاف إصدار</span>
+                          </span>
+                        )}
                       </div>
                       <div className="text-[10px] text-slate-400 flex items-center gap-2 mt-0.5">
                         <Clock className="w-3 h-3" />

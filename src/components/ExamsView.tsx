@@ -1,12 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useOffline } from '../context/OfflineContext';
 import { 
   getExamsList, 
   startOrResumeAttempt,
-  getExamById,
-  getExamQuestions,
   getAttemptById
 } from '../lib/examService';
+import {
+  downloadOfflineExamPackage,
+  removeDownloadedExamPackage,
+  startOrResumeOfflineAttempt,
+} from '../lib/offlineExamService';
+import {
+  formatBytesAr,
+  getDownloadedPackagesForUser,
+  type OfflineExamPackage,
+} from '../lib/offlineDb';
 import { ExamDetailsModal } from './ExamDetailsModal';
 import { ExamActiveView } from './ExamActiveView';
 import { ExamResultsView } from './ExamResultsView';
@@ -17,13 +26,15 @@ import {
   Clock, 
   HelpCircle, 
   Award, 
-  Sparkles, 
   Filter, 
   Play, 
   CheckCircle2, 
-  Eye, 
   RotateCcw,
   Loader2,
+  Download,
+  Trash2,
+  RefreshCw,
+  WifiOff,
   AlertCircle
 } from 'lucide-react';
 
@@ -33,18 +44,37 @@ interface ExamsViewProps {
   initialAttempt?: ExamAttempt | null;
   initialViewMode?: 'list' | 'results' | 'review';
   onResetView?: () => void;
+  resetSignal?: number;
+}
+
+function formatCardRemaining(expectedEndAt: string, nowMs: number): string {
+  const diffSec = Math.max(0, Math.floor((new Date(expectedEndAt).getTime() - nowMs) / 1000));
+  const hrs = Math.floor(diffSec / 3600);
+  const mins = Math.floor((diffSec % 3600) / 60);
+  const secs = diffSec % 60;
+  if (hrs > 0) {
+    return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  }
+  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
 }
 
 export const ExamsView: React.FC<ExamsViewProps> = ({
   initialAttempt = null,
   initialViewMode = 'list',
   onResetView,
+  resetSignal = 0,
 }) => {
   const { profile, refreshProfile } = useAuth();
+  const { isOnline, refreshPendingQueue } = useOffline();
   const [selectedSubject, setSelectedSubject] = useState<SubjectId>('all');
   const [branchFilter, setBranchFilter] = useState<'my_branch' | 'all' | 'علمي' | 'أدبي'>('my_branch');
   const [exams, setExams] = useState<Exam[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
+  const [resumingExamId, setResumingExamId] = useState<string | null>(null);
+  const [downloadedPackages, setDownloadedPackages] = useState<Record<string, OfflineExamPackage>>({});
+  const [downloadingExamId, setDownloadingExamId] = useState<string | null>(null);
+  const [offlineActionMessage, setOfflineActionMessage] = useState<{ type: 'error' | 'success'; text: string } | null>(null);
 
   // Workflow State Machine: 'list' | 'active' | 'results' | 'review'
   const [viewMode, setViewMode] = useState<'list' | 'active' | 'results' | 'review'>(initialViewMode);
@@ -73,6 +103,24 @@ export const ExamsView: React.FC<ExamsViewProps> = ({
     }
   }, [effectiveBranch]);
 
+  // Load downloaded packages for current user
+  const reloadDownloadedPackages = React.useCallback(async () => {
+    if (!profile?.uid) {
+      setDownloadedPackages({});
+      return;
+    }
+    const list = await getDownloadedPackagesForUser(profile.uid);
+    const map: Record<string, OfflineExamPackage> = {};
+    list.forEach((p) => {
+      map[p.examId] = p;
+    });
+    setDownloadedPackages(map);
+  }, [profile?.uid]);
+
+  useEffect(() => {
+    void reloadDownloadedPackages();
+  }, [reloadDownloadedPackages]);
+
   // Load exams on filter change or view mode change back to 'list'
   useEffect(() => {
     let isMounted = true;
@@ -93,10 +141,22 @@ export const ExamsView: React.FC<ExamsViewProps> = ({
       }
     }
     loadExams();
+    void reloadDownloadedPackages();
     return () => {
       isMounted = false;
     };
-  }, [selectedSubject, profile?.uid, effectiveBranch, viewMode]);
+  }, [selectedSubject, profile?.uid, effectiveBranch, viewMode, isOnline, reloadDownloadedPackages]);
+
+  // Refresh list immediately when offline background sync finishes
+  useEffect(() => {
+    const onSyncComplete = async () => {
+      if (viewMode !== 'list') return;
+      const fetched = await getExamsList(selectedSubject, profile?.uid, effectiveBranch).catch(() => null);
+      if (fetched) setExams(fetched);
+    };
+    window.addEventListener('arixon:offline-sync-complete', onSyncComplete);
+    return () => window.removeEventListener('arixon:offline-sync-complete', onSyncComplete);
+  }, [viewMode, selectedSubject, profile?.uid, effectiveBranch]);
 
   // Sync initialAttempt prop changes
   useEffect(() => {
@@ -105,6 +165,29 @@ export const ExamsView: React.FC<ExamsViewProps> = ({
       setViewMode(initialViewMode);
     }
   }, [initialAttempt, initialViewMode]);
+
+  // External reset signal (e.g. clicking Exams tab after Confirm Save & Exit)
+  useEffect(() => {
+    if (resetSignal > 0) {
+      setViewMode('list');
+      setCurrentAttempt(null);
+      setCurrentExam(null);
+    }
+  }, [resetSignal]);
+
+  // Live countdown ticker on exam cards when any exam is in_progress
+  useEffect(() => {
+    if (viewMode !== 'list') return;
+    const hasActiveInProgress = exams.some(
+      (ex) => ex.userAttemptStatus === 'in_progress' && Boolean(ex.userAttemptExpectedEndAt)
+    );
+    if (!hasActiveInProgress) return;
+    setNowMs(Date.now());
+    const interval = setInterval(() => {
+      setNowMs(Date.now());
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [viewMode, exams]);
 
   // Handle clicking "Start Exam", "Resume", or "View Completed"
   // Handle clicking "Start Exam", "Resume", or "View Completed"
@@ -154,24 +237,57 @@ export const ExamsView: React.FC<ExamsViewProps> = ({
     }
   };
 
-  // Start or resume attempt from modal
+  // Download or update exam package for offline usage
+  const handleDownloadOfflineExam = async (exam: Exam) => {
+    if (!profile?.uid || downloadingExamId) return;
+    setOfflineActionMessage(null);
+    setDownloadingExamId(exam.id);
+    try {
+      const pkg = await downloadOfflineExamPackage(exam.id, profile.uid);
+      setDownloadedPackages((prev) => ({ ...prev, [exam.id]: pkg }));
+      setOfflineActionMessage({
+        type: 'success',
+        text: `تم تنزيل "${exam.title}" بنجاح (${formatBytesAr(pkg.sizeBytes)}).`,
+      });
+    } catch (err: any) {
+      setOfflineActionMessage({
+        type: 'error',
+        text: err?.message || 'تعذر تنزيل الامتحان للاستخدام بدون إنترنت.',
+      });
+    } finally {
+      setDownloadingExamId(null);
+    }
+  };
+
+  const handleRemoveOfflineExam = async (examId: string) => {
+    if (!profile?.uid) return;
+    setOfflineActionMessage(null);
+    await removeDownloadedExamPackage(profile.uid, examId);
+    setDownloadedPackages((prev) => {
+      const copy = { ...prev };
+      delete copy[examId];
+      return copy;
+    });
+  };
+
+  // Start or resume attempt from modal (automatically switches to offline flow when offline & downloaded)
   const handleStartExamFromModal = async (exam: Exam) => {
     if (!profile) return;
     setIsStartingAttempt(true);
     try {
-      const { attempt, questions } = await startOrResumeAttempt(
-        exam.id,
-        profile.uid,
-        profile.displayName
-      );
+      const hasOfflinePkg = Boolean(downloadedPackages[exam.id]);
+      const useOfflineFlow = !isOnline && hasOfflinePkg;
+
+      const { attempt, questions } = useOfflineFlow
+        ? await startOrResumeOfflineAttempt(exam.id, profile.uid, profile.displayName)
+        : await startOrResumeAttempt(exam.id, profile.uid, profile.displayName);
 
       setCurrentExam(exam);
       setCurrentAttempt(attempt);
       setCurrentQuestions(questions);
       setSelectedExamForModal(null);
 
-      // If already submitted (e.g. attempt completed), go to results
-      if (attempt.status === 'submitted') {
+      if (attempt.status === 'submitted' || attempt.status === 'submitted_pending') {
         setViewMode('results');
       } else {
         setViewMode('active');
@@ -188,7 +304,7 @@ export const ExamsView: React.FC<ExamsViewProps> = ({
   const handleFinishExam = async (submittedAttempt: ExamAttempt) => {
     setCurrentAttempt(submittedAttempt);
 
-    // Immediately update local exams list state so completed badge and review button show instantly
+    const isPendingSync = submittedAttempt.status === 'submitted_pending';
     const targetExamId = submittedAttempt.examId || (currentExam ? currentExam.id : '');
     if (targetExamId) {
       setExams((prev) =>
@@ -196,8 +312,8 @@ export const ExamsView: React.FC<ExamsViewProps> = ({
           if (ex.id === targetExamId) {
             return {
               ...ex,
-              userAttemptStatus: 'completed',
-              status: 'completed',
+              userAttemptStatus: isPendingSync ? 'submitted_pending' : 'completed',
+              status: isPendingSync ? ex.status : 'completed',
               userScore: submittedAttempt.score ?? ex.userScore ?? 0,
               userLastAttemptId: submittedAttempt.id,
             };
@@ -207,14 +323,27 @@ export const ExamsView: React.FC<ExamsViewProps> = ({
       );
     }
 
+    await refreshPendingQueue();
     setViewMode('results');
-    // Refresh user's profile points and stats in background
-    if (refreshProfile) {
+    if (isOnline && refreshProfile) {
       try {
         await refreshProfile();
       } catch (err) {
         console.warn('Profile refresh after exam submit:', err);
       }
+    }
+  };
+
+  // Resume in-progress exam directly with fallback to details modal on error
+  const handleDirectResumeExam = async (exam: Exam) => {
+    if (!profile || resumingExamId) return;
+    setResumingExamId(exam.id);
+    try {
+      await handleStartExamFromModal(exam);
+    } catch {
+      setSelectedExamForModal(exam);
+    } finally {
+      setResumingExamId(null);
     }
   };
 
@@ -235,6 +364,7 @@ export const ExamsView: React.FC<ExamsViewProps> = ({
         questions={currentQuestions}
         userId={profile.uid}
         onFinishExam={handleFinishExam}
+        onExitToList={handleBackToList}
       />
     );
   }
@@ -363,6 +493,28 @@ export const ExamsView: React.FC<ExamsViewProps> = ({
         })}
       </div>
 
+      {offlineActionMessage && (
+        <div
+          className={`px-4 py-3 rounded-2xl text-xs font-bold flex items-center justify-between gap-3 border ${
+            offlineActionMessage.type === 'error'
+              ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300'
+              : 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300'
+          }`}
+        >
+          <span className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>{offlineActionMessage.text}</span>
+          </span>
+          <button
+            type="button"
+            onClick={() => setOfflineActionMessage(null)}
+            className="underline text-[11px] cursor-pointer"
+          >
+            إخفاء
+          </button>
+        </div>
+      )}
+
       {/* Loading Skeleton */}
       {isLoading && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -423,6 +575,13 @@ export const ExamsView: React.FC<ExamsViewProps> = ({
 
                 const earnedMarks = Math.round(((exam.userScore ?? 0) / 100) * (exam.totalPoints || 100));
                 const totalMarks = exam.totalPoints || 100;
+                const downloadedPkg = downloadedPackages[exam.id];
+                const hasVersionUpdate = Boolean(
+                  downloadedPkg &&
+                  Number(exam.version || 1) > Number(downloadedPkg.version || 1)
+                );
+                const isPendingSync = exam.userAttemptStatus === 'submitted_pending';
+                const canStartNow = isOnline || Boolean(downloadedPkg) || isCompleted;
 
                 return (
                   <div
@@ -432,29 +591,47 @@ export const ExamsView: React.FC<ExamsViewProps> = ({
                   >
                     <div>
                       {/* Top Badges */}
-                      <div className="flex items-center justify-between gap-2 mb-2.5">
+                      <div className="flex items-center justify-between gap-2 mb-2.5 flex-wrap">
                         <span className="text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/60 px-2.5 py-0.5 rounded-lg">
                           {exam.subjectNameAr || exam.subject}
                         </span>
 
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-1.5 flex-wrap">
                           <span className={`text-[11px] font-semibold px-2.5 py-0.5 rounded-full ${difficultyBadgeColor}`}>
                             {difficultyText}
                           </span>
 
-                          {isCompleted && (
+                          {isPendingSync ? (
+                            <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200 flex items-center gap-1 border border-amber-300 dark:border-amber-800">
+                              <Clock className="w-3 h-3" />
+                              <span>بانتظار المزامنة ({exam.userScore ?? 0}%)</span>
+                            </span>
+                          ) : isCompleted ? (
                             <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200 flex items-center gap-1 border border-emerald-300 dark:border-emerald-800">
                               <CheckCircle2 className="w-3 h-3 text-emerald-600" />
                               <span>تم الإنجاز ({exam.userScore ?? 0}%)</span>
                             </span>
-                          )}
+                          ) : null}
 
-                          {isInProgress && (
-                            <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200 animate-pulse flex items-center gap-1">
-                              <Clock className="w-3 h-3" />
-                              <span>قيد الحل</span>
-                            </span>
-                          )}
+                          {isInProgress && (() => {
+                            const hasEnd = Boolean(exam.userAttemptExpectedEndAt);
+                            const remainingStr = hasEnd
+                              ? formatCardRemaining(exam.userAttemptExpectedEndAt!, nowMs)
+                              : null;
+                            const isExpiredNow = hasEnd && new Date(exam.userAttemptExpectedEndAt!).getTime() <= nowMs;
+                            return (
+                              <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/60 dark:text-amber-200 flex items-center gap-1">
+                                <Clock className="w-3 h-3 animate-pulse" />
+                                <span>
+                                  {isExpiredNow
+                                    ? 'انتهى الوقت'
+                                    : remainingStr
+                                    ? `قيد الحل · متبقي ${remainingStr}`
+                                    : 'قيد الحل'}
+                                </span>
+                              </span>
+                            );
+                          })()}
                         </div>
                       </div>
 
@@ -468,6 +645,69 @@ export const ExamsView: React.FC<ExamsViewProps> = ({
                       <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2 leading-relaxed mb-4">
                         {exam.description}
                       </p>
+
+                      {/* Offline Download Package Controls */}
+                      {(exam.allowOffline || downloadedPkg) && (
+                        <div className="mb-3 p-2.5 rounded-2xl bg-slate-50 dark:bg-slate-900/70 border border-slate-200/80 dark:border-slate-800 flex flex-col gap-2">
+                          {downloadedPkg ? (
+                            <>
+                              <div className="flex items-center justify-between gap-2 text-xs">
+                                <span className="font-bold text-emerald-700 dark:text-emerald-300 flex items-center gap-1.5">
+                                  <span>منزّل ✅</span>
+                                  <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
+                                    ({formatBytesAr(downloadedPkg.sizeBytes)})
+                                  </span>
+                                </span>
+                                <button
+                                  type="button"
+                                  id={`remove-offline-pkg-${exam.id}`}
+                                  onClick={() => handleRemoveOfflineExam(exam.id)}
+                                  className="text-[11px] font-bold text-rose-600 dark:text-rose-400 hover:underline flex items-center gap-1 cursor-pointer"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                  <span>حذف النسخة</span>
+                                </button>
+                              </div>
+                              {hasVersionUpdate && (
+                                <div className="flex items-center justify-between gap-2 text-[11px] text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 px-2.5 py-1.5 rounded-xl border border-amber-200 dark:border-amber-800/60">
+                                  <span className="font-bold">يوجد تحديث للنسخة المنزّلة</span>
+                                  {isOnline && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDownloadOfflineExam(exam)}
+                                      disabled={downloadingExamId === exam.id}
+                                      className="font-bold text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-1 cursor-pointer"
+                                    >
+                                      <RefreshCw className={`w-3 h-3 ${downloadingExamId === exam.id ? 'animate-spin' : ''}`} />
+                                      <span>تحديث</span>
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                            </>
+                          ) : exam.allowOffline ? (
+                            <button
+                              type="button"
+                              id={`download-offline-pkg-${exam.id}`}
+                              onClick={() => handleDownloadOfflineExam(exam)}
+                              disabled={!isOnline || downloadingExamId === exam.id}
+                              className="w-full py-1.5 px-3 rounded-xl text-xs font-bold text-blue-700 dark:text-blue-300 bg-blue-50/80 dark:bg-blue-950/40 hover:bg-blue-100 dark:hover:bg-blue-950/70 disabled:opacity-50 flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+                            >
+                              {downloadingExamId === exam.id ? (
+                                <>
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                  <span>جارٍ التنزيل...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Download className="w-3.5 h-3.5" />
+                                  <span>تنزيل للاستخدام بدون إنترنت</span>
+                                </>
+                              )}
+                            </button>
+                          ) : null}
+                        </div>
+                      )}
 
                       {/* Metrics Bar */}
                       <div className="grid grid-cols-3 gap-2 text-xs text-slate-600 dark:text-slate-400 border-t border-slate-100 dark:border-slate-800 pt-3">
@@ -491,7 +731,9 @@ export const ExamsView: React.FC<ExamsViewProps> = ({
                       {isCompleted ? (
                         <div className="space-y-2">
                           <div className="flex items-center justify-between text-xs px-1">
-                            <span className="text-slate-500 font-medium">النتيجة:</span>
+                            <span className="text-slate-500 font-medium">
+                              {isPendingSync ? 'النتيجة المبدئية:' : 'النتيجة:'}
+                            </span>
                             <span className="font-bold text-emerald-600 dark:text-emerald-400">
                               {exam.userScore !== undefined ? `${exam.userScore}% (${earnedMarks} / ${totalMarks})` : 'تم الإنجاز'}
                             </span>
@@ -511,23 +753,57 @@ export const ExamsView: React.FC<ExamsViewProps> = ({
                             <span>عرض النتيجة ومراجعة الحل</span>
                           </button>
                         </div>
-                      ) : isInProgress ? (
-                        <button
-                          id={`resume-exam-btn-${exam.id}`}
-                          onClick={() => handleExamCardClick(exam)}
-                          className="w-full py-2.5 px-4 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-amber-500/20 transition-all cursor-pointer"
-                        >
-                          <RotateCcw className="w-4 h-4" />
-                          <span>استكمال</span>
-                        </button>
-                      ) : (
+                      ) : isInProgress ? (() => {
+                        const hasEnd = Boolean(exam.userAttemptExpectedEndAt);
+                        const remainingStr = hasEnd
+                          ? formatCardRemaining(exam.userAttemptExpectedEndAt!, nowMs)
+                          : null;
+                        const isExpiredNow = hasEnd && new Date(exam.userAttemptExpectedEndAt!).getTime() <= nowMs;
+                        const isResumingThis = resumingExamId === exam.id;
+                        return (
+                          <button
+                            id={`resume-exam-btn-${exam.id}`}
+                            onClick={() => handleDirectResumeExam(exam)}
+                            disabled={isResumingThis || (!isOnline && !downloadedPkg)}
+                            className="w-full py-2.5 px-4 rounded-xl bg-amber-600 hover:bg-amber-700 active:scale-[0.98] text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-amber-500/20 transition-all cursor-pointer disabled:opacity-70"
+                          >
+                            {isResumingThis ? (
+                              <>
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                                <span>جارٍ استكمال الامتحان...</span>
+                              </>
+                            ) : (
+                              <>
+                                <RotateCcw className="w-4 h-4" />
+                                <span>
+                                  {isExpiredNow
+                                    ? 'استكمال / احتساب النتيجة'
+                                    : remainingStr
+                                    ? `استكمال (متبقي ${remainingStr})`
+                                    : 'استكمال'}
+                                </span>
+                              </>
+                            )}
+                          </button>
+                        );
+                      })() : (
                         <button
                           id={`start-exam-btn-${exam.id}`}
                           onClick={() => handleExamCardClick(exam)}
-                          className="w-full py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-blue-500/20 transition-all cursor-pointer"
+                          disabled={!canStartNow}
+                          className="w-full py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 dark:disabled:bg-slate-800 disabled:text-slate-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-md shadow-blue-500/20 transition-all cursor-pointer disabled:cursor-not-allowed"
                         >
-                          <Play className="w-3.5 h-3.5 fill-current" />
-                          <span>ابدأ</span>
+                          {!canStartNow ? (
+                            <>
+                              <WifiOff className="w-3.5 h-3.5" />
+                              <span>يتطلب اتصالًا بالإنترنت</span>
+                            </>
+                          ) : (
+                            <>
+                              <Play className="w-3.5 h-3.5 fill-current" />
+                              <span>{!isOnline && downloadedPkg ? 'ابدأ بدون إنترنت' : 'ابدأ'}</span>
+                            </>
+                          )}
                         </button>
                       )}
                     </div>

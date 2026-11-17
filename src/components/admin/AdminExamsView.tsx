@@ -28,6 +28,7 @@ import {
   Wrench,
   RefreshCw,
   AlertCircle,
+  WifiOff,
 } from 'lucide-react';
 import { 
   fetchAllAdminExams, 
@@ -38,6 +39,7 @@ import {
   repairExamAnswerKeys,
   regradePendingAttempts,
   getAdminExamQuestions,
+  toggleExamAllowOffline,
 } from '../../lib/adminService';
 import { useAdmin } from '../../context/AdminContext';
 import { AdminCreateExamModal } from './AdminCreateExamModal';
@@ -89,6 +91,10 @@ export const AdminExamsView: React.FC<AdminExamsViewProps> = ({
   // Integrity & Dry-Run Diagnostic Modal (Part P)
   const [isIntegrityModalOpen, setIsIntegrityModalOpen] = useState(false);
   const [integrityExamId, setIntegrityExamId] = useState<string | undefined>(undefined);
+
+  // Offline toggle modal (Part S)
+  const [examToToggleOffline, setExamToToggleOffline] = useState<Exam | null>(null);
+  const [isTogglingOffline, setIsTogglingOffline] = useState(false);
 
   const loadExams = async () => {
     setIsLoading(true);
@@ -209,6 +215,20 @@ export const AdminExamsView: React.FC<AdminExamsViewProps> = ({
       setExamToArchive(null);
     } catch (err: any) {
       alert(err.message || 'حدث خطأ أثناء أرشفة الامتحان.');
+    }
+  };
+
+  // Toggle Allow Offline
+  const executeToggleOffline = async (exam: Exam, nextValue: boolean) => {
+    setIsTogglingOffline(true);
+    try {
+      await toggleExamAllowOffline(exam.id, nextValue, exam.title);
+      await loadExams();
+      setExamToToggleOffline(null);
+    } catch (err: any) {
+      alert(err.message || 'تعذر تحديث إعداد الوضع بدون إنترنت.');
+    } finally {
+      setIsTogglingOffline(false);
     }
   };
 
@@ -506,6 +526,13 @@ export const AdminExamsView: React.FC<AdminExamsViewProps> = ({
                           v{exam.version}
                         </span>
                       )}
+
+                      {exam.allowOffline && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-teal-50 dark:bg-teal-950/50 text-teal-700 dark:text-teal-300 border border-teal-200 dark:border-teal-800">
+                          <WifiOff className="w-2.5 h-2.5" />
+                          <span>متاح بدون إنترنت</span>
+                        </span>
+                      )}
                     </div>
 
                     {/* Three-dots menu button */}
@@ -618,6 +645,23 @@ export const AdminExamsView: React.FC<AdminExamsViewProps> = ({
                           >
                             <Copy className="w-3.5 h-3.5 text-slate-400" />
                             <span>تكرار ونسخ الامتحان</span>
+                          </button>
+
+                          {/* Offline availability toggle */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActiveMenuExamId(null);
+                              if (exam.allowOffline) {
+                                void executeToggleOffline(exam, false);
+                              } else {
+                                setExamToToggleOffline(exam);
+                              }
+                            }}
+                            className="w-full px-3.5 py-2 text-xs font-bold text-teal-700 dark:text-teal-300 hover:bg-teal-50 dark:hover:bg-teal-950/40 flex items-center gap-2 cursor-pointer"
+                          >
+                            <WifiOff className="w-3.5 h-3.5 text-teal-600" />
+                            <span>{exam.allowOffline ? 'إيقاف الوضع بدون إنترنت' : 'تفعيل الوضع بدون إنترنت'}</span>
                           </button>
 
                           <div className="border-t border-slate-100 dark:border-slate-800 my-1"></div>
@@ -1037,6 +1081,48 @@ export const AdminExamsView: React.FC<AdminExamsViewProps> = ({
         exams={exams}
         initialExamId={integrityExamId}
       />
+
+      {/* CONFIRM ALLOW OFFLINE MODAL (Part S) */}
+      {examToToggleOffline && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white dark:bg-[#0c101c] w-full max-w-md rounded-3xl border border-slate-200 dark:border-slate-800 p-6 shadow-2xl space-y-5 text-center">
+            <div className="w-12 h-12 rounded-2xl bg-amber-50 dark:bg-amber-950/50 text-amber-600 flex items-center justify-center mx-auto">
+              <WifiOff className="w-6 h-6" />
+            </div>
+
+            <div className="space-y-2">
+              <h3 className="text-base font-black text-slate-900 dark:text-white">
+                تفعيل التنزيل والحل بدون إنترنت
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                امتحان <span className="font-bold text-slate-800 dark:text-slate-200">"{examToToggleOffline.title}"</span>
+              </p>
+              <div className="p-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 text-xs font-bold leading-relaxed">
+                تفعيل هذا يضع مفاتيح الإجابة على أجهزة الطلاب، استخدمه لامتحانات التدريب فقط
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 pt-2">
+              <button
+                type="button"
+                disabled={isTogglingOffline}
+                onClick={() => setExamToToggleOffline(null)}
+                className="flex-1 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-bold text-slate-600 dark:text-slate-400 cursor-pointer"
+              >
+                تراجع
+              </button>
+              <button
+                type="button"
+                disabled={isTogglingOffline}
+                onClick={() => executeToggleOffline(examToToggleOffline, true)}
+                className="flex-1 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shadow-xs cursor-pointer disabled:opacity-50"
+              >
+                {isTogglingOffline ? 'جارٍ التفعيل...' : 'تأكيد التفعيل'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

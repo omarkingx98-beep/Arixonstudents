@@ -87,6 +87,7 @@ export interface Exam {
   published: boolean;
   version?: number; // Version tracking (increments on edit of published exam)
   allowRetake: boolean;
+  allowOffline?: boolean;
   branch?: string; // 'علمي' | 'أدبي' | 'مشترك' | 'all'
   grade?: string; // e.g. 'tw2009'
   isArchived?: boolean;
@@ -97,6 +98,7 @@ export interface Exam {
   userAttemptStatus?: 'not_started' | 'in_progress' | 'completed' | 'submitted_pending';
   userLastAttemptId?: string;
   userScore?: number;
+  userAttemptExpectedEndAt?: string;
 }
 
 export type QuestionType = 'multiple_choice' | 'true_false' | 'short_answer' | 'matching';
@@ -152,7 +154,17 @@ export interface ExamAttempt {
   wrongCount?: number;
   unansweredCount?: number;
   durationUsed?: number;
+  lastQuestionIndex?: number;
   reviews?: QuestionReview[];
+  source?: 'online' | 'offline';
+  flagged?: boolean;
+  flagReason?: string;
+  versionMismatch?: boolean;
+  clientExamVersion?: number;
+  serverExamVersion?: number;
+  overtimeExceeded?: boolean;
+  isProvisional?: boolean;
+  answeredCount?: number;
 }
 
 export interface QuestionAnswer {

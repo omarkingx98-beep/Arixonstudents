@@ -3,14 +3,23 @@ import type { Exam, Question, ExamAttempt } from '../types';
 import { 
   saveQuestionAnswer, 
   getSavedAnswersForAttempt, 
-  submitExamAttempt 
+  submitExamAttempt,
+  updateAttemptLastQuestionIndex,
+  flushAttemptState
 } from '../lib/examService';
+import {
+  extractOfflineAnswersRecord,
+  flushOfflineAttemptState,
+  saveOfflineAnswer,
+  submitOfflineAttemptProvisional,
+  updateOfflineLastQuestionIndex,
+} from '../lib/offlineExamService';
+import { getActiveOfflineAttemptById } from '../lib/offlineDb';
 import { 
   Clock, 
   ChevronRight, 
   ChevronLeft, 
   CheckCircle2, 
-  AlertCircle, 
   HelpCircle, 
   Send, 
   Loader2, 
@@ -20,6 +29,8 @@ import {
   Lightbulb
 } from 'lucide-react';
 import { useAdmin } from '../context/AdminContext';
+import { useActiveExam } from '../context/ActiveExamContext';
+import { useOffline } from '../context/OfflineContext';
 
 interface ExamActiveViewProps {
   exam: Exam;
@@ -28,6 +39,7 @@ interface ExamActiveViewProps {
   userId: string;
   onFinishExam: (submittedAttempt: ExamAttempt) => void;
   onCancelExit?: () => void;
+  onExitToList?: () => void;
 }
 
 export const ExamActiveView: React.FC<ExamActiveViewProps> = ({
@@ -36,8 +48,22 @@ export const ExamActiveView: React.FC<ExamActiveViewProps> = ({
   questions,
   userId,
   onFinishExam,
+  onExitToList,
 }) => {
-  const [currentIndex, setCurrentIndex] = useState<number>(0);
+  const [currentIndex, setCurrentIndex] = useState<number>(() => {
+    let initial = typeof attempt.lastQuestionIndex === 'number' ? attempt.lastQuestionIndex : 0;
+    try {
+      const cached = localStorage.getItem(`arixon_attempt_last_q_${attempt.id}`);
+      if (cached !== null) {
+        const parsed = parseInt(cached, 10);
+        if (!isNaN(parsed) && parsed >= 0) {
+          initial = parsed;
+        }
+      }
+    } catch {}
+    const maxIdx = Math.max(0, questions.length - 1);
+    return Math.min(Math.max(0, initial), maxIdx);
+  });
   const [answers, setAnswers] = useState<Record<string, number | null>>({});
   const [savingStatus, setSavingStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
@@ -50,23 +76,91 @@ export const ExamActiveView: React.FC<ExamActiveViewProps> = ({
     return remaining;
   });
 
+  const { isAdmin } = useAdmin();
+  const { registerActiveExam, unregisterActiveExam, closeLeaveModal } = useActiveExam();
+  const { refreshPendingQueue } = useOffline();
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitDiagnostic, setSubmitDiagnostic] = useState<{ code: string; step: string; line?: string } | null>(null);
+
+  const isOfflineAttempt = attempt.id.startsWith('offline_');
+  const mountPerfRef = useRef<number>(typeof performance !== 'undefined' ? performance.now() : Date.now());
+  const baseAccumulatedMsRef = useRef<number>(0);
+  const totalAllowedSecondsRef = useRef<number>(Math.max(60, (exam.durationMinutes || 15) * 60));
+
+  const getCurrentElapsedMs = () => {
+    const nowPerf = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    return baseAccumulatedMsRef.current + Math.max(0, nowPerf - mountPerfRef.current);
+  };
+
   const currentQuestion = questions[currentIndex] || questions[0];
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const hasAutoSubmitted = useRef<boolean>(false);
+  const hasSubmittedRef = useRef<boolean>(false);
+  const isSubmittingRef = useRef<boolean>(false);
+  const answersRef = useRef<Record<string, number | null>>(answers);
+  const currentIndexRef = useRef<number>(currentIndex);
+  const onFinishExamRef = useRef(onFinishExam);
+  const onExitToListRef = useRef(onExitToList);
+
+  answersRef.current = answers;
+  currentIndexRef.current = currentIndex;
+  isSubmittingRef.current = isSubmitting;
+  onFinishExamRef.current = onFinishExam;
+  onExitToListRef.current = onExitToList;
 
   // Reset hint view when moving to another question
   useEffect(() => {
     setShowHint(false);
   }, [currentIndex]);
 
-  // Load existing saved answers on mount
+  // Persist currentIndex locally & debounced so resuming lands on exact question
+  useEffect(() => {
+    if (hasSubmittedRef.current) return;
+    try {
+      localStorage.setItem(`arixon_attempt_last_q_${attempt.id}`, String(currentIndex));
+    } catch {}
+    const debounce = setTimeout(() => {
+      if (!hasSubmittedRef.current) {
+        if (isOfflineAttempt) {
+          updateOfflineLastQuestionIndex(userId, attempt.id, currentIndex).catch(() => {});
+        } else {
+          updateAttemptLastQuestionIndex(attempt.id, currentIndex).catch(() => {});
+        }
+      }
+    }, 350);
+    return () => clearTimeout(debounce);
+  }, [attempt.id, currentIndex, isOfflineAttempt, userId]);
+
+  // Load existing saved answers (and monotonic offline clock anchor if offline attempt) on mount
   useEffect(() => {
     let isMounted = true;
     async function loadAnswers() {
       try {
+        if (isOfflineAttempt) {
+          const active = await getActiveOfflineAttemptById(userId, attempt.id);
+          if (active && isMounted) {
+            const reloadGapMs = Math.max(0, Date.now() - (active.lastWallCheckpointAt || Date.now()));
+            baseAccumulatedMsRef.current = (active.accumulatedActiveMs || 0) + reloadGapMs;
+            totalAllowedSecondsRef.current = active.durationSecondsTotal || totalAllowedSecondsRef.current;
+            mountPerfRef.current = typeof performance !== 'undefined' ? performance.now() : Date.now();
+
+            const savedOff = extractOfflineAnswersRecord(active);
+            setAnswers((prev) => {
+              const merged = { ...savedOff, ...prev };
+              answersRef.current = merged;
+              return merged;
+            });
+          }
+          return;
+        }
+
         const saved = await getSavedAnswersForAttempt(attempt.id);
         if (isMounted) {
-          setAnswers(saved);
+          setAnswers((prev) => {
+            const merged = { ...saved, ...prev };
+            answersRef.current = merged;
+            return merged;
+          });
         }
       } catch (err) {
         console.warn('Could not load saved answers on mount:', err);
@@ -76,75 +170,157 @@ export const ExamActiveView: React.FC<ExamActiveViewProps> = ({
     return () => {
       isMounted = false;
     };
-  }, [attempt.id]);
+  }, [attempt.id, isOfflineAttempt, userId]);
 
-  // Server-authoritative timer: calculates against expectedEndAt every second
-  useEffect(() => {
-    const updateCountdown = () => {
-      const end = new Date(attempt.expectedEndAt).getTime();
-      const remaining = Math.max(0, Math.floor((end - Date.now()) / 1000));
-      setSecondsRemaining(remaining);
-
-      // Auto submit when timer reaches 0
-      if (remaining <= 0 && !hasAutoSubmitted.current && !isSubmitting) {
-        hasAutoSubmitted.current = true;
-        handleFinalSubmit(true);
-      }
-    };
-
-    updateCountdown();
-    timerRef.current = setInterval(updateCountdown, 1000);
-
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, [attempt.expectedEndAt]);
-
-  // Handle student selecting an option
-  const handleSelectOption = async (optionIndex: number) => {
-    if (!currentQuestion || isSubmitting) return;
-
-    // Optimistic local state update
-    const newAnswers = {
-      ...answers,
-      [currentQuestion.id]: optionIndex,
-    };
-    setAnswers(newAnswers);
-    setSavingStatus('saving');
-
-    try {
-      await saveQuestionAnswer(attempt.id, currentQuestion.id, optionIndex);
-      setSavingStatus('saved');
-    } catch (err) {
-      console.error('Failed to save answer:', err);
-      setSavingStatus('error');
-    }
-  };
-
-  const { isAdmin } = useAdmin();
-  const [submitError, setSubmitError] = useState<string | null>(null);
-  const [submitDiagnostic, setSubmitDiagnostic] = useState<{ code: string; step: string; line?: string } | null>(null);
-
-  // Submission handler
+  // Submission handler (always reads latest answersRef.current so timer auto-submit never submits {})
   const handleFinalSubmit = async (isAutoExpire = false) => {
-    if (isSubmitting) return;
+    if (isSubmittingRef.current || hasSubmittedRef.current) return;
     setSubmitError(null);
     setSubmitDiagnostic(null);
+    isSubmittingRef.current = true;
     setIsSubmitting(true);
     setShowSubmitModal(false);
+    if (isAutoExpire) {
+      closeLeaveModal();
+    }
 
     try {
-      const submitted = await submitExamAttempt(attempt.id, userId, answers);
-      onFinishExam(submitted);
+      const latestAnswers = { ...answersRef.current };
+      let submitted: ExamAttempt;
+      if (isOfflineAttempt) {
+        const elapsedSec = Math.max(1, Math.round(getCurrentElapsedMs() / 1000));
+        submitted = await submitOfflineAttemptProvisional(attempt.id, userId, latestAnswers, elapsedSec);
+        await refreshPendingQueue();
+      } else {
+        submitted = await submitExamAttempt(attempt.id, userId, latestAnswers);
+      }
+      hasSubmittedRef.current = true;
+      unregisterActiveExam(attempt.id);
+      onFinishExamRef.current(submitted);
     } catch (err: any) {
       console.error('Error submitting exam:', err);
+      isSubmittingRef.current = false;
       setIsSubmitting(false);
+      if (isAutoExpire) {
+        hasAutoSubmitted.current = false;
+      }
       setSubmitError(err?.message || 'تعذّر التسليم، حاول مرة ثانية.');
       setSubmitDiagnostic({
         code: err?.code || 'UNKNOWN',
         step: err?.step || 'UNKNOWN',
         line: err?.line || err?.stack?.split('\n')?.[1]?.trim() || undefined,
       });
+    }
+  };
+
+  const handleFinalSubmitRef = useRef(handleFinalSubmit);
+  handleFinalSubmitRef.current = handleFinalSubmit;
+
+  // Register active exam session in central ActiveExamContext
+  useEffect(() => {
+    if (attempt.status !== 'in_progress') return;
+    registerActiveExam(
+      {
+        attemptId: attempt.id,
+        examId: exam.id,
+        examTitle: exam.title,
+        expectedEndAt: attempt.expectedEndAt,
+        flushAndSaveBeforeExit: () =>
+          isOfflineAttempt
+            ? flushOfflineAttemptState(userId, attempt.id, answersRef.current, currentIndexRef.current, getCurrentElapsedMs())
+            : flushAttemptState(attempt.id, answersRef.current, currentIndexRef.current),
+        submitNow: (isAutoExpire = false) =>
+          handleFinalSubmitRef.current(isAutoExpire),
+      },
+      () => onExitToListRef.current?.()
+    );
+    return () => {
+      unregisterActiveExam(attempt.id);
+    };
+  }, [attempt.id, attempt.status, attempt.expectedEndAt, exam.id, exam.title, isOfflineAttempt, userId, registerActiveExam, unregisterActiveExam]);
+
+  // Countdown timer: monotonic performance.now() for offline attempts (immune to clock rewind), expectedEndAt for online attempts
+  useEffect(() => {
+    const updateCountdown = () => {
+      let remaining: number;
+      if (isOfflineAttempt) {
+        const elapsedSec = Math.floor(getCurrentElapsedMs() / 1000);
+        remaining = Math.max(0, totalAllowedSecondsRef.current - elapsedSec);
+      } else {
+        const end = new Date(attempt.expectedEndAt).getTime();
+        remaining = Math.max(0, Math.floor((end - Date.now()) / 1000));
+      }
+      setSecondsRemaining(remaining);
+
+      if (remaining <= 0 && !hasAutoSubmitted.current && !isSubmittingRef.current && !hasSubmittedRef.current) {
+        hasAutoSubmitted.current = true;
+        handleFinalSubmitRef.current(true);
+      }
+    };
+
+    updateCountdown();
+    timerRef.current = setInterval(updateCountdown, 1000);
+
+    const flushFn = () =>
+      isOfflineAttempt
+        ? flushOfflineAttemptState(userId, attempt.id, answersRef.current, currentIndexRef.current, getCurrentElapsedMs())
+        : flushAttemptState(attempt.id, answersRef.current, currentIndexRef.current);
+
+    const handleVisibilityOrPageHide = () => {
+      if (document.visibilityState === 'hidden') {
+        flushFn().catch(() => {});
+      } else if (document.visibilityState === 'visible') {
+        updateCountdown();
+      }
+    };
+
+    const handlePageHide = () => {
+      flushFn().catch(() => {});
+    };
+
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (attempt.status === 'in_progress' && !isSubmittingRef.current && !hasSubmittedRef.current) {
+        flushFn().catch(() => {});
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityOrPageHide);
+    window.addEventListener('pagehide', handlePageHide);
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+      document.removeEventListener('visibilitychange', handleVisibilityOrPageHide);
+      window.removeEventListener('pagehide', handlePageHide);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [attempt.id, attempt.status, attempt.expectedEndAt, isOfflineAttempt, userId]);
+
+  // Handle student selecting an option
+  const handleSelectOption = async (optionIndex: number) => {
+    if (!currentQuestion || isSubmittingRef.current || hasSubmittedRef.current) return;
+
+    // Optimistic local state update
+    const newAnswers = {
+      ...answersRef.current,
+      [currentQuestion.id]: optionIndex,
+    };
+    answersRef.current = newAnswers;
+    setAnswers(newAnswers);
+    setSavingStatus('saving');
+
+    try {
+      if (isOfflineAttempt) {
+        await saveOfflineAnswer(userId, attempt.id, currentQuestion.id, optionIndex, getCurrentElapsedMs());
+      } else {
+        await saveQuestionAnswer(attempt.id, currentQuestion.id, optionIndex);
+      }
+      setSavingStatus('saved');
+    } catch (err) {
+      console.error('Failed to save answer:', err);
+      setSavingStatus('error');
     }
   };
 
@@ -496,12 +672,12 @@ export const ExamActiveView: React.FC<ExamActiveViewProps> = ({
 
             <div className="text-center space-y-2">
               <h3 className="text-lg font-bold text-slate-900 dark:text-white">
-                {unansweredCount > 0 ? 'تنبيه: تسليم الامتحان' : 'تأكيد تسليم الامتحان'}
+                هل تريد تسليم الامتحان؟
               </h3>
               <p className="text-xs sm:text-sm text-slate-600 dark:text-slate-400 leading-relaxed">
                 {unansweredCount > 0
-                  ? `لديك ${unansweredCount} أسئلة غير مجابة من أصل ${totalCount}. هل أنت متأكد من رغبتك في تسليم الامتحان الآن؟`
-                  : 'لقد أجبت على جميع الأسئلة! هل أنت متأكد من رغبتك في تسليم الامتحان واحتساب النتيجة؟'}
+                  ? `لديك ${unansweredCount} أسئلة بلا إجابة`
+                  : 'لقد أجبت على جميع الأسئلة. هل تريد تسليم الامتحان الآن؟'}
               </p>
             </div>
 
@@ -531,7 +707,7 @@ export const ExamActiveView: React.FC<ExamActiveViewProps> = ({
                     <span>جاري رصد الدرجات...</span>
                   </>
                 ) : (
-                  <span>تأكيد التسليم</span>
+                  <span>تسليم</span>
                 )}
               </button>
 
@@ -541,7 +717,7 @@ export const ExamActiveView: React.FC<ExamActiveViewProps> = ({
                 disabled={isSubmitting}
                 className="py-3 px-5 rounded-xl border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold text-sm transition-colors cursor-pointer"
               >
-                متابعة الحل
+                العودة للأسئلة
               </button>
             </div>
           </div>

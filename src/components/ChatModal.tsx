@@ -10,10 +10,14 @@ import {
   Loader2, 
   ArrowRight,
   ChevronDown,
-  AlertCircle
+  AlertCircle,
+  WifiOff,
+  Clock
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useOffline } from '../context/OfflineContext';
 import { 
+  getChatIdForUsers,
   getOrCreateChatConversation, 
   subscribeToChatMessages, 
   sendChatMessage, 
@@ -24,6 +28,7 @@ import {
   fetchOlderChatMessages,
   markChatAsRead
 } from '../lib/chatService';
+import { formatCachedTimeAr, getViewCache, saveViewCache } from '../lib/offlineDb';
 import { UserAvatar } from './UserAvatar';
 import { RoleBadge } from './RoleBadge';
 import { getStaffBadge } from '../lib/roleService';
@@ -48,9 +53,11 @@ export const ChatModal: React.FC<ChatModalProps> = ({
   targetUser,
 }) => {
   const { profile, user } = useAuth();
+  const { isOnline } = useOffline();
   const [targetBadge, setTargetBadge] = useState<StaffBadge | null>(null);
   const [conversation, setConversation] = useState<ChatConversation | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [cachedUpdatedAt, setCachedUpdatedAt] = useState<string | null>(null);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingOlder, setIsLoadingOlder] = useState(false);
@@ -104,15 +111,33 @@ export const ChatModal: React.FC<ChatModalProps> = ({
     }
   }, [targetUser?.uid]);
 
-  // Initialize or fetch conversation
+  // Initialize or fetch conversation (with offline viewCache fallback)
   useEffect(() => {
     if (!isOpen || !targetUser || !profile) return;
     let isMounted = true;
+    const chatId = getChatIdForUsers(profile.uid, targetUser.uid);
+    const cacheId = `chat_msgs_${chatId}`;
+
     setIsLoading(true);
     setErrorMsg(null);
     setHasMoreOlder(true);
 
     const initChat = async () => {
+      if (!isOnline) {
+        const cached = await getViewCache<ChatMessage[]>(profile.uid, cacheId);
+        if (isMounted) {
+          if (cached && Array.isArray(cached.data)) {
+            setMessages(cached.data);
+            setCachedUpdatedAt(cached.updatedAt);
+          } else {
+            setMessages([]);
+            setCachedUpdatedAt(null);
+          }
+          setIsLoading(false);
+        }
+        return;
+      }
+
       try {
         const conv = await getOrCreateChatConversation(
           {
@@ -126,11 +151,20 @@ export const ChatModal: React.FC<ChatModalProps> = ({
         );
         if (isMounted) {
           setConversation(conv);
+          setCachedUpdatedAt(null);
           markChatAsRead(conv.id, profile.uid);
         }
       } catch (err: any) {
         console.error('[ChatModal] Error initializing chat:', err);
-        if (isMounted) setErrorMsg(err.message || 'تعذر بدء المحادثة.');
+        const cached = await getViewCache<ChatMessage[]>(profile.uid, cacheId);
+        if (isMounted) {
+          if (cached && Array.isArray(cached.data)) {
+            setMessages(cached.data);
+            setCachedUpdatedAt(cached.updatedAt);
+          } else {
+            setErrorMsg(err.message || 'تعذر بدء المحادثة.');
+          }
+        }
       } finally {
         if (isMounted) setIsLoading(false);
       }
@@ -140,15 +174,19 @@ export const ChatModal: React.FC<ChatModalProps> = ({
     return () => {
       isMounted = false;
     };
-  }, [isOpen, targetUser?.uid, profile?.uid]);
+  }, [isOpen, targetUser?.uid, profile?.uid, isOnline]);
 
   // Subscribe to realtime messages & typing status
   useEffect(() => {
-    if (!conversation || !targetUser) return;
+    if (!conversation || !targetUser || !isOnline) return;
 
     // Messages subscription (latest 30)
     const unsubMessages = subscribeToChatMessages(conversation.id, (msgs) => {
       setMessages(msgs);
+      if (profile?.uid && msgs.length > 0) {
+        void saveViewCache(profile.uid, `chat_msgs_${conversation.id}`, msgs);
+        setCachedUpdatedAt(null);
+      }
       if (msgs.length < 30) {
         setHasMoreOlder(false);
       }
@@ -178,7 +216,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
       unsubMessages();
       unsubPresence();
     };
-  }, [conversation?.id, targetUser?.uid]);
+  }, [conversation?.id, targetUser?.uid, profile?.uid, isOnline]);
 
   // Clear typing presence when unmounting or modal closes
   useEffect(() => {
@@ -270,6 +308,10 @@ export const ChatModal: React.FC<ChatModalProps> = ({
   const handleSendMessage = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!profile || !targetUser || !inputText.trim() || isSending) return;
+    if (!isOnline) {
+      setErrorMsg('يتطلب اتصالًا بالإنترنت لإرسال الرسائل.');
+      return;
+    }
 
     if (isChatRestricted) {
       const msg = profile?.chatDisabled
@@ -502,6 +544,22 @@ export const ChatModal: React.FC<ChatModalProps> = ({
           </div>
         </div>
 
+        {/* Offline Notice Banner */}
+        {!isOnline && (
+          <div className="bg-amber-50 dark:bg-amber-950/40 px-4 py-2 text-xs text-amber-800 dark:text-amber-300 flex items-center justify-between gap-2 border-b border-amber-200 dark:border-amber-900/50 shrink-0">
+            <div className="flex items-center gap-1.5 font-bold">
+              <WifiOff className="w-3.5 h-3.5 shrink-0 text-amber-600" />
+              <span>يتطلب اتصالًا بالإنترنت</span>
+            </div>
+            {cachedUpdatedAt && (
+              <span className="text-[11px] flex items-center gap-1">
+                <Clock className="w-3 h-3" />
+                <span>آخر تحديث: {formatCachedTimeAr(cachedUpdatedAt)}</span>
+              </span>
+            )}
+          </div>
+        )}
+
         {/* Disabled Warning if Flagged */}
         {profile?.chatDisabled && (
           <div className="bg-red-50 dark:bg-red-950/40 p-2.5 text-center text-xs text-red-600 dark:text-red-400 font-bold border-b border-red-200 dark:border-red-900/40 shrink-0">
@@ -551,13 +609,27 @@ export const ChatModal: React.FC<ChatModalProps> = ({
             </div>
           ) : messages.length === 0 ? (
             <div className="py-20 text-center text-slate-400 text-xs space-y-2">
-              <MessageSquare className="w-10 h-10 mx-auto text-slate-300 dark:text-slate-700" />
-              <p className="font-bold text-sm text-slate-700 dark:text-slate-200">
-                لا توجد رسائل سابقة مع {targetUser.displayName}
-              </p>
-              <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xs mx-auto">
-                ابدأ المحادثة التعليمية الآن واستفسر عن الدروس والامتحانات وشارك الفائدة!
-              </p>
+              {!isOnline ? (
+                <>
+                  <WifiOff className="w-10 h-10 mx-auto text-amber-400" />
+                  <p className="font-bold text-sm text-slate-700 dark:text-slate-200">
+                    يتطلب اتصالًا بالإنترنت
+                  </p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xs mx-auto">
+                    لا توجد رسائل محفوظة محلياً لهذه المحادثة. أعد الاتصال لتحميل الرسائل ومراسلة {targetUser.displayName}.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <MessageSquare className="w-10 h-10 mx-auto text-slate-300 dark:text-slate-700" />
+                  <p className="font-bold text-sm text-slate-700 dark:text-slate-200">
+                    لا توجد رسائل سابقة مع {targetUser.displayName}
+                  </p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xs mx-auto">
+                    ابدأ المحادثة التعليمية الآن واستفسر عن الدروس والامتحانات وشارك الفائدة!
+                  </p>
+                </>
+              )}
             </div>
           ) : (
             messages.map((msg, idx) => {
@@ -676,6 +748,11 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                   ? 'تم إيقاف ميزة الدردشة لحسابك من قِبل إدارة المنصة.'
                   : `حسابك مقيد ومكتوم عن إرسال الرسائل حتى: ${new Date(profile!.mutedUntil!).toLocaleString('ar-EG')}`}
               </span>
+            </div>
+          ) : !isOnline ? (
+            <div className="p-3 rounded-xl bg-slate-100 dark:bg-slate-800/70 border border-slate-200 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-300 flex items-center justify-center gap-2 font-bold">
+              <WifiOff className="w-4 h-4 text-amber-500 shrink-0" />
+              <span>يتطلب اتصالًا بالإنترنت لإرسال رسائل جديدة</span>
             </div>
           ) : (
             <form
